@@ -13,7 +13,8 @@ const navItems = [
   { path: '/', label: 'Home', icon: 'H' },
   { path: '/notebooks', label: 'Notebooks', icon: 'N' },
   { path: '/dashboards', label: 'Dashboards', icon: 'D' },
-  { path: '/analysis-builder', label: 'Analysis Builder', icon: 'A' }
+  { path: '/analysis-builder', label: 'Analysis Builder', icon: 'A' },
+  { path: '/schema-editor', label: 'Schema Editor', icon: 'E' }
 ]
 
 export default function Layout({ children }: { children: React.ReactNode }) {

@@ -5,9 +5,188 @@
 import 'dotenv/config'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
-import { schema, employees, departments, productivity, connections, analyticsPages } from '../schema'
+import { schema, employees, departments, productivity, connections, analyticsPages, schemaFiles, cubeDefinitions } from '../schema'
 
 const connectionString = process.env.DATABASE_URL || 'postgresql://dc_bi_user:dc_bi_pass123@localhost:54930/dc_bi_db'
+
+// Demo schema source code (TypeScript)
+const DEMO_SCHEMA_SOURCE = `import { pgTable, integer, text, real, boolean, timestamp, index } from 'drizzle-orm/pg-core'
+
+export const employees = pgTable('employees', {
+  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: text('name').notNull(),
+  email: text('email'),
+  active: boolean('active').default(true),
+  departmentId: integer('department_id'),
+  organisationId: integer('organisation_id').notNull(),
+  salary: real('salary'),
+  city: text('city'),
+  region: text('region'),
+  country: text('country'),
+  createdAt: timestamp('created_at').defaultNow()
+})
+
+export const departments = pgTable('departments', {
+  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: text('name').notNull(),
+  organisationId: integer('organisation_id').notNull(),
+  budget: real('budget')
+})
+
+export const productivity = pgTable('productivity', {
+  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+  employeeId: integer('employee_id').notNull(),
+  departmentId: integer('department_id'),
+  date: timestamp('date').notNull(),
+  linesOfCode: integer('lines_of_code').default(0),
+  pullRequests: integer('pull_requests').default(0),
+  happinessIndex: integer('happiness_index'),
+  organisationId: integer('organisation_id').notNull(),
+  createdAt: timestamp('created_at').defaultNow()
+})
+`
+
+// Demo cube definitions source code (TypeScript)
+const DEMO_CUBES_SOURCE = `import { eq } from 'drizzle-orm'
+import { defineCube } from 'drizzle-cube/server'
+import type { QueryContext, BaseQueryDefinition, Cube } from 'drizzle-cube/server'
+import { employees, departments, productivity } from './demo-schema'
+
+let employeesCube: Cube
+let departmentsCube: Cube
+let productivityCube: Cube
+
+employeesCube = defineCube('Employees', {
+  title: 'Employee Analytics',
+  description: 'Employee data and metrics',
+
+  sql: (ctx: QueryContext): BaseQueryDefinition => ({
+    from: employees,
+    where: eq(employees.organisationId, ctx.securityContext.organisationId as number)
+  }),
+
+  joins: {
+    Departments: {
+      targetCube: () => departmentsCube,
+      relationship: 'belongsTo',
+      on: [
+        { source: employees.departmentId, target: departments.id }
+      ]
+    },
+    Productivity: {
+      targetCube: () => productivityCube,
+      relationship: 'hasMany',
+      on: [
+        { source: employees.id, target: productivity.employeeId }
+      ]
+    }
+  },
+
+  dimensions: {
+    id: { name: 'id', title: 'Employee ID', sql: employees.id, type: 'number', primaryKey: true },
+    name: { name: 'name', title: 'Employee Name', sql: employees.name, type: 'string' },
+    email: { name: 'email', title: 'Email', sql: employees.email, type: 'string' },
+    isActive: { name: 'isActive', title: 'Active', sql: employees.active, type: 'boolean' },
+    city: { name: 'city', title: 'City', sql: employees.city, type: 'string' },
+    region: { name: 'region', title: 'Region', sql: employees.region, type: 'string' },
+    country: { name: 'country', title: 'Country', sql: employees.country, type: 'string' },
+    salary: { name: 'salary', title: 'Salary', sql: employees.salary, type: 'number' },
+    createdAt: { name: 'createdAt', title: 'Hire Date', sql: employees.createdAt, type: 'time' }
+  },
+
+  measures: {
+    count: { name: 'count', title: 'Total Employees', type: 'countDistinct', sql: employees.id },
+    activeCount: {
+      name: 'activeCount',
+      title: 'Active Employees',
+      type: 'countDistinct',
+      sql: employees.id,
+      filters: [() => eq(employees.active, true)]
+    },
+    avgSalary: { name: 'avgSalary', title: 'Average Salary', sql: employees.salary, type: 'avg' },
+    totalSalary: { name: 'totalSalary', title: 'Total Salary', sql: employees.salary, type: 'sum' },
+    maxSalary: { name: 'maxSalary', title: 'Max Salary', sql: employees.salary, type: 'max' },
+    minSalary: { name: 'minSalary', title: 'Min Salary', sql: employees.salary, type: 'min' }
+  }
+}) as Cube
+
+departmentsCube = defineCube('Departments', {
+  title: 'Department Analytics',
+  description: 'Department information and budget analysis',
+
+  sql: (ctx: QueryContext): BaseQueryDefinition => ({
+    from: departments,
+    where: eq(departments.organisationId, ctx.securityContext.organisationId as number)
+  }),
+
+  joins: {
+    Employees: {
+      targetCube: () => employeesCube,
+      relationship: 'hasMany',
+      on: [
+        { source: departments.id, target: employees.departmentId }
+      ]
+    }
+  },
+
+  dimensions: {
+    id: { name: 'id', title: 'Department ID', sql: departments.id, type: 'number', primaryKey: true },
+    name: { name: 'name', title: 'Department Name', sql: departments.name, type: 'string' },
+    budget: { name: 'budget', title: 'Budget', sql: departments.budget, type: 'number' }
+  },
+
+  measures: {
+    count: { name: 'count', title: 'Department Count', type: 'countDistinct', sql: departments.id },
+    totalBudget: { name: 'totalBudget', title: 'Total Budget', sql: departments.budget, type: 'sum' },
+    avgBudget: { name: 'avgBudget', title: 'Average Budget', sql: departments.budget, type: 'avg' }
+  }
+}) as Cube
+
+productivityCube = defineCube('Productivity', {
+  title: 'Productivity Metrics',
+  description: 'Daily productivity data per employee',
+
+  sql: (ctx: QueryContext): BaseQueryDefinition => ({
+    from: productivity,
+    where: eq(productivity.organisationId, ctx.securityContext.organisationId as number)
+  }),
+
+  joins: {
+    Employees: {
+      targetCube: () => employeesCube,
+      relationship: 'belongsTo',
+      on: [
+        { source: productivity.employeeId, target: employees.id }
+      ]
+    },
+    Departments: {
+      targetCube: () => departmentsCube,
+      relationship: 'belongsTo',
+      on: [
+        { source: productivity.departmentId, target: departments.id }
+      ]
+    }
+  },
+
+  dimensions: {
+    id: { name: 'id', title: 'Record ID', sql: productivity.id, type: 'number', primaryKey: true },
+    date: { name: 'date', title: 'Date', sql: productivity.date, type: 'time' },
+    linesOfCode: { name: 'linesOfCode', title: 'Lines of Code', sql: productivity.linesOfCode, type: 'number' },
+    pullRequests: { name: 'pullRequests', title: 'Pull Requests', sql: productivity.pullRequests, type: 'number' },
+    happinessIndex: { name: 'happinessIndex', title: 'Happiness Index', sql: productivity.happinessIndex, type: 'number' }
+  },
+
+  measures: {
+    count: { name: 'count', title: 'Total Records', type: 'count', sql: productivity.id },
+    totalLinesOfCode: { name: 'totalLinesOfCode', title: 'Total Lines of Code', sql: productivity.linesOfCode, type: 'sum' },
+    avgLinesOfCode: { name: 'avgLinesOfCode', title: 'Average Lines of Code', sql: productivity.linesOfCode, type: 'avg' },
+    totalPullRequests: { name: 'totalPullRequests', title: 'Total Pull Requests', sql: productivity.pullRequests, type: 'sum' },
+    avgHappiness: { name: 'avgHappiness', title: 'Average Happiness', sql: productivity.happinessIndex, type: 'avg' }
+  }
+}) as Cube
+
+export const allCubes = [employeesCube, departmentsCube, productivityCube]
+`
 
 async function seedDatabase() {
   console.log('Seeding DC-BI database...')
@@ -76,19 +255,41 @@ async function seedDatabase() {
     console.log(`Seeded ${prodData.length} productivity records`)
 
     // Seed a default "local" connection entry pointing to this database
-    await db.insert(connections).values({
+    const [demoConnection] = await db.insert(connections).values({
       name: 'Local PostgreSQL (Demo)',
       description: 'Built-in demo database with sample employee data',
       engineType: 'postgres',
       connectionString: connectionString,
       organisationId: 1
-    })
+    }).returning()
     console.log('Seeded default connection')
+
+    // Seed demo schema file
+    const [demoSchemaFile] = await db.insert(schemaFiles).values({
+      name: 'demo-schema.ts',
+      sourceCode: DEMO_SCHEMA_SOURCE,
+      connectionId: demoConnection.id,
+      organisationId: 1,
+    }).returning()
+    console.log('Seeded demo schema file')
+
+    // Seed demo cube definitions
+    await db.insert(cubeDefinitions).values({
+      name: 'Demo Cubes',
+      title: 'Employee Analytics Cubes',
+      description: 'Employees, Departments, and Productivity cubes for the demo dataset',
+      sourceCode: DEMO_CUBES_SOURCE,
+      schemaFileId: demoSchemaFile.id,
+      connectionId: demoConnection.id,
+      organisationId: 1,
+    })
+    console.log('Seeded demo cube definitions')
 
     // Seed an example dashboard
     await db.insert(analyticsPages).values({
       name: 'Overview Dashboard',
       description: 'Employee and productivity overview',
+      connectionId: demoConnection.id,
       config: {
         portlets: [
           {
@@ -137,6 +338,8 @@ async function seedDatabase() {
     console.log(`- ${emps.length} employees`)
     console.log(`- ${prodData.length} productivity records`)
     console.log('- 1 database connection')
+    console.log('- 1 schema file (demo-schema.ts)')
+    console.log('- 1 cube definition (Demo Cubes)')
     console.log('- 1 example dashboard')
 
     process.exit(0)

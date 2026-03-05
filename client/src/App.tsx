@@ -10,6 +10,7 @@ import NotebooksListPage from './pages/NotebooksListPage'
 import NotebookViewPage from './pages/NotebookViewPage'
 import LoginPage from './pages/LoginPage'
 import SetupPage from './pages/SetupPage'
+import SchemaEditorPage from './pages/SchemaEditorPage'
 import SettingsPage from './pages/settings/SettingsPage'
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
                 <Route path="/dashboards" element={<DashboardListPage />} />
                 <Route path="/dashboards/:id" element={<DashboardViewPage />} />
                 <Route path="/analysis-builder" element={<AnalysisBuilderPage />} />
+                <Route path="/schema-editor" element={<SchemaEditorPage />} />
                 <Route path="/notebooks" element={<NotebooksListPage />} />
                 <Route path="/notebooks/:id" element={<NotebookViewPage />} />
                 <Route path="/settings/*" element={<SettingsPage />} />

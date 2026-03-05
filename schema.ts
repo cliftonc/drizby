@@ -25,14 +25,35 @@ export const connections = pgTable('connections', {
   index('idx_connections_org').on(table.organisationId)
 ])
 
+// Schema files - stores Drizzle pgTable() definitions as TypeScript source
+export const schemaFiles = pgTable('schema_files', {
+  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: text('name').notNull(), // e.g. "orders.ts"
+  sourceCode: text('source_code').notNull(),
+  connectionId: integer('connection_id').notNull(),
+  organisationId: integer('organisation_id').notNull(),
+  compiledAt: timestamp('compiled_at'),
+  compilationErrors: jsonb('compilation_errors'),
+  version: integer('version').default(1),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+}, (table) => [
+  index('idx_schema_files_org').on(table.organisationId),
+  index('idx_schema_files_connection').on(table.connectionId)
+])
+
 // Cube definitions - stores cube configurations that can be edited and compiled
 export const cubeDefinitions = pgTable('cube_definitions', {
   id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
   name: text('name').notNull(),
   title: text('title'),
   description: text('description'),
+  sourceCode: text('source_code'), // Raw TypeScript source
+  schemaFileId: integer('schema_file_id'), // FK to schemaFiles
   connectionId: integer('connection_id').notNull(),
-  definition: jsonb('definition').notNull(), // The cube definition JSON
+  definition: jsonb('definition'), // Compiled metadata cache
+  compiledAt: timestamp('compiled_at'),
+  compilationErrors: jsonb('compilation_errors'),
   isActive: boolean('is_active').default(true),
   organisationId: integer('organisation_id').notNull(),
   createdAt: timestamp('created_at').defaultNow(),
@@ -47,6 +68,7 @@ export const analyticsPages = pgTable('analytics_pages', {
   id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
   name: text('name').notNull(),
   description: text('description'),
+  connectionId: integer('connection_id'),
   organisationId: integer('organisation_id').notNull(),
   config: jsonb('config').notNull().$type<{
     portlets: Array<{
@@ -87,6 +109,7 @@ export const notebooks = pgTable('notebooks', {
   id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
   name: text('name').notNull(),
   description: text('description'),
+  connectionId: integer('connection_id'),
   organisationId: integer('organisation_id').notNull(),
   config: jsonb('config').$type<{
     blocks: Array<{
@@ -213,13 +236,25 @@ export const productivity = pgTable('productivity', {
 // ============================================================================
 
 export const connectionsRelations = relations(connections, ({ many }) => ({
-  cubeDefinitions: many(cubeDefinitions)
+  cubeDefinitions: many(cubeDefinitions),
+  schemaFiles: many(schemaFiles)
+}))
+
+export const schemaFilesRelations = relations(schemaFiles, ({ one }) => ({
+  connection: one(connections, {
+    fields: [schemaFiles.connectionId],
+    references: [connections.id]
+  })
 }))
 
 export const cubeDefinitionsRelations = relations(cubeDefinitions, ({ one }) => ({
   connection: one(connections, {
     fields: [cubeDefinitions.connectionId],
     references: [connections.id]
+  }),
+  schemaFile: one(schemaFiles, {
+    fields: [cubeDefinitions.schemaFileId],
+    references: [schemaFiles.id]
   })
 }))
 
@@ -264,6 +299,7 @@ export const oauthAccountsRelations = relations(oauthAccounts, ({ one }) => ({
 // Export schema for use with Drizzle
 export const schema = {
   connections,
+  schemaFiles,
   cubeDefinitions,
   analyticsPages,
   notebooks,
@@ -275,6 +311,7 @@ export const schema = {
   departments,
   productivity,
   connectionsRelations,
+  schemaFilesRelations,
   cubeDefinitionsRelations,
   employeesRelations,
   departmentsRelations,
