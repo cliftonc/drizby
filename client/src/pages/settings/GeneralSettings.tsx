@@ -48,72 +48,60 @@ export default function GeneralSettings() {
     }
   }
 
-  return (
-    <div className="max-w-lg">
-      <h2 className="text-lg font-semibold text-white mb-6">General</h2>
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '6px 12px', backgroundColor: 'var(--dc-input-bg)', border: '1px solid var(--dc-input-border)',
+    borderRadius: 6, color: 'var(--dc-input-text)', fontSize: 13, outline: 'none', boxSizing: 'border-box'
+  }
 
-      <div className="mb-8 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
-        <h3 className="text-sm font-medium text-gray-300 mb-3">Profile</h3>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-gray-500">Name</span>
-            <span className="text-white">{user?.name}</span>
+  return (
+    <div style={{ maxWidth: 480 }}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--dc-text)', marginBottom: 24, marginTop: 0 }}>Your Profile</h2>
+
+      <div style={{ marginBottom: 32, padding: 16, backgroundColor: 'var(--dc-surface)', borderRadius: 8, border: '1px solid var(--dc-border)' }}>
+        <h3 style={{ fontSize: 13, fontWeight: 500, color: 'var(--dc-text-secondary)', marginBottom: 12, marginTop: 0 }}>Profile</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--dc-text-muted)' }}>Name</span>
+            <span style={{ color: 'var(--dc-text)' }}>{user?.name}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-500">Email</span>
-            <span className="text-white">{user?.email}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--dc-text-muted)' }}>Email</span>
+            <span style={{ color: 'var(--dc-text)' }}>{user?.email}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-500">Role</span>
-            <span className="text-white capitalize">{user?.role}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--dc-text-muted)' }}>Role</span>
+            <span style={{ color: 'var(--dc-text)', textTransform: 'capitalize' }}>{user?.role}</span>
           </div>
         </div>
       </div>
 
-      <div className="p-4 bg-gray-800/50 rounded-lg border border-gray-700">
-        <h3 className="text-sm font-medium text-gray-300 mb-3">Change Password</h3>
+      <div style={{ padding: 16, backgroundColor: 'var(--dc-surface)', borderRadius: 8, border: '1px solid var(--dc-border)' }}>
+        <h3 style={{ fontSize: 13, fontWeight: 500, color: 'var(--dc-text-secondary)', marginBottom: 12, marginTop: 0 }}>Change Password</h3>
 
         {error && (
-          <div className="bg-red-900/50 border border-red-700 text-red-200 text-sm px-3 py-2 rounded mb-3">{error}</div>
+          <div style={{ backgroundColor: 'var(--dc-error-bg)', border: '1px solid var(--dc-error-border)', color: 'var(--dc-error)', fontSize: 12, padding: '8px 12px', borderRadius: 6, marginBottom: 12 }}>{error}</div>
         )}
         {message && (
-          <div className="bg-green-900/50 border border-green-700 text-green-200 text-sm px-3 py-2 rounded mb-3">{message}</div>
+          <div style={{ backgroundColor: 'var(--dc-success-bg)', border: '1px solid var(--dc-success-border)', color: 'var(--dc-success)', fontSize: 12, padding: '8px 12px', borderRadius: 6, marginBottom: 12 }}>{message}</div>
         )}
 
-        <form onSubmit={handlePasswordChange} className="space-y-3">
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Current Password</label>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={e => setCurrentPassword(e.target.value)}
-              className="w-full px-3 py-1.5 bg-gray-900 border border-gray-700 rounded text-white text-sm focus:outline-none focus:border-blue-500"
-            />
+        <form onSubmit={handlePasswordChange}>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 4 }}>Current Password</label>
+            <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} style={inputStyle} />
           </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">New Password</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              required
-              className="w-full px-3 py-1.5 bg-gray-900 border border-gray-700 rounded text-white text-sm focus:outline-none focus:border-blue-500"
-            />
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 4 }}>New Password</label>
+            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required style={inputStyle} />
           </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Confirm New Password</label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-              required
-              className="w-full px-3 py-1.5 bg-gray-900 border border-gray-700 rounded text-white text-sm focus:outline-none focus:border-blue-500"
-            />
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 4 }}>Confirm New Password</label>
+            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required style={inputStyle} />
           </div>
           <button
             type="submit"
             disabled={loading}
-            className="py-1.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded transition-colors"
+            style={{ padding: '6px 16px', backgroundColor: 'var(--dc-primary)', color: 'var(--dc-primary-content)', fontWeight: 500, borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, opacity: loading ? 0.5 : 1 }}
           >
             {loading ? 'Updating...' : 'Update Password'}
           </button>

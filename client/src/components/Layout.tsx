@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useCallback, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import ThemeToggle from './ThemeToggle'
 
 const SIDEBAR_WIDTH_KEY = 'dc-sidebar-width'
 const MIN_WIDTH = 48
@@ -10,10 +11,9 @@ const COLLAPSE_THRESHOLD = 100
 
 const navItems = [
   { path: '/', label: 'Home', icon: 'H' },
-  { path: '/dashboards', label: 'Dashboards', icon: 'D' },
-  { path: '/analysis-builder', label: 'Analysis Builder', icon: 'A' },
   { path: '/notebooks', label: 'Notebooks', icon: 'N' },
-  { path: '/settings', label: 'Settings', icon: 'S' }
+  { path: '/dashboards', label: 'Dashboards', icon: 'D' },
+  { path: '/analysis-builder', label: 'Analysis Builder', icon: 'A' }
 ]
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -78,14 +78,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       }}>
         <div style={{
           padding: collapsed ? '0 0 24px' : '0 16px 24px',
-          fontSize: 20,
-          fontWeight: 700,
           borderBottom: '1px solid rgba(255,255,255,0.1)',
-          textAlign: collapsed ? 'center' : 'left',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          gap: 8,
           whiteSpace: 'nowrap',
           overflow: 'hidden'
         }}>
-          {collapsed ? 'DC' : 'DC-BI'}
+          <span style={{ fontSize: 20, fontWeight: 700 }}>
+            {collapsed ? 'DC' : 'DC-BI'}
+          </span>
+          {!collapsed && <ThemeToggle />}
         </div>
 
         <div style={{ padding: '16px 0', flex: 1, overflow: 'auto' }}>
@@ -133,30 +137,60 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           })}
         </div>
 
+        {/* Settings link */}
+        {(() => {
+          const isActive = location.pathname.startsWith('/settings')
+          return (
+            <Link
+              to="/settings"
+              title={collapsed ? 'Settings' : undefined}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: collapsed ? 0 : 12,
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                padding: collapsed ? '10px 0' : '10px 16px',
+                color: isActive ? '#fff' : 'var(--dc-sidebar-text)',
+                backgroundColor: isActive ? 'var(--dc-sidebar-active)' : 'transparent',
+                textDecoration: 'none',
+                fontSize: 14,
+                transition: 'background-color 0.15s',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                borderTop: '1px solid rgba(255,255,255,0.1)'
+              }}
+            >
+              <span style={{
+                width: 28, height: 28, borderRadius: 6,
+                backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 600, flexShrink: 0
+              }}>S</span>
+              {!collapsed && 'Settings'}
+            </Link>
+          )
+        })()}
+
+        {/* User row */}
         <div style={{
-          padding: collapsed ? '12px 0' : '12px 16px',
+          padding: collapsed ? '8px 0' : '8px 16px',
           borderTop: '1px solid rgba(255,255,255,0.1)',
           display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
-          alignItems: collapsed ? 'center' : 'stretch'
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          gap: 8
         }}>
           {!collapsed && user && (
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
               {user.name}
-            </div>
+            </span>
           )}
           <button
             onClick={async () => { await logout(); navigate('/login') }}
-            title={collapsed ? 'Sign out' : undefined}
+            title={collapsed ? 'Sign out' : 'Sign out'}
             style={{
-              background: 'none',
-              border: 'none',
-              color: 'rgba(255,255,255,0.4)',
-              cursor: 'pointer',
-              fontSize: 12,
-              padding: 0,
-              textAlign: collapsed ? 'center' : 'left'
+              background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)',
+              cursor: 'pointer', fontSize: 11, padding: 0, flexShrink: 0, whiteSpace: 'nowrap'
             }}
           >
             {collapsed ? 'X' : 'Sign out'}
@@ -193,6 +227,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         flex: 1,
         padding: 24,
         backgroundColor: 'var(--dc-background)',
+        backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 40L40 0M-10 10L10-10M30 50L50 30' stroke='%239C92AC' stroke-opacity='0.07' stroke-width='1'/%3E%3C/svg%3E")`,
         overflow: 'auto',
         minWidth: 0,
         display: 'flex',

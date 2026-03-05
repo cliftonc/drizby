@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* Light Theme (Default) */
-:root {
+/* DC-BI Light Theme (Default) */
+:root, [data-theme="light"] {
   --dc-surface: #ffffff;
   --dc-surface-secondary: #f9fafb;
   --dc-surface-tertiary: #f3f4f6;
@@ -84,12 +84,23 @@
   --dc-column-gap: 16px;
   --dc-row-gap: 24px;
   --dc-max-h: 85vh;
+
+  /* Auth page tokens */
+  --dc-auth-bg: #f3f4f6;
+  --dc-input-bg: #ffffff;
+  --dc-input-border: #d1d5db;
+  --dc-input-text: #111827;
+  --dc-input-placeholder: #9ca3af;
+  --dc-badge-admin-bg: rgba(147, 51, 234, 0.15);
+  --dc-badge-admin-text: #7c3aed;
+  --dc-badge-active-bg: rgba(16, 185, 129, 0.15);
+  --dc-badge-active-text: #059669;
+  --dc-badge-blocked-bg: rgba(239, 68, 68, 0.15);
+  --dc-badge-blocked-text: #dc2626;
 }
 
-/* Dark Theme */
-[data-theme="dark"],
-.dark,
-html.dark {
+/* DC-BI Dark Theme */
+[data-theme="dark"], html.dark {
   --dc-surface: #1e293b;
   --dc-surface-secondary: #334155;
   --dc-surface-tertiary: #475569;
@@ -167,6 +178,19 @@ html.dark {
   --dc-danger-border: var(--dc-error-border);
   --dc-ai-gradient-start: rgba(139, 92, 246, 0.15);
   --dc-ai-gradient-end: rgba(99, 102, 241, 0.15);
+
+  /* Auth page tokens */
+  --dc-auth-bg: #0f172a;
+  --dc-input-bg: #1e293b;
+  --dc-input-border: #475569;
+  --dc-input-text: #f1f5f9;
+  --dc-input-placeholder: #64748b;
+  --dc-badge-admin-bg: rgba(147, 51, 234, 0.3);
+  --dc-badge-admin-text: #c084fc;
+  --dc-badge-active-bg: rgba(52, 211, 153, 0.2);
+  --dc-badge-active-text: #34d399;
+  --dc-badge-blocked-bg: rgba(248, 113, 113, 0.2);
+  --dc-badge-blocked-text: #f87171;
 }
 
 /* Tailwind Utilities for Theme Variables */

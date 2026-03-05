@@ -4,7 +4,7 @@ const sections = [
   {
     label: 'Account',
     items: [
-      { path: '/settings', label: 'General' },
+      { path: '/settings', label: 'Your Profile' },
       { path: '/settings/team', label: 'Team' },
     ]
   },
@@ -21,23 +21,31 @@ export default function SettingsNav() {
   const location = useLocation()
 
   return (
-    <nav className="w-56 shrink-0 border-r border-gray-800 pr-6">
-      <h2 className="text-lg font-semibold text-white mb-6">Settings</h2>
+    <nav style={{ width: 200, flexShrink: 0, borderRight: '1px solid var(--dc-border)', paddingRight: 24 }}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--dc-text)', marginBottom: 24, marginTop: 0 }}>Settings</h2>
       {sections.map(section => (
-        <div key={section.label} className="mb-6">
-          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">{section.label}</h3>
-          <div className="space-y-1">
+        <div key={section.label} style={{ marginBottom: 24 }}>
+          <h3 style={{ fontSize: 11, fontWeight: 500, color: 'var(--dc-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, marginTop: 0 }}>
+            {section.label}
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {section.items.map(item => {
               const isActive = location.pathname === item.path
               return (
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`block px-3 py-1.5 rounded text-sm transition-colors ${
-                    isActive
-                      ? 'bg-gray-800 text-white font-medium'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
-                  }`}
+                  style={{
+                    display: 'block',
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    textDecoration: 'none',
+                    color: isActive ? 'var(--dc-text)' : 'var(--dc-text-muted)',
+                    backgroundColor: isActive ? 'var(--dc-surface-hover)' : 'transparent',
+                    fontWeight: isActive ? 500 : 400,
+                    transition: 'background-color 0.15s'
+                  }}
                 >
                   {item.label}
                 </Link>
