@@ -3,7 +3,7 @@
  * Core tables for the BI platform plus sample analytics data
  */
 
-import { pgTable, integer, text, real, boolean, timestamp, jsonb, index } from 'drizzle-orm/pg-core'
+import { pgTable, integer, text, real, boolean, timestamp, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { relations } from 'drizzle-orm'
 
 // ============================================================================
@@ -124,6 +124,45 @@ export const settings = pgTable('settings', {
   index('idx_settings_org').on(table.organisationId)
 ])
 
+// Users
+export const users = pgTable('users', {
+  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+  email: text('email').notNull().unique(),
+  username: text('username').notNull().unique(),
+  name: text('name').notNull(),
+  passwordHash: text('password_hash'),
+  role: text('role').notNull().default('member'),
+  isBlocked: boolean('is_blocked').notNull().default(false),
+  avatarUrl: text('avatar_url'),
+  organisationId: integer('organisation_id').notNull().default(1),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+}, (table) => [
+  index('idx_users_org').on(table.organisationId)
+])
+
+// User sessions
+export const userSessions = pgTable('user_sessions', {
+  id: text('id').primaryKey(), // 64-char hex
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').defaultNow()
+})
+
+// OAuth accounts
+export const oauthAccounts = pgTable('oauth_accounts', {
+  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull(),
+  providerUserId: text('provider_user_id').notNull(),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+}, (table) => [
+  uniqueIndex('idx_oauth_provider_user').on(table.provider, table.providerUserId)
+])
+
 // ============================================================================
 // Sample Data Tables (for the built-in demo data source)
 // ============================================================================
@@ -203,6 +242,25 @@ export const productivityRelations = relations(productivity, ({ one }) => ({
   })
 }))
 
+export const usersRelations = relations(users, ({ many }) => ({
+  sessions: many(userSessions),
+  oauthAccounts: many(oauthAccounts)
+}))
+
+export const userSessionsRelations = relations(userSessions, ({ one }) => ({
+  user: one(users, {
+    fields: [userSessions.userId],
+    references: [users.id]
+  })
+}))
+
+export const oauthAccountsRelations = relations(oauthAccounts, ({ one }) => ({
+  user: one(users, {
+    fields: [oauthAccounts.userId],
+    references: [users.id]
+  })
+}))
+
 // Export schema for use with Drizzle
 export const schema = {
   connections,
@@ -210,6 +268,9 @@ export const schema = {
   analyticsPages,
   notebooks,
   settings,
+  users,
+  userSessions,
+  oauthAccounts,
   employees,
   departments,
   productivity,
@@ -217,7 +278,10 @@ export const schema = {
   cubeDefinitionsRelations,
   employeesRelations,
   departmentsRelations,
-  productivityRelations
+  productivityRelations,
+  usersRelations,
+  userSessionsRelations,
+  oauthAccountsRelations
 }
 
 export type Schema = typeof schema

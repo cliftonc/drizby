@@ -1,5 +1,6 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useCallback, useRef } from 'react'
+import { useAuth } from '../contexts/AuthContext'
 
 const SIDEBAR_WIDTH_KEY = 'dc-sidebar-width'
 const MIN_WIDTH = 48
@@ -9,15 +10,16 @@ const COLLAPSE_THRESHOLD = 100
 
 const navItems = [
   { path: '/', label: 'Home', icon: 'H' },
-  { path: '/connections', label: 'Connections', icon: 'C' },
-  { path: '/cube-definitions', label: 'Cube Definitions', icon: 'Q' },
   { path: '/dashboards', label: 'Dashboards', icon: 'D' },
   { path: '/analysis-builder', label: 'Analysis Builder', icon: 'A' },
-  { path: '/notebooks', label: 'Notebooks', icon: 'N' }
+  { path: '/notebooks', label: 'Notebooks', icon: 'N' },
+  { path: '/settings', label: 'Settings', icon: 'S' }
 ]
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { user, logout } = useAuth()
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY)
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH
@@ -131,18 +133,35 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           })}
         </div>
 
-        {!collapsed && (
-          <div style={{
-            padding: '16px',
-            fontSize: 11,
-            color: 'rgba(255,255,255,0.4)',
-            borderTop: '1px solid rgba(255,255,255,0.1)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden'
-          }}>
-            Powered by drizzle-cube
-          </div>
-        )}
+        <div style={{
+          padding: collapsed ? '12px 0' : '12px 16px',
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          alignItems: collapsed ? 'center' : 'stretch'
+        }}>
+          {!collapsed && user && (
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {user.name}
+            </div>
+          )}
+          <button
+            onClick={async () => { await logout(); navigate('/login') }}
+            title={collapsed ? 'Sign out' : undefined}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+              fontSize: 12,
+              padding: 0,
+              textAlign: collapsed ? 'center' : 'left'
+            }}
+          >
+            {collapsed ? 'X' : 'Sign out'}
+          </button>
+        </div>
       </nav>
 
       {/* Resize handle */}

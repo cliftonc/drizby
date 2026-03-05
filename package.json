@@ -25,6 +25,7 @@
     "@hono/node-server": "^1.8.0",
     "@nivo/heatmap": "^0.99.0",
     "@tanstack/react-query": "^5.0.0",
+    "arctic": "^3.7.0",
     "dotenv": "^17.2.1",
     "drizzle-cube": "^0.4.22",
     "drizzle-orm": "^0.45.0",
