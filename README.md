@@ -6,6 +6,18 @@ Drizby is a Metabase-style analytics platform that uses your existing Drizzle sc
 
 > **Work in progress.** Drizby is under active development.
 
+## Quick Start
+
+One command:
+
+```bash
+docker run -p 3461:3461 -v drizby-data:/app/data ghcr.io/cliftonc/drizby:main
+```
+
+Open [http://localhost:3461](http://localhost:3461) and follow the setup wizard to create your admin account. A demo dataset with sample employee/productivity data is seeded automatically on first run.
+
+The `-v drizby-data:/app/data` flag persists your databases and configuration across container restarts. To start fresh, run `docker volume rm drizby-data`.
+
 ---
 
 ## Features
@@ -82,18 +94,6 @@ Multi-database connection management:
 - Powers both agentic notebooks and AI cube generation
 
 ---
-
-## Quick Start
-
-One command:
-
-```bash
-docker run -p 3461:3461 -v drizby-data:/app/data ghcr.io/cliftonc/drizby:main
-```
-
-Open [http://localhost:3461](http://localhost:3461) and follow the setup wizard to create your admin account. A demo dataset with sample employee/productivity data is seeded automatically on first run.
-
-The `-v drizby-data:/app/data` flag persists your databases and configuration across container restarts. To start fresh, run `docker volume rm drizby-data`.
 
 ### Build from source
 
