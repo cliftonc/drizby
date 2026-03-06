@@ -1,7 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { useState, useCallback, useRef, useMemo } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useCreateNotebook, useNotebooks } from '../hooks/useNotebooks'
 import { useAnalyticsPages } from '../hooks/useAnalyticsPages'
+import { useConnections } from '../hooks/useConnections'
+import { useAuth } from '../contexts/AuthContext'
 
 const heroTitles = [
   'What are you curious about today?',
@@ -43,6 +46,110 @@ function Divider() {
 }
 
 
+interface UnreadyConnection { id: number; name: string; schemaCount: number; cubeDefCount: number; cubeCount: number }
+
+function SetupChecklist({ hasAI, hasOwnConnection, unreadyConnections = [], aiRef }: {
+  hasAI: boolean
+  hasOwnConnection: boolean
+  unreadyConnections?: UnreadyConnection[]
+  aiRef?: React.RefObject<HTMLAnchorElement | null>
+}) {
+  const schemaIcon = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25a2.25 2.25 0 0 1-2.25-2.25v-2.25Z" /></svg>
+
+  type Step = { done: boolean; label: string; doneLabel: string; link: string; cta: string; isAI: boolean; icon: React.ReactNode }
+
+  const steps: Step[] = [
+    {
+      done: hasAI,
+      label: 'Add an AI key to power notebooks',
+      doneLabel: 'AI configured',
+      link: '/settings/ai',
+      cta: 'Configure AI',
+      isAI: true,
+      icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" /></svg>,
+    },
+    {
+      done: hasOwnConnection,
+      label: 'Add your own database connection',
+      doneLabel: 'Own database connected',
+      link: '/settings/connections',
+      cta: 'Add Connection',
+      isAI: false,
+      icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" /></svg>,
+    },
+    ...unreadyConnections.map(conn => {
+      const noSchema = conn.schemaCount === 0
+      const noCubeDefs = conn.cubeDefCount === 0
+      return {
+        done: false,
+        label: noSchema
+          ? `"${conn.name}" needs a schema definition`
+          : noCubeDefs
+            ? `"${conn.name}" needs cube definitions`
+            : `"${conn.name}" has cube compilation errors`,
+        doneLabel: '',
+        link: `/schema-editor/${conn.id}`,
+        cta: noSchema ? 'Add Schema' : 'Open Editor',
+        isAI: false,
+        icon: schemaIcon,
+      }
+    }),
+  ]
+
+  return (
+    <>
+      {steps.map((step, i) => (
+        <Link
+          key={i}
+          ref={step.isAI ? aiRef as React.Ref<HTMLAnchorElement> : undefined}
+          to={step.done ? '#' : step.link}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+            borderRadius: 8, border: '1px solid var(--dc-border)', backgroundColor: 'var(--dc-surface)',
+            color: 'var(--dc-text-secondary)', fontSize: 13, textDecoration: 'none',
+            transition: 'border-color 0.15s',
+            opacity: step.done ? 0.6 : 1,
+            cursor: step.done ? 'default' : 'pointer',
+          }}
+          onClick={step.done ? (e) => e.preventDefault() : undefined}
+          onMouseEnter={e => { if (!step.done) e.currentTarget.style.borderColor = 'var(--dc-primary)' }}
+          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--dc-border)'}
+        >
+          {step.done ? (
+            <div style={{
+              width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+              backgroundColor: 'var(--dc-success, #22c55e)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            </div>
+          ) : (
+            <div style={{ color: 'var(--dc-text-muted)', flexShrink: 0 }}>{step.icon}</div>
+          )}
+          <span style={{
+            flex: 1,
+            textDecoration: step.done ? 'line-through' : 'none',
+            color: step.done ? 'var(--dc-text-muted)' : 'var(--dc-text)',
+          }}>
+            {step.done ? step.doneLabel : step.label}
+          </span>
+          {!step.done && (
+            <span style={{
+              fontSize: 12, fontWeight: 500, color: 'var(--dc-primary)',
+              padding: '2px 10px', borderRadius: 6, border: '1px solid var(--dc-primary)',
+              whiteSpace: 'nowrap'
+            }}>
+              {step.cta}
+            </span>
+          )}
+        </Link>
+      ))}
+    </>
+  )
+}
+
 export default function HomePage() {
   const [value, setValue] = useState('')
   const [isCreating, setIsCreating] = useState(false)
@@ -51,29 +158,78 @@ export default function HomePage() {
   const createNotebook = useCreateNotebook()
   const { data: dashboards = [] } = useAnalyticsPages()
   const { data: notebooks = [] } = useNotebooks()
+  const { data: connections = [] } = useConnections()
+  const { user } = useAuth()
+  const [selectedConnectionId, setSelectedConnectionId] = useState<number | undefined>()
+
+  const { data: aiConfig } = useQuery<{ provider: string; hasApiKey: boolean }>({
+    queryKey: ['settings', 'ai'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/ai', { credentials: 'include' })
+      if (!res.ok) return { provider: '', hasApiKey: false }
+      return res.json()
+    },
+    enabled: user?.role === 'admin',
+  })
+
+  const hasAI = !!(aiConfig?.provider && aiConfig?.hasApiKey)
+  const aiTaskRef = useRef<HTMLAnchorElement>(null)
+
+  interface ConnectionStatus {
+    id: number
+    name: string
+    schemaCount: number
+    schemasCompiled: number
+    cubeDefCount: number
+    cubeDefsCompiled: number
+    cubeCount: number
+    ready: boolean
+  }
+
+  const { data: connectionStatuses = [] } = useQuery<ConnectionStatus[]>({
+    queryKey: ['connections', 'status'],
+    queryFn: async () => {
+      const res = await fetch('/api/connections/status', { credentials: 'include' })
+      if (!res.ok) return []
+      return res.json()
+    },
+  })
+
+  useEffect(() => {
+    if (!selectedConnectionId && connections.length > 0) {
+      setSelectedConnectionId(connections[0].id)
+    }
+  }, [connections, selectedConnectionId])
 
   const handleAsk = useCallback(async (prompt?: string) => {
     const text = (prompt || value).trim()
     if (!text || isCreating) return
+    if (user?.role === 'admin' && !hasAI && aiTaskRef.current) {
+      aiTaskRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      aiTaskRef.current.classList.remove('setup-flash')
+      void aiTaskRef.current.offsetWidth
+      aiTaskRef.current.classList.add('setup-flash')
+      return
+    }
     setIsCreating(true)
     try {
-      const notebook = await createNotebook.mutateAsync({ name: text.slice(0, 100) })
+      const notebook = await createNotebook.mutateAsync({ name: text.slice(0, 100), connectionId: selectedConnectionId })
       navigate(`/notebooks/${notebook.id}`, { state: { initialPrompt: text } })
     } catch {
       setIsCreating(false)
     }
-  }, [value, isCreating, createNotebook, navigate])
+  }, [value, isCreating, createNotebook, navigate, selectedConnectionId, user, hasAI])
 
   const handleNewNotebook = useCallback(async () => {
     if (isCreating) return
     setIsCreating(true)
     try {
-      const notebook = await createNotebook.mutateAsync({ name: `Notebook ${new Date().toLocaleDateString()}` })
+      const notebook = await createNotebook.mutateAsync({ name: `Notebook ${new Date().toLocaleDateString()}`, connectionId: selectedConnectionId })
       navigate(`/notebooks/${notebook.id}`)
     } catch {
       setIsCreating(false)
     }
-  }, [isCreating, createNotebook, navigate])
+  }, [isCreating, createNotebook, navigate, selectedConnectionId])
 
   const heroTitle = useMemo(() => heroTitles[Math.floor(Math.random() * heroTitles.length)], [])
   const recentNotebooks = notebooks.slice(0, 5)
@@ -99,6 +255,16 @@ export default function HomePage() {
           0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
           50% { opacity: 0.6; transform: scale(1.3) rotate(15deg); }
         }
+        @keyframes setup-attention {
+          0% { box-shadow: 0 0 0 0 rgba(var(--dc-primary-rgb), 0); }
+          15% { box-shadow: 0 0 20px 4px rgba(var(--dc-primary-rgb), 0.5); }
+          30% { box-shadow: 0 0 4px 1px rgba(var(--dc-primary-rgb), 0.1); }
+          45% { box-shadow: 0 0 20px 4px rgba(var(--dc-primary-rgb), 0.5); }
+          60% { box-shadow: 0 0 4px 1px rgba(var(--dc-primary-rgb), 0.1); }
+          75% { box-shadow: 0 0 20px 4px rgba(var(--dc-primary-rgb), 0.4); }
+          100% { box-shadow: 0 0 0 0 rgba(var(--dc-primary-rgb), 0); }
+        }
+        .setup-flash { animation: setup-attention 1.5s ease-out; }
       `}</style>
 
       <div style={{ position: 'relative' }}>
@@ -163,21 +329,38 @@ export default function HomePage() {
                 position: 'absolute', left: 12, right: 12, bottom: 12,
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between'
               }}>
-                <button
-                  onClick={handleNewNotebook}
-                  disabled={isCreating}
-                  style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--dc-text-muted)', fontSize: 13, padding: '4px 8px',
-                    borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6,
-                    opacity: isCreating ? 0.4 : 1
-                  }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 4.5v15m7.5-7.5h-15" />
-                  </svg>
-                  New Notebook
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {connections.length > 1 && (
+                    <select
+                      value={selectedConnectionId ?? ''}
+                      onChange={(e) => setSelectedConnectionId(parseInt(e.target.value))}
+                      style={{
+                        background: 'none', border: '1px solid var(--dc-border)', cursor: 'pointer',
+                        color: 'var(--dc-text-muted)', fontSize: 12, padding: '3px 6px',
+                        borderRadius: 6, outline: 'none'
+                      }}
+                    >
+                      {connections.map((conn) => (
+                        <option key={conn.id} value={conn.id}>{conn.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  <button
+                    onClick={handleNewNotebook}
+                    disabled={isCreating}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--dc-text-muted)', fontSize: 13, padding: '4px 8px',
+                      borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6,
+                      opacity: isCreating ? 0.4 : 1
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    New Notebook
+                  </button>
+                </div>
                 <button
                   onClick={() => handleAsk()}
                   disabled={!value.trim() || isCreating}
@@ -219,6 +402,40 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+
+        {/* Setup Tasks */}
+        {user?.role === 'admin' && aiConfig && (() => {
+          const hasOwnConn = connections.some(c => c.name !== 'Demo SQLite')
+          const aiDone = !!(aiConfig.provider && aiConfig.hasApiKey)
+          const unready = connectionStatuses.filter(c => !c.ready)
+          const totalTasks = 2 + connectionStatuses.length
+          const doneCount = (aiDone ? 1 : 0) + (hasOwnConn ? 1 : 0) + (connectionStatuses.length - unready.length)
+          if (doneCount === totalTasks) return null
+          return (
+            <>
+              <Divider />
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--dc-text)', margin: 0 }}>Setup Tasks</h3>
+                  <span style={{
+                    fontSize: 11, fontWeight: 500, padding: '1px 8px', borderRadius: 10,
+                    backgroundColor: 'rgba(var(--dc-primary-rgb), 0.1)', color: 'var(--dc-primary)'
+                  }}>
+                    {doneCount}/{totalTasks}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <SetupChecklist
+                    hasAI={aiDone}
+                    hasOwnConnection={hasOwnConn}
+                    unreadyConnections={unready}
+                    aiRef={aiTaskRef}
+                  />
+                </div>
+              </div>
+            </>
+          )
+        })()}
 
         {/* Recent Notebooks */}
         {recentNotebooks.length > 0 && (

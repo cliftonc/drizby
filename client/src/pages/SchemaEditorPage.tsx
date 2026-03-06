@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useParams, useNavigate } from 'react-router-dom'
 import Editor, { type OnMount } from '@monaco-editor/react'
+import { useConfirm } from '../hooks/useConfirm'
+import { usePrompt } from '../hooks/usePrompt'
 
 interface SchemaFile {
   id: number
@@ -49,6 +52,8 @@ function useAppTheme(): 'light' | 'dark' {
 
 export default function SchemaEditorPage() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const params = useParams<{ connectionId?: string; fileType?: string; fileName?: string }>()
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null)
   const [editorContent, setEditorContent] = useState('')
   const [isDirty, setIsDirty] = useState(false)
@@ -59,6 +64,8 @@ export default function SchemaEditorPage() {
   const editorRef = useRef<any>(null)
   const monacoRef = useRef<any>(null)
   const handleSaveRef = useRef(() => {})
+  const [confirm, ConfirmDialog] = useConfirm()
+  const [prompt, PromptDialog] = usePrompt()
 
   const { data: connections = [] } = useQuery<Connection[]>({
     queryKey: ['connections'],
@@ -75,12 +82,62 @@ export default function SchemaEditorPage() {
     queryFn: () => fetch('/api/cube-definitions').then(r => r.json())
   })
 
-  // Auto-select first connection
+  // Initialize connection from URL or localStorage
   useEffect(() => {
-    if (connections.length > 0 && !selectedConnectionId) {
-      setSelectedConnectionId(connections[0].id)
+    if (connections.length === 0 || selectedConnectionId !== null) return
+    const connId = params.connectionId ? parseInt(params.connectionId) : null
+    const resolvedId = connId && connections.some(c => c.id === connId) ? connId : connections[0].id
+    setSelectedConnectionId(resolvedId)
+
+    // If bare /schema-editor URL, try restoring last file for this connection
+    if (!params.fileType && !params.fileName && resolvedId) {
+      const raw = localStorage.getItem(`dc-schema-editor-conn-${resolvedId}`)
+      if (raw) {
+        try {
+          const { fileType, fileName } = JSON.parse(raw)
+          if (fileType && fileName) {
+            navigate(`/schema-editor/${resolvedId}/${fileType}/${encodeURIComponent(fileName)}`, { replace: true })
+            return
+          }
+        } catch {}
+      }
+      navigate(`/schema-editor/${resolvedId}`, { replace: true })
     }
-  }, [connections, selectedConnectionId])
+  }, [connections, selectedConnectionId, params.connectionId, params.fileType, params.fileName, navigate])
+
+  // Initialize file selection from URL (waits for data to load)
+  useEffect(() => {
+    if (!params.fileType || !params.fileName || !selectedConnectionId || selectedFile) return
+    const decodedName = decodeURIComponent(params.fileName)
+
+    let file: FileItem | null = null
+    if (params.fileType === 'schema') {
+      const sf = schemaFiles.find(s => s.name === decodedName && s.connectionId === selectedConnectionId)
+      if (sf) file = { type: 'schema', data: sf }
+    } else if (params.fileType === 'cube') {
+      const cd = cubeDefs.find(c => c.name === decodedName && c.connectionId === selectedConnectionId)
+      if (cd) file = { type: 'cube', data: cd }
+    }
+    if (file) {
+      setSelectedFile(file)
+      setEditorContent(file.type === 'schema' ? file.data.sourceCode : (file.data.sourceCode || ''))
+    }
+  }, [schemaFiles, cubeDefs, selectedConnectionId, params.fileType, params.fileName])
+
+  // Sync URL + localStorage when selection changes
+  const updateUrl = useCallback((connId: number | null, file: FileItem | null) => {
+    if (!connId) return
+    if (file) {
+      const name = file.type === 'schema' ? file.data.name : file.data.name
+      navigate(`/schema-editor/${connId}/${file.type}/${encodeURIComponent(name)}`, { replace: true })
+      const fileInfo = { fileType: file.type, fileName: name }
+      localStorage.setItem('dc-schema-editor-last', JSON.stringify({ connectionId: connId, ...fileInfo }))
+      localStorage.setItem(`dc-schema-editor-conn-${connId}`, JSON.stringify(fileInfo))
+    } else {
+      navigate(`/schema-editor/${connId}`, { replace: true })
+      localStorage.removeItem('dc-schema-editor-last')
+    }
+  }, [navigate])
 
   const filteredSchemas = schemaFiles.filter(s => s.connectionId === selectedConnectionId)
   const filteredCubes = cubeDefs.filter(c => c.connectionId === selectedConnectionId)
@@ -126,6 +183,7 @@ export default function SchemaEditorPage() {
     onSuccess: (data) => {
       setCompileOutput(data)
       queryClient.invalidateQueries({ queryKey: ['schema-files'] })
+      queryClient.invalidateQueries({ queryKey: ['connections', 'status'] })
       if (data.success) {
         setMarkers([])
         // Schema changes may affect cubes — invalidate cube meta cache
@@ -145,6 +203,7 @@ export default function SchemaEditorPage() {
     onSuccess: (data) => {
       setCompileOutput(data)
       queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
+      queryClient.invalidateQueries({ queryKey: ['connections', 'status'] })
       if (data.success) {
         setMarkers([])
         // Invalidate cube meta so Analysis Builder / dashboards pick up new cubes
@@ -156,56 +215,50 @@ export default function SchemaEditorPage() {
   })
 
   // Create new schema file
-  const createSchema = useMutation({
-    mutationFn: async () => {
-      const name = prompt('Schema file name (e.g. orders.ts):')
-      if (!name) return null
-      const res = await fetch('/api/schema-files', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          sourceCode: `import { pgTable, integer, text, timestamp } from 'drizzle-orm/pg-core'\n\nexport const myTable = pgTable('my_table', {\n  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),\n  name: text('name').notNull(),\n  createdAt: timestamp('created_at').defaultNow()\n})\n`,
-          connectionId: selectedConnectionId,
-        })
+  const createSchemaFile = async () => {
+    const name = await prompt({ title: 'New Schema File', message: 'Enter a name for the schema file', placeholder: 'orders.ts', submitText: 'Create' })
+    if (!name) return
+    const res = await fetch('/api/schema-files', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        sourceCode: `import { pgTable, integer, text, timestamp } from 'drizzle-orm/pg-core'\n\nexport const myTable = pgTable('my_table', {\n  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),\n  name: text('name').notNull(),\n  createdAt: timestamp('created_at').defaultNow()\n})\n`,
+        connectionId: selectedConnectionId,
       })
-      return res.json()
-    },
-    onSuccess: (data) => {
-      if (data) {
-        queryClient.invalidateQueries({ queryKey: ['schema-files'] })
-        setSelectedFile({ type: 'schema', data })
-        setEditorContent(data.sourceCode)
-        setIsDirty(false)
-      }
-    }
-  })
+    })
+    const data = await res.json()
+    queryClient.invalidateQueries({ queryKey: ['schema-files'] })
+    queryClient.invalidateQueries({ queryKey: ['connections', 'status'] })
+    const file: FileItem = { type: 'schema', data }
+    setSelectedFile(file)
+    setEditorContent(data.sourceCode)
+    setIsDirty(false)
+    updateUrl(selectedConnectionId, file)
+  }
 
   // Create new cube definition
-  const createCube = useMutation({
-    mutationFn: async () => {
-      const name = prompt('Cube definition name:')
-      if (!name) return null
-      const res = await fetch('/api/cube-definitions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          sourceCode: `import { eq } from 'drizzle-orm'\nimport { defineCube } from 'drizzle-cube/server'\nimport type { QueryContext, BaseQueryDefinition, Cube } from 'drizzle-cube/server'\n// import { myTable } from './my-schema'\n\nexport const myCube = defineCube('MyCube', {\n  title: '${name}',\n  description: '',\n\n  sql: (ctx: QueryContext): BaseQueryDefinition => ({\n    from: undefined as any, // replace with your table\n  }),\n\n  dimensions: {},\n  measures: {}\n}) as Cube\n`,
-          connectionId: selectedConnectionId,
-        })
+  const createCubeFile = async () => {
+    const name = await prompt({ title: 'New Cube Definition', message: 'Enter a name for the cube definition', placeholder: 'my-cube', submitText: 'Create' })
+    if (!name) return
+    const res = await fetch('/api/cube-definitions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        sourceCode: `import { eq } from 'drizzle-orm'\nimport { defineCube } from 'drizzle-cube/server'\nimport type { QueryContext, BaseQueryDefinition, Cube } from 'drizzle-cube/server'\n// import { myTable } from './my-schema'\n\nexport const myCube = defineCube('MyCube', {\n  title: '${name}',\n  description: '',\n\n  sql: (ctx: QueryContext): BaseQueryDefinition => ({\n    from: undefined as any, // replace with your table\n  }),\n\n  dimensions: {},\n  measures: {}\n}) as Cube\n`,
+        connectionId: selectedConnectionId,
       })
-      return res.json()
-    },
-    onSuccess: (data) => {
-      if (data) {
-        queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
-        setSelectedFile({ type: 'cube', data })
-        setEditorContent(data.sourceCode || '')
-        setIsDirty(false)
-      }
-    }
-  })
+    })
+    const data = await res.json()
+    queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
+    queryClient.invalidateQueries({ queryKey: ['connections', 'status'] })
+    const file: FileItem = { type: 'cube', data }
+    setSelectedFile(file)
+    setEditorContent(data.sourceCode || '')
+    setIsDirty(false)
+    updateUrl(selectedConnectionId, file)
+  }
 
   // Introspect database
   const introspect = useMutation({
@@ -217,12 +270,11 @@ export default function SchemaEditorPage() {
       })
       return res.json()
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (data.source) {
-        // Create a new schema file with introspected source
-        const name = prompt('Name for introspected schema file:', 'introspected.ts')
+        const name = await prompt({ title: 'Save Introspected Schema', message: 'Enter a name for the schema file', defaultValue: 'introspected.ts', submitText: 'Save' })
         if (name) {
-          fetch('/api/schema-files', {
+          const res = await fetch('/api/schema-files', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -230,12 +282,15 @@ export default function SchemaEditorPage() {
               sourceCode: data.source,
               connectionId: selectedConnectionId,
             })
-          }).then(r => r.json()).then(newFile => {
-            queryClient.invalidateQueries({ queryKey: ['schema-files'] })
-            setSelectedFile({ type: 'schema', data: newFile })
-            setEditorContent(newFile.sourceCode)
-            setIsDirty(false)
           })
+          const newFile = await res.json()
+          queryClient.invalidateQueries({ queryKey: ['schema-files'] })
+          queryClient.invalidateQueries({ queryKey: ['connections', 'status'] })
+          const file: FileItem = { type: 'schema', data: newFile }
+          setSelectedFile(file)
+          setEditorContent(newFile.sourceCode)
+          setIsDirty(false)
+          updateUrl(selectedConnectionId, file)
         }
       } else if (data.error) {
         setCompileOutput({ success: false, errors: [{ message: data.error }] })
@@ -243,31 +298,106 @@ export default function SchemaEditorPage() {
     }
   })
 
-  // Validate schema against live database
-  const validateSchema = useMutation({
-    mutationFn: async () => {
-      const res = await fetch('/api/schema-files/validate-against-db', {
+  // AI cube generation state
+  const [aiGenState, setAiGenState] = useState<{
+    active: boolean
+    phase: string
+    message: string
+    current?: number
+    total?: number
+    cubes?: Array<{ name: string; title: string }>
+    completedCubes?: string[]
+  }>({ active: false, phase: '', message: '' })
+
+  const generateCubesWithAI = useCallback(async () => {
+    setAiGenState({ active: true, phase: 'planning', message: 'Analyzing schema and planning cubes...', completedCubes: [] })
+
+    try {
+      const res = await fetch('/api/schema-files/generate-cubes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ connectionId: selectedConnectionId })
       })
-      return res.json()
-    },
-    onSuccess: (data) => {
-      if (data.error) {
-        setCompileOutput({ success: false, errors: [{ message: data.error }, ...(data.compileErrors || []).flatMap((ce: any) => ce.errors.map((e: any) => ({ message: `${ce.file}: ${e.message}` })))] })
-      } else if (data.valid) {
-        const info = data.tables?.length ? `Tables validated: ${data.tables.join(', ')}` : 'Schema matches database'
-        const optional = (data.issues || []).filter((i: any) => i.issue.includes('(optional)'))
-        const extras = optional.length > 0 ? [{ message: `Note: ${optional.length} extra column(s) in DB not in schema (safe to ignore)` }] : []
-        setCompileOutput({ success: true, errors: extras, exports: [info] })
-      } else {
-        const realIssues = (data.issues || []).filter((i: any) => !i.issue.includes('(optional)'))
-        const errors = realIssues.map((i: any) => ({ message: i.issue }))
-        setCompileOutput({ success: false, errors })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Generation failed')
       }
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let finalSource = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        let eventType = ''
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7)
+          } else if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6))
+            switch (eventType) {
+              case 'status':
+                setAiGenState(prev => ({ ...prev, phase: data.phase, message: data.message, current: data.current, total: data.total }))
+                break
+              case 'plan':
+                setAiGenState(prev => ({ ...prev, cubes: data.cubes }))
+                break
+              case 'cube_done':
+                setAiGenState(prev => ({ ...prev, completedCubes: [...(prev.completedCubes || []), data.name] }))
+                break
+              case 'cube_error':
+                setAiGenState(prev => ({ ...prev, completedCubes: [...(prev.completedCubes || []), `${data.name} (failed)`] }))
+                break
+              case 'complete':
+                finalSource = data.source
+                break
+              case 'error':
+                throw new Error(data.message)
+            }
+          }
+        }
+      }
+
+      setAiGenState(prev => ({ ...prev, active: false }))
+
+      if (finalSource) {
+        const name = await prompt({ title: 'Save AI-Generated Cubes', message: 'Enter a name for the cube definition file', defaultValue: 'cubes', submitText: 'Save' })
+        if (name) {
+          const saveRes = await fetch('/api/cube-definitions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name,
+              sourceCode: finalSource,
+              connectionId: selectedConnectionId,
+            })
+          })
+          const newFile = await saveRes.json()
+          queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
+          queryClient.invalidateQueries({ queryKey: ['connections', 'status'] })
+          const file: FileItem = { type: 'cube', data: newFile }
+          setSelectedFile(file)
+          setEditorContent(newFile.sourceCode || '')
+          setIsDirty(false)
+          updateUrl(selectedConnectionId, file)
+        }
+      }
+    } catch (err: any) {
+      setAiGenState(prev => ({ ...prev, active: false }))
+      setCompileOutput({ success: false, errors: [{ message: `AI generation failed: ${err.message}` }] })
     }
-  })
+  }, [selectedConnectionId, prompt, queryClient])
+
+
 
   const setMarkers = useCallback((markers: any[]) => {
     if (monacoRef.current && editorRef.current) {
@@ -294,7 +424,7 @@ export default function SchemaEditorPage() {
     editorRef.current = editor
     monacoRef.current = monaco
 
-    // Define custom dark theme matching DC-BI's blue-slate palette
+    // Define custom dark theme matching Drizby's blue-slate palette
     monaco.editor.defineTheme('dc-dark', {
       base: 'vs-dark',
       inherit: true,
@@ -390,78 +520,27 @@ export default function SchemaEditorPage() {
     }
   }, [appTheme])
 
-  const loadExtraLibs = (monaco: any) => {
-    // Provide ambient module declarations so Monaco resolves imports without errors.
-    const drizzleOrmPgCoreDecl = `
-declare module 'drizzle-orm/pg-core' {
-  export function pgTable(name: string, columns: Record<string, any>, extra?: (table: any) => any[]): any;
-  export function integer(name: string): any;
-  export function text(name: string): any;
-  export function real(name: string): any;
-  export function boolean(name: string): any;
-  export function timestamp(name: string): any;
-  export function jsonb(name: string): any;
-  export function serial(name: string): any;
-  export function varchar(name: string, config?: any): any;
-  export function numeric(name: string): any;
-  export function date(name: string): any;
-  export function smallint(name: string): any;
-  export function bigint(name: string, config?: any): any;
-  export function index(name: string): any;
-  export function uniqueIndex(name: string): any;
-}
-`
-    const drizzleOrmDecl = `
-declare module 'drizzle-orm' {
-  export function eq(left: any, right: any): any;
-  export function ne(left: any, right: any): any;
-  export function gt(left: any, right: any): any;
-  export function gte(left: any, right: any): any;
-  export function lt(left: any, right: any): any;
-  export function lte(left: any, right: any): any;
-  export function and(...conditions: any[]): any;
-  export function or(...conditions: any[]): any;
-  export function not(condition: any): any;
-  export function inArray(column: any, values: any[]): any;
-  export function notInArray(column: any, values: any[]): any;
-  export function isNull(column: any): any;
-  export function isNotNull(column: any): any;
-  export function between(column: any, min: any, max: any): any;
-  export function like(column: any, pattern: string): any;
-  export function ilike(column: any, pattern: string): any;
-  export function sql(strings: TemplateStringsArray, ...values: any[]): any;
-  export function asc(column: any): any;
-  export function desc(column: any): any;
-  export function count(column?: any): any;
-  export function sum(column: any): any;
-  export function avg(column: any): any;
-  export function min(column: any): any;
-  export function max(column: any): any;
-  export function relations(table: any, fn: (helpers: { one: any; many: any }) => any): any;
-}
-`
-    const drizzleCubeDecl = `
-declare module 'drizzle-cube/server' {
-  export interface SecurityContext { organisationId?: number | string; userId?: number | string; [key: string]: any; }
-  export interface QueryContext { securityContext: SecurityContext; }
-  export interface BaseQueryDefinition { from: any; where?: any; }
-  export interface Cube { name: string; title?: string; description?: string; sql: any; dimensions: any; measures: any; joins?: any; }
-  export interface DimensionDef { name: string; title?: string; sql: any; type: 'string' | 'number' | 'boolean' | 'time'; primaryKey?: boolean; }
-  export interface MeasureDef { name: string; title?: string; sql: any; type: 'count' | 'countDistinct' | 'sum' | 'avg' | 'min' | 'max'; filters?: any[]; }
-  export interface JoinDef { targetCube: () => Cube; relationship: 'belongsTo' | 'hasMany' | 'hasOne'; on: Array<{ source: any; target: any }>; }
-  export function defineCube(name: string, config: {
-    title?: string;
-    description?: string;
-    sql: (ctx: QueryContext) => BaseQueryDefinition;
-    joins?: Record<string, JoinDef>;
-    dimensions: Record<string, DimensionDef>;
-    measures: Record<string, MeasureDef>;
-  }): Cube;
-}
-`
-    monaco.languages.typescript.typescriptDefaults.addExtraLib(drizzleOrmPgCoreDecl, 'file:///node_modules/drizzle-orm/pg-core/index.d.ts')
-    monaco.languages.typescript.typescriptDefaults.addExtraLib(drizzleOrmDecl, 'file:///node_modules/drizzle-orm/index.d.ts')
-    monaco.languages.typescript.typescriptDefaults.addExtraLib(drizzleCubeDecl, 'file:///node_modules/drizzle-cube/server/index.d.ts')
+  // Re-register schema background models when schemaFiles data loads/changes
+  useEffect(() => {
+    if (monacoRef.current && schemaFiles.length > 0) {
+      updateSchemaModels(monacoRef.current, selectedFile)
+    }
+  }, [schemaFiles])
+
+  const loadExtraLibs = async (monaco: any) => {
+    // Load real .d.ts files from node_modules via the server
+    const [drizzleOrmTypes, drizzleCubeTypes] = await Promise.all([
+      fetch('/api/editor/types/drizzle-orm').then(r => r.json()).catch(() => ({})),
+      fetch('/api/editor/types/drizzle-cube').then(r => r.json()).catch(() => ({})),
+    ])
+
+    const ts = monaco.languages.typescript.typescriptDefaults
+    for (const [path, content] of Object.entries(drizzleOrmTypes) as [string, string][]) {
+      ts.addExtraLib(content, `file:///node_modules/${path}`)
+    }
+    for (const [path, content] of Object.entries(drizzleCubeTypes) as [string, string][]) {
+      ts.addExtraLib(content, `file:///node_modules/${path}`)
+    }
 
     // Register schema files as background models for relative import resolution in cube files.
     // Uses real source code so TS infers proper pgTable column types for autocomplete.
@@ -492,14 +571,15 @@ declare module 'drizzle-cube/server' {
     }
   }
 
-  const handleSelectFile = (file: FileItem) => {
-    if (isDirty && !confirm('You have unsaved changes. Discard?')) return
+  const handleSelectFile = async (file: FileItem) => {
+    if (isDirty && !await confirm({ title: 'Unsaved changes', message: 'You have unsaved changes. Discard them?', confirmText: 'Discard', variant: 'danger' })) return
     setSelectedFile(file)
     const code = file.type === 'schema' ? file.data.sourceCode : (file.data.sourceCode || '')
     setEditorContent(code)
     setIsDirty(false)
     setCompileOutput(null)
     setMarkers([])
+    updateUrl(selectedConnectionId, file)
 
     // Refresh background schema models: recreate for the file we just left, skip the newly opened one
     if (monacoRef.current) {
@@ -535,7 +615,7 @@ declare module 'drizzle-cube/server' {
   const handleDelete = async () => {
     if (!selectedFile) return
     const name = selectedFile.type === 'schema' ? selectedFile.data.name : selectedFile.data.name
-    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return
+    if (!await confirm({ title: 'Delete file', message: `Delete "${name}"? This cannot be undone.`, confirmText: 'Delete', variant: 'danger' })) return
 
     const endpoint = selectedFile.type === 'schema'
       ? `/api/schema-files/${selectedFile.data.id}`
@@ -545,6 +625,7 @@ declare module 'drizzle-cube/server' {
     queryClient.invalidateQueries({ queryKey: ['schema-files'] })
     queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
     queryClient.invalidateQueries({ queryKey: ['cube', 'meta'] })
+    queryClient.invalidateQueries({ queryKey: ['connections', 'status'] })
 
     // Clean up background model for deleted schema file
     if (selectedFile.type === 'schema' && monacoRef.current) {
@@ -557,6 +638,7 @@ declare module 'drizzle-cube/server' {
     setSelectedFile(null)
     setEditorContent('')
     setCompileOutput(null)
+    updateUrl(selectedConnectionId, null)
   }
 
   const isCompiling = compileSchema.isPending || compileCube.isPending
@@ -566,25 +648,38 @@ declare module 'drizzle-cube/server' {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 0 }}>
       {/* Toolbar */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0',
+        display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0',
         borderBottom: '1px solid var(--dc-border)', marginBottom: 0, flexShrink: 0
       }}>
-        <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--dc-text)' }}>Schema Editor</h1>
-        <div style={{ flex: 1 }} />
+        <h1 className="text-xl sm:text-2xl font-semibold text-dc-text" style={{ margin: 0 }}>Semantic Layer</h1>
 
-        {/* Connection selector */}
-        <select
-          value={selectedConnectionId || ''}
-          onChange={e => setSelectedConnectionId(parseInt(e.target.value))}
-          style={{
-            padding: '6px 10px', borderRadius: 6, border: '1px solid var(--dc-border)',
-            backgroundColor: 'var(--dc-surface)', color: 'var(--dc-text)', fontSize: 13
-          }}
-        >
-          {connections.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+        {/* Connection selector + settings cog */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <select
+            value={selectedConnectionId || ''}
+            onChange={e => { const id = parseInt(e.target.value); setSelectedConnectionId(id); setSelectedFile(null); setEditorContent(''); updateUrl(id, null) }}
+            style={{
+              padding: '6px 10px', borderRadius: 6, border: '1px solid var(--dc-border)',
+              backgroundColor: 'var(--dc-surface)', color: 'var(--dc-text)', fontSize: 13
+            }}
+          >
+            {connections.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
+          <button
+            onClick={() => navigate('/settings/connections')}
+            title="Connection settings"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--dc-text-muted)', display: 'flex', alignItems: 'center' }}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" width={16} height={16}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+            </svg>
+          </button>
+        </div>
+
+        <div style={{ flex: 1 }} />
 
         <button onClick={handleSave} disabled={!isDirty || isSaving}
           style={toolbarBtn(!isDirty || isSaving)}>
@@ -593,10 +688,6 @@ declare module 'drizzle-cube/server' {
         <button onClick={handleCompile} disabled={!selectedFile || isCompiling}
           style={toolbarBtn(!selectedFile || isCompiling, true)}>
           {isCompiling ? 'Compiling...' : 'Compile'}
-        </button>
-        <button onClick={() => validateSchema.mutate()} disabled={!selectedConnectionId || validateSchema.isPending || filteredSchemas.length === 0}
-          style={toolbarBtn(!selectedConnectionId || validateSchema.isPending || filteredSchemas.length === 0)}>
-          {validateSchema.isPending ? 'Validating...' : 'Validate Schema'}
         </button>
         <button onClick={handleDelete} disabled={!selectedFile}
           style={{ ...toolbarBtn(!selectedFile), color: selectedFile ? '#ef4444' : undefined }}>
@@ -620,7 +711,7 @@ declare module 'drizzle-cube/server' {
                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--dc-text-secondary)', padding: '0 2px' }}>
                 {introspect.isPending ? '...' : 'DB'}
               </button>
-              <button onClick={() => createSchema.mutate()} title="New schema file"
+              <button onClick={() => createSchemaFile()} title="New schema file"
                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--dc-text-secondary)', padding: '0 2px' }}>
                 +
               </button>
@@ -642,10 +733,16 @@ declare module 'drizzle-cube/server' {
             <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--dc-text-secondary)', letterSpacing: 0.5 }}>
               Cubes
             </span>
-            <button onClick={() => createCube.mutate()} title="New cube definition"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--dc-text-secondary)', padding: '0 2px' }}>
-              +
-            </button>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={generateCubesWithAI} title="Generate cubes with AI" disabled={aiGenState.active || filteredSchemas.length === 0}
+                style={{ background: 'none', border: 'none', cursor: aiGenState.active || filteredSchemas.length === 0 ? 'default' : 'pointer', fontSize: 13, color: 'var(--dc-text-secondary)', padding: '0 2px', opacity: aiGenState.active || filteredSchemas.length === 0 ? 0.4 : 1 }}>
+                {aiGenState.active ? '...' : 'AI'}
+              </button>
+              <button onClick={() => createCubeFile()} title="New cube definition"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--dc-text-secondary)', padding: '0 2px' }}>
+                +
+              </button>
+            </div>
           </div>
           {filteredCubes.map(cd => (
             <FileTreeItem
@@ -771,7 +868,7 @@ declare module 'drizzle-cube/server' {
                     {introspect.isPending ? 'Pulling schema...' : 'Pull Schema from Database'}
                   </button>
                   <div style={{ marginTop: 12, fontSize: 12 }}>
-                    or <button onClick={() => createSchema.mutate()} style={{ background: 'none', border: 'none', color: 'var(--dc-primary)', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>create a blank schema file</button>
+                    or <button onClick={() => createSchemaFile()} style={{ background: 'none', border: 'none', color: 'var(--dc-primary)', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>create a blank schema file</button>
                   </div>
                 </div>
               ) : (
@@ -781,6 +878,65 @@ declare module 'drizzle-cube/server' {
           )}
         </div>
       </div>
+      {aiGenState.active && (
+        <div style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--dc-surface)', borderRadius: 12, padding: '32px 40px',
+            border: '1px solid var(--dc-border)', boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, minWidth: 320, maxWidth: 420
+          }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
+              <circle cx="12" cy="12" r="10" stroke="var(--dc-border-secondary)" strokeWidth="3" />
+              <path d="M12 2a10 10 0 0 1 10 10" stroke="var(--dc-primary)" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+            <div style={{ textAlign: 'center', width: '100%' }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--dc-text)' }}>Generating Cube Definitions</div>
+              <div style={{ fontSize: 13, color: 'var(--dc-text-muted)', marginTop: 4 }}>
+                {aiGenState.message}
+              </div>
+              {aiGenState.total && (
+                <div style={{
+                  marginTop: 12, height: 4, borderRadius: 2,
+                  backgroundColor: 'var(--dc-surface-tertiary)', overflow: 'hidden'
+                }}>
+                  <div style={{
+                    height: '100%', borderRadius: 2, backgroundColor: 'var(--dc-primary)',
+                    width: `${((aiGenState.current || 0) / aiGenState.total) * 100}%`,
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+              )}
+              {aiGenState.cubes && aiGenState.cubes.length > 0 && (
+                <div style={{ marginTop: 12, textAlign: 'left', fontSize: 12 }}>
+                  {aiGenState.cubes.map((cube) => {
+                    const isDone = aiGenState.completedCubes?.includes(cube.name)
+                    const isFailed = aiGenState.completedCubes?.includes(`${cube.name} (failed)`)
+                    const isCurrent = !isDone && !isFailed && aiGenState.phase === 'generating' &&
+                      aiGenState.cubes!.findIndex(c => c.name === cube.name) === (aiGenState.current || 1) - 1
+                    return (
+                      <div key={cube.name} style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0',
+                        color: isDone ? 'var(--dc-success)' : isFailed ? 'var(--dc-error)' : isCurrent ? 'var(--dc-text)' : 'var(--dc-text-muted)'
+                      }}>
+                        <span style={{ width: 14, textAlign: 'center', flexShrink: 0 }}>
+                          {isDone ? '✓' : isFailed ? '✗' : isCurrent ? '●' : '○'}
+                        </span>
+                        <span>{cube.title}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      <ConfirmDialog />
+      <PromptDialog />
     </div>
   )
 }

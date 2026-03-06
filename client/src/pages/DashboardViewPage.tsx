@@ -2,13 +2,22 @@ import { useParams, Link } from 'react-router-dom'
 import { useCallback, useState, useEffect, useRef } from 'react'
 import { AnalyticsDashboard, DashboardEditModal } from 'drizzle-cube/client'
 import { useAnalyticsPage, useUpdateAnalyticsPage, useResetAnalyticsPage } from '../hooks/useAnalyticsPages'
+import { useConnections } from '../hooks/useConnections'
+import { useAuth } from '../contexts/AuthContext'
+import ConnectionCubeProvider from '../components/ConnectionCubeProvider'
 import type { DashboardConfig } from '../types'
+import { DashboardLoader } from '../components/DrizzleCubeLoader'
 
 export default function DashboardViewPage() {
   const { id } = useParams<{ id: string }>()
   const { data: page, isLoading, error } = useAnalyticsPage(id!)
   const updatePage = useUpdateAnalyticsPage()
   const resetPage = useResetAnalyticsPage()
+  const { data: connections = [] } = useConnections()
+  const { user } = useAuth()
+  const connectionId = page?.connectionId || connections[0]?.id
+  const connectionName = connections.find(c => c.id === connectionId)?.name
+  const canEdit = user?.role === 'admin' || page?.createdBy === user?.id
   const [config, setConfig] = useState<DashboardConfig>({ portlets: [] })
   const [, setLastSaved] = useState<Date | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
@@ -106,7 +115,7 @@ export default function DashboardViewPage() {
   if (isLoading) {
     return (
       <div className="text-center py-8">
-        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-dc-primary"></div>
+        <img src="/logo.png" alt="Loading..." className="inline-block animate-spin" style={{ width: 32, height: 32, animationDuration: '1.5s' }} />
         <p className="mt-2 text-dc-text-muted">Loading dashboard...</p>
       </div>
     )
@@ -142,12 +151,23 @@ export default function DashboardViewPage() {
 
         <div className="mt-2 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-semibold text-dc-text">{page.name}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-semibold text-dc-text">{page.name}</h1>
+              {connectionName && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-dc-surface-secondary text-dc-text-muted border border-dc-border">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
+                  </svg>
+                  {connectionName}
+                </span>
+              )}
+            </div>
             {page.description && (
               <p className="mt-1 text-sm text-dc-text-muted">{page.description}</p>
             )}
           </div>
 
+          {canEdit && (
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={() => setIsEditModalOpen(true)}
@@ -162,17 +182,32 @@ export default function DashboardViewPage() {
               Reset
             </button>
           </div>
+          )}
         </div>
       </div>
 
-      <AnalyticsDashboard
-        config={config}
-        editable={true}
-        onConfigChange={handleConfigChange}
-        onSave={handleSave}
-        onSaveThumbnail={handleSaveThumbnail}
-        onDirtyStateChange={handleDirtyStateChange}
-      />
+      {connectionId ? (
+        <ConnectionCubeProvider connectionId={connectionId}>
+          <AnalyticsDashboard
+            config={config}
+            editable={!!canEdit}
+            onConfigChange={handleConfigChange}
+            onSave={handleSave}
+            onSaveThumbnail={handleSaveThumbnail}
+            onDirtyStateChange={handleDirtyStateChange}
+            loadingComponent={<DashboardLoader />}
+          />
+        </ConnectionCubeProvider>
+      ) : (
+        <AnalyticsDashboard
+          config={config}
+          editable={true}
+          onConfigChange={handleConfigChange}
+          onSave={handleSave}
+          onSaveThumbnail={handleSaveThumbnail}
+          onDirtyStateChange={handleDirtyStateChange}
+        />
+      )}
 
       <DashboardEditModal
         isOpen={isEditModalOpen}

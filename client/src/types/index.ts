@@ -11,12 +11,25 @@ export type {
 
 import type { DashboardConfig, NotebookConfig } from 'drizzle-cube/client'
 
+export interface Connection {
+  id: number
+  name: string
+  description?: string
+  engineType: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export interface AnalyticsPage {
   id: number
   name: string
   description?: string
+  connectionId?: number | null
   organisationId: number
   config: DashboardConfig
+  createdBy?: number | null
+  createdByName?: string | null
   order: number
   isActive: boolean
   createdAt: string
@@ -26,6 +39,7 @@ export interface AnalyticsPage {
 export interface CreateAnalyticsPageRequest {
   name: string
   description?: string
+  connectionId?: number
   config: DashboardConfig
   order?: number
 }
@@ -41,8 +55,11 @@ export interface Notebook {
   id: number
   name: string
   description?: string
+  connectionId?: number | null
   organisationId: number
   config: NotebookConfig | null
+  createdBy?: number | null
+  createdByName?: string | null
   order: number
   isActive: boolean
   createdAt: string
@@ -52,6 +69,7 @@ export interface Notebook {
 export interface CreateNotebookRequest {
   name: string
   description?: string
+  connectionId?: number
   config?: NotebookConfig
   order?: number
 }

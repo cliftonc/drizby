@@ -1,33 +1,19 @@
 {
   "version": "7",
-  "dialect": "postgresql",
+  "dialect": "sqlite",
   "entries": [
     {
       "idx": 0,
-      "version": "7",
-      "when": 1772712867084,
-      "tag": "0000_outgoing_lord_tyger",
+      "version": "6",
+      "when": 1772788044938,
+      "tag": "0000_short_freak",
       "breakpoints": true
     },
     {
       "idx": 1,
-      "version": "7",
-      "when": 1772713990896,
-      "tag": "0001_useful_kinsey_walden",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1772715860984,
-      "tag": "0002_loose_fixer",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1772723354863,
-      "tag": "0003_lovely_ink",
+      "version": "6",
+      "when": 1772802202105,
+      "tag": "0002_large_elektra",
       "breakpoints": true
     }
   ]

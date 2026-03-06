@@ -10,7 +10,8 @@ import { schemaFiles, connections } from '../../schema'
 import { connectionManager } from '../services/connection-manager'
 import { invalidateCubeAppCache } from '../../app'
 import { compileSchema, generateSchemaTypes } from '../services/cube-compiler'
-import { getTableConfig } from 'drizzle-orm/pg-core'
+import { getAISettings } from '../services/ai-settings'
+import { guardPermission } from '../permissions/guard'
 
 interface Variables {
   db: DrizzleDatabase
@@ -18,12 +19,163 @@ interface Variables {
 
 const app = new Hono<{ Variables: Variables }>()
 
+// Admin-only: all schema file management routes
+app.use('*', async (c, next) => {
+  const denied = guardPermission(c, 'manage', 'Schema')
+  if (denied) return denied
+  await next()
+})
+
 // List all schema files
 app.get('/', async (c) => {
   const db = c.get('db') as any
   const result = await db.select().from(schemaFiles)
     .where(eq(schemaFiles.organisationId, 1))
   return c.json(result)
+})
+
+// Generate cube definitions from schema files using AI
+// SSE endpoint: plan + generate cubes one by one, streaming progress
+app.post('/generate-cubes', async (c) => {
+  const db = c.get('db') as any
+  const body = await c.req.json()
+  const { connectionId } = body
+
+  const conn = await db.select().from(connections)
+    .where(and(eq(connections.id, connectionId), eq(connections.organisationId, 1)))
+  if (conn.length === 0) return c.json({ error: 'Connection not found' }, 400)
+
+  const schemas = await db.select().from(schemaFiles)
+    .where(and(eq(schemaFiles.connectionId, connectionId), eq(schemaFiles.organisationId, 1)))
+
+  if (schemas.length === 0) {
+    return c.json({ error: 'No schema files found. Introspect or create schema files first.' }, 400)
+  }
+
+  const ai = await getAISettings(db)
+  if (!ai.apiKey || !ai.provider) {
+    return c.json({ error: 'AI is not configured. Go to Settings → AI to set up your API key.' }, 400)
+  }
+
+  const schemaContext = schemas.map((sf: any) => ({
+    fileName: sf.name.replace(/\.ts$/, ''),
+    source: sf.sourceCode,
+  }))
+
+  const schemaListing = schemaContext
+    .map((s: any) => `// File: ${s.fileName}.ts\n${s.source}`)
+    .join('\n\n')
+
+  // Stream SSE events
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: string, data: any) => {
+        controller.enqueue(new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+      }
+
+      try {
+        // Phase 1: Plan
+        send('status', { phase: 'planning', message: 'Analyzing schema and planning cubes...' })
+        const fileNameList = schemaContext.map((s: any) => s.fileName).join(', ')
+        const planPrompt = `Here are the Drizzle ORM schema files:\n\n${schemaListing}\n\nAvailable schema file names (use these EXACTLY for schemaFile): ${fileNameList}\n\nAnalyze these schemas and propose cubes to create. The "schemaFile" field must be one of the file names listed above (without .ts extension). The "tables" field must contain only table variable names that are actually exported from that schema file.`
+        const planRaw = await callAI(ai, CUBE_PLAN_SYSTEM_PROMPT, planPrompt)
+        let cubes: Array<{ name: string; variableName: string; title: string; description: string; tables: string[]; schemaFile: string }>
+        try {
+          cubes = JSON.parse(planRaw)
+        } catch {
+          // Try to extract JSON array from response
+          const match = planRaw.match(/\[[\s\S]*\]/)
+          if (!match) throw new Error('AI did not return valid JSON plan')
+          cubes = JSON.parse(match[0])
+        }
+
+        // Validate schemaFile references — fix any that don't match actual files
+        const validFileNames = new Set(schemaContext.map((s: any) => s.fileName))
+        for (const cube of cubes) {
+          if (!validFileNames.has(cube.schemaFile)) {
+            // Default to first schema file if AI invented a file name
+            cube.schemaFile = schemaContext[0].fileName
+          }
+        }
+
+        send('plan', { cubes })
+
+        // Phase 2: Generate each cube
+        const generatedParts: string[] = []
+        for (let i = 0; i < cubes.length; i++) {
+          const cube = cubes[i]
+          send('status', { phase: 'generating', message: `Generating ${cube.title}...`, current: i + 1, total: cubes.length })
+
+          const otherCubes = cubes
+            .filter(c => c.name !== cube.name)
+            .map(c => `- ${c.name} (variable: ${c.variableName}, tables: ${c.tables.join(', ')})`)
+            .join('\n')
+
+          const cubePrompt = `## Schema Files\n\n${schemaListing}\n\n## Available Schema Files\n${schemaContext.map((s: any) => `- ${s.fileName}.ts`).join('\n')}\n\n## Cube to Generate\n\nName: ${cube.name}\nVariable name: ${cube.variableName}\nTitle: ${cube.title}\nDescription: ${cube.description}\nTables: ${cube.tables.join(', ')}\nSchema file: ${cube.schemaFile}\n\n## Other Cubes in This File (for joins)\n\n${otherCubes || 'None'}\n\nGenerate ONLY a bare assignment — no \`let\`, \`const\`, or \`var\` keyword. Start with:\n${cube.variableName} = defineCube('${cube.name}', {\n...and end with:\n}) as Cube`
+
+          try {
+            let source = await callAI(ai, CUBE_GENERATE_ONE_SYSTEM_PROMPT, cubePrompt)
+            // Strip any accidental let/const/var prefix
+            source = source.replace(/^(export\s+)?(let|const|var)\s+/, '')
+            generatedParts.push(source)
+            send('cube_done', { index: i, name: cube.name })
+          } catch (err: any) {
+            send('cube_error', { index: i, name: cube.name, error: err.message })
+          }
+        }
+
+        // Phase 3: Assemble final file
+        send('status', { phase: 'assembling', message: 'Assembling final cube definitions...' })
+
+        // Build imports from schema context — collect all table names used by cubes
+        const tableImports = new Map<string, Set<string>>()
+        for (const cube of cubes) {
+          const file = cube.schemaFile
+          if (!tableImports.has(file)) tableImports.set(file, new Set())
+          for (const t of cube.tables) tableImports.get(file)!.add(t)
+        }
+
+        const importLines = [
+          `import { eq } from 'drizzle-orm'`,
+          `import { defineCube } from 'drizzle-cube/server'`,
+          `import type { QueryContext, BaseQueryDefinition, Cube } from 'drizzle-cube/server'`,
+        ]
+        for (const [file, tables] of tableImports) {
+          importLines.push(`import { ${[...tables].join(', ')} } from './${file}'`)
+        }
+
+        // Forward declarations for lazy references
+        const declarations = cubes.map(c => `let ${c.variableName}: Cube`).join('\n')
+
+        // Export all cubes so they get registered by the compiler
+        const exportLine = `export const allCubes = [${cubes.map(c => c.variableName).join(', ')}]`
+
+        const finalSource = [
+          importLines.join('\n'),
+          '',
+          declarations,
+          '',
+          generatedParts.join('\n\n'),
+          '',
+          exportLine,
+        ].join('\n')
+
+        send('complete', { source: finalSource })
+      } catch (err: any) {
+        send('error', { message: err.message })
+      } finally {
+        controller.close()
+      }
+    }
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  })
 })
 
 // Get single schema file
@@ -141,128 +293,7 @@ app.get('/:id/types', async (c) => {
   return c.text(dts, 200, { 'Content-Type': 'application/typescript' })
 })
 
-// Validate schema files against the live database.
-// For each table defined in schema files, checks that the table exists and columns match.
-app.post('/validate-against-db', async (c) => {
-  const db = c.get('db') as any
-  const body = await c.req.json()
-  const { connectionId } = body
-
-  const conn = await db.select().from(connections)
-    .where(and(eq(connections.id, connectionId), eq(connections.organisationId, 1)))
-  if (conn.length === 0) return c.json({ error: 'Connection not found' }, 400)
-
-  const managed = connectionManager.get(connectionId)
-  if (!managed) return c.json({ error: 'Connection not initialized' }, 400)
-
-  // Compile all schema files for this connection
-  const allSchemas = await db.select().from(schemaFiles)
-    .where(and(eq(schemaFiles.connectionId, connectionId), eq(schemaFiles.organisationId, 1)))
-
-  if (allSchemas.length === 0) {
-    return c.json({ valid: false, error: 'No schema files found for this connection.' })
-  }
-
-  const compileErrors: Array<{ file: string; errors: any[] }> = []
-  const tables: Array<{ varName: string; tableName: string; columns: Array<{ name: string; dataType: string }> }> = []
-
-  for (const sf of allSchemas) {
-    const result = compileSchema(sf.sourceCode)
-    if (result.errors.length > 0) {
-      compileErrors.push({ file: sf.name, errors: result.errors })
-      continue
-    }
-    // Extract table config from each exported pgTable object
-    for (const [varName, exp] of Object.entries(result.exports)) {
-      try {
-        const config = getTableConfig(exp as any)
-        tables.push({
-          varName,
-          tableName: config.name,
-          columns: config.columns.map((col: any) => ({
-            name: col.name,
-            dataType: col.columnType,
-          })),
-        })
-      } catch {
-        // Not a pgTable export, skip
-      }
-    }
-  }
-
-  if (compileErrors.length > 0) {
-    return c.json({ valid: false, error: 'Schema files have compilation errors', compileErrors })
-  }
-
-  if (tables.length === 0) {
-    return c.json({ valid: false, error: 'No tables found in schema files.' })
-  }
-
-  // Query the live DB for the tables we care about
-  const client = managed.client
-  const tableNames = tables.map(t => t.tableName)
-
-  try {
-    const dbColumns = await client`
-      SELECT c.table_name, c.column_name, c.data_type, c.is_nullable
-      FROM information_schema.columns c
-      WHERE c.table_schema = 'public'
-        AND c.table_name = ANY(${tableNames})
-      ORDER BY c.table_name, c.ordinal_position
-    `
-
-    // Also check which tables actually exist
-    const dbTables = await client`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = ANY(${tableNames})
-    `
-    const existingTables = new Set(dbTables.map((r: any) => r.table_name))
-
-    // Build column lookup: tableName -> { colName -> data_type }
-    const dbColumnMap = new Map<string, Map<string, string>>()
-    for (const col of dbColumns) {
-      if (!dbColumnMap.has(col.table_name)) dbColumnMap.set(col.table_name, new Map())
-      dbColumnMap.get(col.table_name)!.set(col.column_name, col.data_type)
-    }
-
-    const issues: Array<{ table: string; issue: string }> = []
-
-    for (const table of tables) {
-      if (!existingTables.has(table.tableName)) {
-        issues.push({ table: table.tableName, issue: `Table "${table.tableName}" does not exist in the database` })
-        continue
-      }
-
-      const dbCols = dbColumnMap.get(table.tableName)
-      if (!dbCols) continue
-
-      for (const col of table.columns) {
-        if (!dbCols.has(col.name)) {
-          issues.push({ table: table.tableName, issue: `Column "${col.name}" not found in table "${table.tableName}"` })
-        }
-      }
-
-      // Check for DB columns not in schema (informational)
-      const schemaCols = new Set(table.columns.map(c => c.name))
-      for (const [dbColName] of dbCols) {
-        if (!schemaCols.has(dbColName)) {
-          issues.push({ table: table.tableName, issue: `Column "${dbColName}" exists in DB but not in schema for "${table.tableName}" (optional)` })
-        }
-      }
-    }
-
-    return c.json({
-      valid: issues.filter(i => !i.issue.includes('(optional)')).length === 0,
-      tables: tables.map(t => t.tableName),
-      issues,
-    })
-  } catch (err: any) {
-    return c.json({ error: `Validation failed: ${err.message}` }, 500)
-  }
-})
-
-// Introspect a database connection and generate pgTable() source
+// Introspect a database connection using drizzle-kit pull
 app.post('/introspect', async (c) => {
   const db = c.get('db') as any
   const body = await c.req.json()
@@ -272,141 +303,266 @@ app.post('/introspect', async (c) => {
     .where(and(eq(connections.id, connectionId), eq(connections.organisationId, 1)))
   if (conn.length === 0) return c.json({ error: 'Connection not found' }, 400)
 
-  // Use the managed connection's existing postgres client
-  const managed = connectionManager.get(connectionId)
-  if (!managed) return c.json({ error: 'Connection not initialized' }, 400)
+  // Ensure connection is managed (initialize on-demand for new connections)
+  let managed = connectionManager.get(connectionId)
+  if (!managed) {
+    try {
+      managed = await connectionManager.createConnection(conn[0].id, conn[0].connectionString, conn[0].engineType)
+    } catch (err: any) {
+      return c.json({ error: `Failed to connect: ${err.message}` }, 400)
+    }
+  }
 
   try {
-    const client = managed.client
-
-    // Query information_schema for tables and columns
-    const tables = await client`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-      ORDER BY table_name
-    `
-
-    const columns = await client`
-      SELECT
-        c.table_name,
-        c.column_name,
-        c.data_type,
-        c.is_nullable,
-        c.column_default,
-        c.character_maximum_length,
-        tc.constraint_type
-      FROM information_schema.columns c
-      LEFT JOIN information_schema.key_column_usage kcu
-        ON c.table_name = kcu.table_name AND c.column_name = kcu.column_name
-        AND c.table_schema = kcu.table_schema
-      LEFT JOIN information_schema.table_constraints tc
-        ON kcu.constraint_name = tc.constraint_name
-        AND tc.constraint_type = 'PRIMARY KEY'
-      WHERE c.table_schema = 'public'
-      ORDER BY c.table_name, c.ordinal_position
-    `
-
-    const source = generatePgTableSource(tables, columns)
-    return c.json({ source, tables: tables.map((t: any) => t.table_name) })
+    const { source, tables } = await runDrizzleKitPull(conn[0].connectionString, conn[0].engineType)
+    return c.json({ source, tables })
   } catch (err: any) {
     return c.json({ error: `Introspection failed: ${err.message}` }, 500)
   }
 })
 
-function generatePgTableSource(tables: any[], columns: any[]): string {
-  const lines: string[] = [
-    `import { pgTable, integer, text, real, boolean, timestamp, jsonb, serial, varchar, numeric, date, smallint, bigint } from 'drizzle-orm/pg-core'`,
-    '',
-  ]
+/**
+ * Run `drizzle-kit pull` as a subprocess to introspect a database.
+ * Returns the generated schema.ts source code and table names.
+ */
+async function runDrizzleKitPull(connectionString: string, engineType: string = 'postgresql'): Promise<{ source: string; tables: string[] }> {
+  const { mkdtemp, readFile, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { execFile } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const execFileAsync = promisify(execFile)
 
-  const columnsByTable = new Map<string, any[]>()
-  for (const col of columns) {
-    const list = columnsByTable.get(col.table_name) || []
-    list.push(col)
-    columnsByTable.set(col.table_name, list)
-  }
+  const tempDir = await mkdtemp(join(tmpdir(), 'dk-pull-'))
 
-  for (const table of tables) {
-    const tableName = table.table_name
-    const cols = columnsByTable.get(tableName) || []
-    const camelName = toCamelCase(tableName)
+  try {
+    // Write a temporary drizzle config
+    const dialect = engineType === 'sqlite' ? 'sqlite' : 'postgresql'
+    const dbCreds = engineType === 'sqlite'
+      ? `{ url: ${JSON.stringify(connectionString.replace(/^file:/, ''))} }`
+      : `{ url: ${JSON.stringify(connectionString)} }`
+    const configPath = join(tempDir, 'drizzle.config.js')
+    const configContent = `module.exports = {
+  dialect: '${dialect}',
+  out: '${tempDir}/out',
+  dbCredentials: ${dbCreds},
+${dialect === 'postgresql' ? "  schemaFilter: ['public'],\n" : ''}}\n`
+    await import('node:fs').then(fs => fs.writeFileSync(configPath, configContent))
 
-    lines.push(`export const ${camelName} = pgTable('${tableName}', {`)
+    // Run drizzle-kit pull
+    const drizzleKitBin = join(process.cwd(), 'node_modules', '.bin', 'drizzle-kit')
+    await execFileAsync(drizzleKitBin, ['pull', `--config=${configPath}`], {
+      cwd: process.cwd(),
+      timeout: 30000,
+    })
 
-    for (const col of cols) {
-      const colCamel = toCamelCase(col.column_name)
-      const drizzleType = pgTypeToDrizzle(col.data_type, col.column_name)
-      const isPk = col.constraint_type === 'PRIMARY KEY'
-      const isIdentity = col.column_default?.includes('nextval') || col.column_default?.includes('identity')
+    // Read the generated schema file and clean it up
+    const schemaPath = join(tempDir, 'out', 'schema.ts')
+    const rawSource = await readFile(schemaPath, 'utf-8')
+    const source = stripTableExtras(rawSource)
 
-      let colDef = `  ${colCamel}: ${drizzleType}('${col.column_name}')`
-      if (isPk) {
-        if (isIdentity) {
-          colDef += '.primaryKey().generatedAlwaysAsIdentity()'
-        } else {
-          colDef += '.primaryKey()'
-        }
-      }
-      if (col.is_nullable === 'NO' && !isPk) {
-        colDef += '.notNull()'
-      }
-      colDef += ','
-      lines.push(colDef)
+    // Extract table names from export statements
+    const tableRegex = /export const \w+ = (?:pgTable|sqliteTable)\("(\w+)"/g
+    const tables: string[] = []
+    let match
+    while ((match = tableRegex.exec(source)) !== null) {
+      tables.push(match[1])
     }
 
-    lines.push('})')
-    lines.push('')
-  }
-
-  return lines.join('\n')
-}
-
-function pgTypeToDrizzle(dataType: string, _colName: string): string {
-  switch (dataType) {
-    case 'integer':
-    case 'int':
-    case 'int4':
-      return 'integer'
-    case 'smallint':
-    case 'int2':
-      return 'smallint'
-    case 'bigint':
-    case 'int8':
-      return 'bigint'
-    case 'text':
-      return 'text'
-    case 'character varying':
-    case 'varchar':
-      return 'varchar'
-    case 'boolean':
-    case 'bool':
-      return 'boolean'
-    case 'real':
-    case 'float4':
-    case 'double precision':
-    case 'float8':
-      return 'real'
-    case 'numeric':
-    case 'decimal':
-      return 'numeric'
-    case 'timestamp without time zone':
-    case 'timestamp with time zone':
-    case 'timestamp':
-      return 'timestamp'
-    case 'date':
-      return 'date'
-    case 'jsonb':
-      return 'jsonb'
-    case 'json':
-      return 'jsonb'
-    default:
-      return 'text'
+    return { source, tables }
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {})
   }
 }
 
-function toCamelCase(str: string): string {
-  return str.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+/**
+ * Strip index/constraint/foreignKey extras from pgTable() calls.
+ * drizzle-kit generates a 3rd argument `(table) => [...]` with indexes etc.
+ * that can contain complex/invalid TS for exotic index types (BM25, GIN, etc).
+ * We only need columns for schema definitions, so remove the extras and
+ * clean up unused imports.
+ */
+function stripTableExtras(source: string): string {
+  let result = source
+  const extraPattern = /\},\s*\(table\)\s*=>\s*\[/g
+  let m
+  const removals: Array<{ start: number; end: number }> = []
+
+  while ((m = extraPattern.exec(source)) !== null) {
+    const startOfExtras = m.index + 1 // position of the comma after `}`
+    let depth = 1
+    let i = m.index + m[0].length
+    while (i < source.length && depth > 0) {
+      if (source[i] === '[') depth++
+      else if (source[i] === ']') depth--
+      i++
+    }
+    // Skip past optional whitespace and `)`
+    while (i < source.length && /\s/.test(source[i])) i++
+    if (source[i] === ')') i++ // skip the closing paren of pgTable()
+    removals.push({ start: startOfExtras, end: i })
+  }
+
+  // Apply removals in reverse order
+  for (const { start, end } of removals.reverse()) {
+    result = result.slice(0, start) + ')' + result.slice(end)
+  }
+
+  // Clean up imports: remove unused imports that were only for indexes/constraints
+  const indexOnlyImports = ['index', 'uniqueIndex', 'unique', 'foreignKey', 'check', 'primaryKey', 'pgPolicy']
+  for (const imp of indexOnlyImports) {
+    // Only remove if not actually used in the cleaned source (outside the import line)
+    const importPattern = new RegExp(`\\b${imp}\\b`)
+    const withoutImports = result.replace(/^import\s+\{[^}]+\}\s+from\s+.+$/gm, '')
+    if (!importPattern.test(withoutImports)) {
+      // Remove from import list
+      result = result.replace(new RegExp(`,\\s*${imp}\\b|\\b${imp}\\s*,?`), '')
+    }
+  }
+
+  // Also remove `import { sql } from "drizzle-orm"` if sql is no longer used
+  const withoutImports = result.replace(/^import\s+\{[^}]+\}\s+from\s+.+$/gm, '')
+  if (!/\bsql\b/.test(withoutImports)) {
+    result = result.replace(/^import\s*\{\s*sql\s*\}\s*from\s*["']drizzle-orm["']\s*;?\s*\n?/m, '')
+  }
+
+  // Clean up empty/malformed import lines
+  result = result.replace(/import\s*\{\s*\}\s*from\s*.+\n?/g, '')
+  // Clean up trailing commas or spaces in import braces
+  result = result.replace(/\{\s*,/g, '{').replace(/,\s*\}/g, ' }')
+
+  return result
 }
+
+/**
+ * Call configured AI provider to generate text.
+ */
+async function callAI(
+  ai: { provider?: string; apiKey?: string; model?: string; baseUrl?: string },
+  systemPrompt: string,
+  userPrompt: string,
+): Promise<string> {
+  if (ai.provider === 'anthropic') {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
+    const client = new Anthropic({ apiKey: ai.apiKey })
+    const stream = await client.messages.stream({
+      model: ai.model || 'claude-sonnet-4-6',
+      max_tokens: 16384,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    })
+    const response = await stream.finalMessage()
+    const textBlock = response.content.find((b: any) => b.type === 'text')
+    if (!textBlock || textBlock.type !== 'text') throw new Error('No text response from AI')
+    return extractCodeBlock(textBlock.text)
+  }
+
+  if (ai.provider === 'openai') {
+    const OpenAI = (await import('openai')).default
+    const client = new OpenAI({ apiKey: ai.apiKey, ...(ai.baseUrl && { baseURL: ai.baseUrl }) })
+    const response = await client.chat.completions.create({
+      model: ai.model || 'gpt-4.1-mini',
+      max_tokens: 65536,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    })
+    const text = response.choices[0]?.message?.content
+    if (!text) throw new Error('No text response from AI')
+    return extractCodeBlock(text)
+  }
+
+  if (ai.provider === 'google') {
+    const model = ai.model || 'gemini-3-flash-preview'
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${ai.apiKey}`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: { maxOutputTokens: 65536 },
+      }),
+    })
+    if (!response.ok) {
+      const errText = await response.text()
+      throw new Error(`Gemini API error (${response.status}): ${errText.substring(0, 200)}`)
+    }
+    const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }
+    const text = data.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text).join('\n')
+    if (!text) throw new Error('No text response from AI')
+    return extractCodeBlock(text)
+  }
+
+  throw new Error(`Unsupported AI provider: ${ai.provider}`)
+}
+
+/**
+ * Extract code from markdown code blocks if present, otherwise return as-is.
+ */
+function extractCodeBlock(text: string): string {
+  const match = text.match(/```(?:typescript|ts)?\s*\n([\s\S]*?)```/)
+  return match ? match[1].trim() : text.trim()
+}
+
+const CUBE_PLAN_SYSTEM_PROMPT = `You are an expert at analyzing database schemas and planning analytical cube definitions for a semantic layer.
+
+Given Drizzle ORM schema files, analyze the tables and propose cubes to create. Focus on analytically useful tables — skip junction tables, migration tables, system/config tables, and audit logs unless they contain valuable metrics.
+
+Respond with ONLY a JSON array (no markdown, no explanation). Each element must have:
+- "name": The cube name (PascalCase, e.g. "Users", "Orders")
+- "variableName": The JS variable name (camelCase + "Cube", e.g. "usersCube", "ordersCube")
+- "title": Human-readable title (e.g. "User Analytics")
+- "description": One-line description of what analytics this cube enables
+- "tables": Array of Drizzle table variable names this cube uses (usually just one, e.g. ["users"])
+- "schemaFile": The schema file name (without .ts) where the tables are defined
+
+Example response:
+[
+  { "name": "Users", "variableName": "usersCube", "title": "User Analytics", "description": "User accounts, activity, and demographics", "tables": ["users"], "schemaFile": "schema" },
+  { "name": "Orders", "variableName": "ordersCube", "title": "Order Analytics", "description": "Order volume, revenue, and status tracking", "tables": ["orders"], "schemaFile": "schema" }
+]`
+
+const CUBE_GENERATE_ONE_SYSTEM_PROMPT = `You are an expert at creating Drizzle Cube semantic layer definitions. Generate a SINGLE cube definition.
+
+## Rules
+- Output ONLY the cube assignment code — NO imports, NO markdown fences, NO explanation, NO \`let\`/\`const\`/\`var\` keyword
+- Start directly with: \`variableName = defineCube('CubeName', {\`
+- Cast as \`Cube\` at the end: \`}) as Cube\`
+- Every dimension MUST have a \`name\` property matching its key
+- Every measure MUST have a \`name\` property matching its key
+- Measures have ONLY these properties: \`name\`, \`title\`, \`type\`, \`sql\`, and optionally \`filters\` — do NOT add \`format\` or other properties
+- Set \`primaryKey: true\` on the ID column dimension
+- Use camelCase for dimension/measure keys matching the Drizzle column property names
+- For joins, use lazy \`() => otherCube\` references to the variable names of other cubes listed in the prompt
+- If cube A belongsTo B, the reverse join (B hasMany A) should also exist — but you only generate this cube, so just define this cube's joins
+- If the table has organisationId/orgId/tenantId, add security filtering with a cast: \`where: eq(table.orgColumn, ctx.securityContext.organisationId as number)\`
+- If the table has no multi-tenant column, omit the where clause
+- Only reference table variables that exist in the schema files provided
+
+## Dimension types: 'string' | 'number' | 'time' | 'boolean'
+## Measure types: 'count' | 'countDistinct' | 'sum' | 'avg' | 'min' | 'max' | 'runningTotal'
+## Relationship types: 'belongsTo' | 'hasOne' | 'hasMany' | 'belongsToMany'
+
+Example output (note: NO let/const, just bare assignment):
+usersCube = defineCube('Users', {
+  title: 'User Analytics',
+  description: 'User accounts and profiles',
+  sql: (ctx: QueryContext): BaseQueryDefinition => ({
+    from: users,
+    where: eq(users.organisationId, ctx.securityContext.organisationId as number)
+  }),
+  joins: {
+    Orders: { targetCube: () => ordersCube, relationship: 'hasMany', on: [{ source: users.id, target: orders.userId }] }
+  },
+  dimensions: {
+    id: { name: 'id', title: 'User ID', type: 'number', sql: users.id, primaryKey: true },
+    name: { name: 'name', title: 'Name', type: 'string', sql: users.name },
+  },
+  measures: {
+    count: { name: 'count', title: 'Total Users', type: 'count', sql: users.id },
+  }
+}) as Cube`
 
 export default app

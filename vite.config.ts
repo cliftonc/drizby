@@ -10,15 +10,18 @@ export default defineConfig({
     proxy: {
       '/cubejs-api': {
         target: 'http://localhost:3461',
-        changeOrigin: true
+        changeOrigin: true,
+        secure: false
       },
       '/api': {
         target: 'http://localhost:3461',
-        changeOrigin: true
+        changeOrigin: true,
+        secure: false
       }
     }
   },
   build: {
-    outDir: '../dist'
+    outDir: '../dist',
+    emptyOutDir: true
   }
 })

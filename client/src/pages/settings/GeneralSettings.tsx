@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
+import { useConfirm } from '../../hooks/useConfirm'
+import { usePrompt } from '../../hooks/usePrompt'
 
 export default function GeneralSettings() {
   const { user } = useAuth()
@@ -47,6 +49,45 @@ export default function GeneralSettings() {
       setLoading(false)
     }
   }
+
+  const [resetting, setResetting] = useState(false)
+  const [confirm, ConfirmDialog] = useConfirm()
+  const [prompt, PromptDialog] = usePrompt()
+
+  const handleFactoryReset = useCallback(async () => {
+    const confirmed = await confirm({
+      title: 'Factory Reset',
+      message: 'This will permanently delete ALL data: connections, schemas, cubes, dashboards, notebooks, users, and settings. This cannot be undone.',
+      confirmText: 'Continue',
+      variant: 'danger'
+    })
+    if (!confirmed) return
+
+    const typed = await prompt({
+      title: 'Confirm Factory Reset',
+      message: 'Type "RESET" to confirm you want to wipe all data.',
+      placeholder: 'RESET',
+      submitText: 'Reset Everything'
+    })
+    if (typed !== 'RESET') return
+
+    setResetting(true)
+    try {
+      const res = await fetch('/api/settings/factory-reset', {
+        method: 'POST',
+        credentials: 'include'
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Reset failed')
+      }
+      // Redirect to root — the server will show setup page after restart
+      window.location.href = '/'
+    } catch (err: any) {
+      setError(err.message)
+      setResetting(false)
+    }
+  }, [confirm, prompt])
 
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '6px 12px', backgroundColor: 'var(--dc-input-bg)', border: '1px solid var(--dc-input-border)',
@@ -107,6 +148,34 @@ export default function GeneralSettings() {
           </button>
         </form>
       </div>
+      {user?.role === 'admin' && (
+        <div style={{ marginTop: 32, padding: 16, backgroundColor: 'var(--dc-surface)', borderRadius: 8, border: '1px solid var(--dc-error-border, #ef4444)' }}>
+          <h3 style={{ fontSize: 13, fontWeight: 500, color: 'var(--dc-error, #ef4444)', marginBottom: 4, marginTop: 0 }}>Danger Zone</h3>
+          <p style={{ fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 12, marginTop: 0 }}>
+            Permanently delete all data and reset Drizby to a fresh state. Demo data will be re-created on next server restart.
+          </p>
+          <button
+            onClick={handleFactoryReset}
+            disabled={resetting}
+            style={{
+              padding: '6px 16px',
+              backgroundColor: 'transparent',
+              color: 'var(--dc-error, #ef4444)',
+              fontWeight: 500,
+              borderRadius: 6,
+              border: '1px solid var(--dc-error-border, #ef4444)',
+              cursor: resetting ? 'not-allowed' : 'pointer',
+              fontSize: 13,
+              opacity: resetting ? 0.5 : 1
+            }}
+          >
+            {resetting ? 'Resetting...' : 'Factory Reset'}
+          </button>
+        </div>
+      )}
+
+      <ConfirmDialog />
+      <PromptDialog />
     </div>
   )
 }

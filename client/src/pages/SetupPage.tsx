@@ -56,7 +56,10 @@ export default function SetupPage() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--dc-auth-bg)' }}>
       <div style={{ width: '100%', maxWidth: 380, padding: 32 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dc-text)', marginBottom: 8, textAlign: 'center' }}>Welcome to DC-BI</h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
+          <img src="/logo.png" alt="" style={{ width: 32, height: 32 }} />
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dc-text)', margin: 0 }}>Welcome to Drizby</h1>
+        </div>
         <p style={{ color: 'var(--dc-text-muted)', fontSize: 14, textAlign: 'center', marginBottom: 32 }}>Create your admin account to get started</p>
 
         {error && (

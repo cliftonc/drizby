@@ -3,9 +3,9 @@ import { defineConfig } from 'drizzle-kit'
 export default defineConfig({
   schema: './schema.ts',
   out: './drizzle',
-  dialect: 'postgresql',
+  dialect: 'sqlite',
   dbCredentials: {
-    url: process.env.DATABASE_URL || 'postgresql://dc_bi_user:dc_bi_pass123@localhost:54930/dc_bi_db'
+    url: process.env.DATABASE_PATH || 'data/drizby.sqlite'
   },
   verbose: true,
   strict: true

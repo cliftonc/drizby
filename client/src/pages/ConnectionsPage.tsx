@@ -1,26 +1,44 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useConfirm } from '../hooks/useConfirm'
 
 interface Connection {
   id: number
   name: string
   description: string | null
   engineType: string
+  connectionString?: string
   isActive: boolean
   createdAt: string
+}
+
+interface ConnectionFormData {
+  name: string
+  description: string
+  engineType: string
+  connectionString: string
 }
 
 export default function ConnectionsPage() {
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [confirm, ConfirmDialog] = useConfirm()
 
   const { data: connections = [], isLoading } = useQuery<Connection[]>({
     queryKey: ['connections'],
     queryFn: () => fetch('/api/connections').then(r => r.json())
   })
 
+  // Fetch full connection details (with connectionString) when editing
+  const { data: editingConnection } = useQuery<Connection>({
+    queryKey: ['connections', editingId],
+    queryFn: () => fetch(`/api/connections/${editingId}`).then(r => r.json()),
+    enabled: editingId !== null,
+  })
+
   const createMutation = useMutation({
-    mutationFn: (data: Record<string, string>) =>
+    mutationFn: (data: ConnectionFormData) =>
       fetch('/api/connections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -32,11 +50,57 @@ export default function ConnectionsPage() {
     }
   })
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: ConnectionFormData }) =>
+      fetch(`/api/connections/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      setEditingId(null)
+    }
+  })
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
       fetch(`/api/connections/${id}`, { method: 'DELETE' }).then(r => r.json()),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['connections'] })
   })
+
+  const [testResult, setTestResult] = useState<Record<number, { success: boolean; message: string } | 'loading'>>({})
+
+  const testConnection = async (id: number) => {
+    setTestResult(prev => ({ ...prev, [id]: 'loading' }))
+    try {
+      const res = await fetch(`/api/connections/${id}/test`, { method: 'POST' })
+      const data = await res.json()
+      setTestResult(prev => ({ ...prev, [id]: data }))
+      setTimeout(() => setTestResult(prev => { const next = { ...prev }; delete next[id]; return next }), 5000)
+    } catch {
+      setTestResult(prev => ({ ...prev, [id]: { success: false, message: 'Request failed' } }))
+    }
+  }
+
+  const handleDelete = async (conn: Connection) => {
+    const confirmed = await confirm({
+      title: 'Delete Connection',
+      message: `Are you sure you want to delete "${conn.name}"? Any schemas and cubes using this connection will stop working.`,
+      confirmText: 'Delete',
+      variant: 'danger'
+    })
+    if (confirmed) deleteMutation.mutate(conn.id)
+  }
+
+  const handleEdit = (conn: Connection) => {
+    setShowForm(false)
+    setEditingId(conn.id)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingId(null)
+  }
 
   return (
     <div>
@@ -48,7 +112,7 @@ export default function ConnectionsPage() {
           </p>
         </div>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => { setShowForm(!showForm); setEditingId(null) }}
           style={{
             padding: '8px 16px',
             backgroundColor: 'var(--dc-primary)',
@@ -68,6 +132,8 @@ export default function ConnectionsPage() {
         <ConnectionForm
           onSubmit={(data) => createMutation.mutate(data)}
           isLoading={createMutation.isPending}
+          onCancel={() => setShowForm(false)}
+          showTest
         />
       )}
 
@@ -88,73 +154,154 @@ export default function ConnectionsPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {connections.map(conn => (
-            <div key={conn.id} style={{
-              padding: 16,
-              backgroundColor: 'var(--dc-surface)',
-              borderRadius: 8,
-              border: '1px solid var(--dc-border)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: 'var(--dc-text)' }}>{conn.name}</h3>
-                  <span style={{
-                    fontSize: 11,
-                    padding: '1px 6px',
-                    borderRadius: 4,
-                    backgroundColor: 'var(--dc-surface-hover)',
-                    color: 'var(--dc-text-secondary)'
-                  }}>
-                    {conn.engineType}
-                  </span>
-                  <span style={{
-                    fontSize: 11,
-                    padding: '1px 6px',
-                    borderRadius: 4,
-                    backgroundColor: conn.isActive ? '#dcfce7' : '#fee2e2',
-                    color: conn.isActive ? '#166534' : '#991b1b'
-                  }}>
-                    {conn.isActive ? 'Active' : 'Inactive'}
-                  </span>
+            <div key={conn.id}>
+              {editingId === conn.id && editingConnection ? (
+                <ConnectionForm
+                  initial={{
+                    name: editingConnection.name,
+                    description: editingConnection.description || '',
+                    engineType: editingConnection.engineType,
+                    connectionString: editingConnection.connectionString || ''
+                  }}
+                  onSubmit={(data) => updateMutation.mutate({ id: conn.id, data })}
+                  isLoading={updateMutation.isPending}
+                  onCancel={handleCancelEdit}
+                  showTest
+                  submitLabel="Save Changes"
+                  title="Edit Connection"
+                />
+              ) : (
+                <div style={{
+                  padding: 16,
+                  backgroundColor: 'var(--dc-surface)',
+                  borderRadius: 8,
+                  border: '1px solid var(--dc-border)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: 'var(--dc-text)' }}>{conn.name}</h3>
+                      <span style={{
+                        fontSize: 11,
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        backgroundColor: 'var(--dc-surface-hover)',
+                        color: 'var(--dc-text-secondary)'
+                      }}>
+                        {conn.engineType}
+                      </span>
+                      <span style={{
+                        fontSize: 11,
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        backgroundColor: conn.isActive ? '#dcfce7' : '#fee2e2',
+                        color: conn.isActive ? '#166534' : '#991b1b'
+                      }}>
+                        {conn.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    {conn.description && (
+                      <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--dc-text-secondary)' }}>{conn.description}</p>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {testResult[conn.id] && testResult[conn.id] !== 'loading' && (
+                      <span style={{
+                        fontSize: 11, color: (testResult[conn.id] as { success: boolean; message: string }).success ? 'var(--dc-success, #22c55e)' : 'var(--dc-error)',
+                        marginRight: 4
+                      }}>
+                        {(testResult[conn.id] as { success: boolean; message: string }).message}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => testConnection(conn.id)}
+                      disabled={testResult[conn.id] === 'loading'}
+                      style={{
+                        padding: '4px 12px',
+                        backgroundColor: 'transparent',
+                        color: 'var(--dc-primary)',
+                        border: '1px solid var(--dc-primary)',
+                        borderRadius: 4,
+                        cursor: testResult[conn.id] === 'loading' ? 'not-allowed' : 'pointer',
+                        fontSize: 12,
+                        opacity: testResult[conn.id] === 'loading' ? 0.5 : 1
+                      }}
+                    >
+                      {testResult[conn.id] === 'loading' ? 'Testing...' : 'Test'}
+                    </button>
+                    <button
+                      onClick={() => handleEdit(conn)}
+                      style={{
+                        padding: '4px 12px',
+                        backgroundColor: 'transparent',
+                        color: 'var(--dc-text-secondary)',
+                        border: '1px solid var(--dc-border)',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        fontSize: 12
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(conn)}
+                      style={{
+                        padding: '4px 12px',
+                        backgroundColor: 'transparent',
+                        color: 'var(--dc-error)',
+                        border: '1px solid var(--dc-error)',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        fontSize: 12
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-                {conn.description && (
-                  <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--dc-text-secondary)' }}>{conn.description}</p>
-                )}
-              </div>
-              <button
-                onClick={() => deleteMutation.mutate(conn.id)}
-                style={{
-                  padding: '4px 12px',
-                  backgroundColor: 'transparent',
-                  color: 'var(--dc-error)',
-                  border: '1px solid var(--dc-error)',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  fontSize: 12
-                }}
-              >
-                Delete
-              </button>
+              )}
             </div>
           ))}
         </div>
       )}
+      <ConfirmDialog />
     </div>
   )
 }
 
-function ConnectionForm({ onSubmit, isLoading }: {
-  onSubmit: (data: Record<string, string>) => void
+function ConnectionForm({ onSubmit, isLoading, onCancel, showTest, initial, submitLabel = 'Create Connection', title = 'New Connection' }: {
+  onSubmit: (data: ConnectionFormData) => void
   isLoading: boolean
+  onCancel: () => void
+  showTest?: boolean
+  initial?: ConnectionFormData
+  submitLabel?: string
+  title?: string
 }) {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<ConnectionFormData>(initial ?? {
     name: '',
     description: '',
     engineType: 'postgres',
     connectionString: ''
   })
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | 'loading' | null>(null)
+
+  const handleTest = async () => {
+    setTestResult('loading')
+    try {
+      const res = await fetch('/api/connections/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engineType: form.engineType, connectionString: form.connectionString })
+      })
+      const data = await res.json()
+      setTestResult(data)
+    } catch {
+      setTestResult({ success: false, message: 'Request failed' })
+    }
+  }
 
   return (
     <div style={{
@@ -164,7 +311,7 @@ function ConnectionForm({ onSubmit, isLoading }: {
       border: '1px solid var(--dc-border)',
       marginBottom: 16
     }}>
-      <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600, color: 'var(--dc-text)' }}>New Connection</h3>
+      <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600, color: 'var(--dc-text)' }}>{title}</h3>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div>
           <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4, color: 'var(--dc-text)' }}>Name</label>
@@ -198,35 +345,95 @@ function ConnectionForm({ onSubmit, isLoading }: {
           />
         </div>
         <div style={{ gridColumn: '1 / -1' }}>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4, color: 'var(--dc-text)' }}>Connection String</label>
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4, color: 'var(--dc-text)' }}>
+            Connection String
+            <span style={{ fontWeight: 400, color: 'var(--dc-text-muted)', marginLeft: 6 }}>
+              ({CONNECTION_STRING_EXAMPLES[form.engineType] || 'host:port/database'})
+            </span>
+          </label>
           <input
             value={form.connectionString}
             onChange={e => setForm(f => ({ ...f, connectionString: e.target.value }))}
-            placeholder="postgresql://user:pass@host:5432/database"
+            placeholder={CONNECTION_STRING_PLACEHOLDERS[form.engineType] || ''}
             style={inputStyle}
           />
         </div>
       </div>
-      <button
-        onClick={() => onSubmit(form)}
-        disabled={isLoading || !form.name || !form.connectionString}
-        style={{
-          marginTop: 12,
-          padding: '8px 20px',
-          backgroundColor: 'var(--dc-primary)',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 6,
-          cursor: 'pointer',
-          fontSize: 14,
-          fontWeight: 500,
-          opacity: (isLoading || !form.name || !form.connectionString) ? 0.5 : 1
-        }}
-      >
-        {isLoading ? 'Creating...' : 'Create Connection'}
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+        <button
+          onClick={() => onSubmit(form)}
+          disabled={isLoading || !form.name || !form.connectionString}
+          style={{
+            padding: '8px 20px',
+            backgroundColor: 'var(--dc-primary)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 6,
+            cursor: 'pointer',
+            fontSize: 14,
+            fontWeight: 500,
+            opacity: (isLoading || !form.name || !form.connectionString) ? 0.5 : 1
+          }}
+        >
+          {isLoading ? 'Saving...' : submitLabel}
+        </button>
+        {showTest && (
+          <button
+            onClick={handleTest}
+            disabled={testResult === 'loading' || !form.connectionString}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: 'transparent',
+              color: 'var(--dc-primary)',
+              border: '1px solid var(--dc-primary)',
+              borderRadius: 6,
+              cursor: (testResult === 'loading' || !form.connectionString) ? 'not-allowed' : 'pointer',
+              fontSize: 14,
+              opacity: (testResult === 'loading' || !form.connectionString) ? 0.5 : 1
+            }}
+          >
+            {testResult === 'loading' ? 'Testing...' : 'Test Connection'}
+          </button>
+        )}
+        <button
+          onClick={onCancel}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: 'transparent',
+            color: 'var(--dc-text-secondary)',
+            border: '1px solid var(--dc-border)',
+            borderRadius: 6,
+            cursor: 'pointer',
+            fontSize: 14
+          }}
+        >
+          Cancel
+        </button>
+        {testResult && testResult !== 'loading' && (
+          <span style={{
+            fontSize: 12,
+            color: testResult.success ? 'var(--dc-success, #22c55e)' : 'var(--dc-error)',
+          }}>
+            {testResult.message}
+          </span>
+        )}
+      </div>
     </div>
   )
+}
+
+const CONNECTION_STRING_PLACEHOLDERS: Record<string, string> = {
+  postgres: 'postgresql://user:pass@host:5432/database',
+  mysql: 'mysql://user:pass@host:3306/database',
+  sqlite: 'file:path/to/database.sqlite',
+  duckdb: 'file:path/to/database.duckdb',
+}
+
+const CONNECTION_STRING_EXAMPLES: Record<string, string> = {
+  postgres: 'postgresql://user:pass@host:5432/db',
+  mysql: 'mysql://user:pass@host:3306/db',
+  sqlite: 'file:data/mydata.sqlite',
+  duckdb: 'file:data/mydata.duckdb',
 }
 
 const inputStyle: React.CSSProperties = {

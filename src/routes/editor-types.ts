@@ -1,6 +1,6 @@
 /**
  * Editor types API
- * Serves .d.ts files for Monaco editor autocomplete
+ * Serves .d.ts files from node_modules for Monaco editor autocomplete
  */
 
 import { Hono } from 'hono'
@@ -8,8 +8,8 @@ import { eq, and } from 'drizzle-orm'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { schemaFiles } from '../../schema'
 import { generateSchemaTypes } from '../services/cube-compiler'
-import { readFileSync } from 'fs'
-import { dirname, join } from 'path'
+import { readFileSync, readdirSync, statSync, existsSync } from 'fs'
+import { dirname, join, relative } from 'path'
 import { createRequire } from 'node:module'
 
 const esmRequire = createRequire(import.meta.url)
@@ -20,36 +20,74 @@ interface Variables {
 
 const app = new Hono<{ Variables: Variables }>()
 
-// Cache for loaded .d.ts files
-const dtsCache = new Map<string, string>()
+/**
+ * Recursively collect all .d.ts files from a directory.
+ * Returns a map of relative path -> file content.
+ */
+function collectDtsFiles(dir: string, base: string = dir): Record<string, string> {
+  const result: Record<string, string> = {}
+  if (!existsSync(dir)) return result
 
-function loadDts(packageName: string, dtsPath: string): string {
-  const cacheKey = `${packageName}:${dtsPath}`
-  if (dtsCache.has(cacheKey)) return dtsCache.get(cacheKey)!
-
-  try {
-    const resolved = esmRequire.resolve(packageName)
-    const packageDir = dirname(dirname(resolved))
-    const fullPath = join(packageDir, dtsPath)
-    const content = readFileSync(fullPath, 'utf-8')
-    dtsCache.set(cacheKey, content)
-    return content
-  } catch (err: any) {
-    return `// Could not load types for ${packageName}: ${err.message}`
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry)
+    const stat = statSync(full)
+    if (stat.isDirectory()) {
+      // Skip known heavy/unnecessary directories
+      if (entry === 'node_modules' || entry === 'test' || entry === 'tests') continue
+      Object.assign(result, collectDtsFiles(full, base))
+    } else if (entry.endsWith('.d.ts') || entry.endsWith('.d.mts')) {
+      result[relative(base, full)] = readFileSync(full, 'utf-8')
+    }
   }
+  return result
 }
 
-// Serve drizzle-orm types
+// Cache the collected type files (they don't change at runtime)
+let drizzleOrmCache: Record<string, string> | null = null
+let drizzleCubeCache: Record<string, string> | null = null
+
+function getDrizzleOrmTypes(): Record<string, string> {
+  if (drizzleOrmCache) return drizzleOrmCache
+
+  const packageDir = dirname(esmRequire.resolve('drizzle-orm'))
+  const result: Record<string, string> = {}
+  const files = collectDtsFiles(packageDir)
+  for (const [path, content] of Object.entries(files)) {
+    result[`drizzle-orm/${path}`] = content
+  }
+
+  drizzleOrmCache = result
+  return result
+}
+
+function getDrizzleCubeTypes(): Record<string, string> {
+  if (drizzleCubeCache) return drizzleCubeCache
+
+  // drizzle-cube/server types: read package.json to find the types path
+  const pkgPath = join(dirname(esmRequire.resolve('drizzle-cube/server')), '..', '..', 'package.json')
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+  const serverTypesRel = pkg.exports?.['./server']?.types || 'dist/server/index.d.ts'
+  const pkgDir = dirname(pkgPath)
+  const serverDtsPath = join(pkgDir, serverTypesRel)
+  const serverDir = dirname(serverDtsPath)
+  const result: Record<string, string> = {}
+
+  const files = collectDtsFiles(serverDir)
+  for (const [path, content] of Object.entries(files)) {
+    result[`drizzle-cube/server/${path}`] = content
+  }
+
+  drizzleCubeCache = result
+  return result
+}
+
+// Serve all .d.ts files as JSON maps { path: content }
 app.get('/drizzle-orm', (c) => {
-  // Provide key type declarations for pg-core
-  const dts = loadDts('drizzle-orm', 'pg-core/index.d.ts')
-  return c.text(dts, 200, { 'Content-Type': 'application/typescript' })
+  return c.json(getDrizzleOrmTypes())
 })
 
-// Serve drizzle-cube/server types
 app.get('/drizzle-cube', (c) => {
-  const dts = loadDts('drizzle-cube', 'dist/server/index.d.ts')
-  return c.text(dts, 200, { 'Content-Type': 'application/typescript' })
+  return c.json(getDrizzleCubeTypes())
 })
 
 // Serve generated schema .d.ts for a specific schema file

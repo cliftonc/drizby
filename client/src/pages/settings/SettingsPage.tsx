@@ -3,7 +3,7 @@ import SettingsNav from './SettingsNav'
 import GeneralSettings from './GeneralSettings'
 import TeamPage from './TeamPage'
 import ConnectionsPage from '../ConnectionsPage'
-import CubeDefinitionsPage from '../CubeDefinitionsPage'
+import AISettingsPage from './AISettingsPage'
 
 export default function SettingsPage() {
   return (
@@ -13,8 +13,8 @@ export default function SettingsPage() {
         <Routes>
           <Route index element={<GeneralSettings />} />
           <Route path="team" element={<TeamPage />} />
+          <Route path="ai" element={<AISettingsPage />} />
           <Route path="connections" element={<ConnectionsPage />} />
-          <Route path="cube-definitions" element={<CubeDefinitionsPage />} />
         </Routes>
       </div>
     </div>

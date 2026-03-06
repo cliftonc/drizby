@@ -5,8 +5,6 @@
  */
 
 import { eq } from 'drizzle-orm'
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
 import { SemanticLayerCompiler } from 'drizzle-cube/server'
 import type { DrizzleDatabase, Cube } from 'drizzle-cube/server'
 import { connections, schemaFiles, cubeDefinitions } from '../../schema'
@@ -14,16 +12,16 @@ import { compileSchema, compileCube } from './cube-compiler'
 
 interface ManagedConnection {
   connectionId: number
-  client: postgres.Sql
+  client: any // postgres.Sql or better-sqlite3 Database
   drizzle: DrizzleDatabase
   semanticLayer: SemanticLayerCompiler
   schemaExports: Record<string, Record<string, any>> // schemaName -> exports
   schemaSources: Record<string, string> // schemaName -> source code
+  engineType: string
 }
 
 class ConnectionManager {
   private connections = new Map<number, ManagedConnection>()
-  private cubeConnectionMap = new Map<string, number>() // cubeName -> connectionId
 
   /**
    * Initialize all active connections from the database.
@@ -60,8 +58,24 @@ class ConnectionManager {
       await this.remove(connectionId)
     }
 
-    const client = postgres(connectionString)
-    const db = drizzle(client) as unknown as DrizzleDatabase
+    let client: any
+    let db: DrizzleDatabase
+
+    if (engineType === 'sqlite') {
+      const Database = (await import('better-sqlite3')).default
+      const { drizzle } = await import('drizzle-orm/better-sqlite3')
+      const filePath = connectionString.replace(/^file:/, '')
+      const sqlite = new Database(filePath)
+      sqlite.pragma('journal_mode = WAL')
+      sqlite.pragma('foreign_keys = ON')
+      client = sqlite
+      db = drizzle(sqlite) as unknown as DrizzleDatabase
+    } else {
+      const postgres = (await import('postgres')).default
+      const { drizzle } = await import('drizzle-orm/postgres-js')
+      client = postgres(connectionString)
+      db = drizzle(client) as unknown as DrizzleDatabase
+    }
 
     const semanticLayer = new SemanticLayerCompiler({
       drizzle: db,
@@ -75,6 +89,7 @@ class ConnectionManager {
       semanticLayer,
       schemaExports: {},
       schemaSources: {},
+      engineType,
     }
 
     this.connections.set(connectionId, managed)
@@ -88,15 +103,12 @@ class ConnectionManager {
     const managed = this.connections.get(connectionId)
     if (!managed) return
 
-    // Remove cube->connection mappings for this connection
-    for (const [cubeName, connId] of this.cubeConnectionMap) {
-      if (connId === connectionId) {
-        this.cubeConnectionMap.delete(cubeName)
-      }
-    }
-
     try {
-      await managed.client.end()
+      if (managed.engineType === 'sqlite') {
+        managed.client.close()
+      } else {
+        await managed.client.end()
+      }
     } catch {}
 
     this.connections.delete(connectionId)
@@ -107,17 +119,6 @@ class ConnectionManager {
    */
   get(connectionId: number): ManagedConnection | undefined {
     return this.connections.get(connectionId)
-  }
-
-  /**
-   * Get the semantic layer for a given cube name.
-   */
-  getSemanticLayerForCube(cubeName: string): { semanticLayer: SemanticLayerCompiler; connectionId: number } | undefined {
-    const connectionId = this.cubeConnectionMap.get(cubeName)
-    if (connectionId === undefined) return undefined
-    const managed = this.connections.get(connectionId)
-    if (!managed) return undefined
-    return { semanticLayer: managed.semanticLayer, connectionId }
   }
 
   /**
@@ -132,13 +133,6 @@ class ConnectionManager {
    */
   getConnectionIds(): number[] {
     return [...this.connections.keys()]
-  }
-
-  /**
-   * Get cube -> connectionId mapping.
-   */
-  getCubeConnectionMap(): Map<string, number> {
-    return new Map(this.cubeConnectionMap)
   }
 
   /**
@@ -203,7 +197,7 @@ class ConnectionManager {
         const result = compileCube(cubeDef.sourceCode, managed.schemaExports, managed.schemaSources)
         if (result.errors.length === 0) {
           // Find exported cubes and register them
-          const registeredCubes = this.registerExportedCubes(result.exports, managed, cubeDef.connectionId)
+          const registeredCubes = this.registerExportedCubes(result.exports, managed)
           await db.update(cubeDefinitions)
             .set({
               compiledAt: new Date(),
@@ -245,13 +239,10 @@ class ConnectionManager {
   /**
    * Unregister a cube by name from the semantic layer.
    */
-  unregisterCube(cubeName: string): boolean {
-    const connectionId = this.cubeConnectionMap.get(cubeName)
-    if (connectionId === undefined) return false
+  unregisterCube(connectionId: number, cubeName: string): boolean {
     const managed = this.connections.get(connectionId)
     if (!managed) return false
     managed.semanticLayer.unregisterCube(cubeName)
-    this.cubeConnectionMap.delete(cubeName)
     return true
   }
 
@@ -267,7 +258,7 @@ class ConnectionManager {
       return { cubes: [], errors: result.errors }
     }
 
-    const registered = this.registerExportedCubes(result.exports, managed, connectionId)
+    const registered = this.registerExportedCubes(result.exports, managed)
     return { cubes: registered.map(c => c.name), errors: [] }
   }
 
@@ -280,8 +271,7 @@ class ConnectionManager {
 
   private registerExportedCubes(
     exports: Record<string, any>,
-    managed: ManagedConnection,
-    connectionId: number
+    managed: ManagedConnection
   ): Cube[] {
     const registered: Cube[] = []
     const seen = new Set<string>()
@@ -291,7 +281,6 @@ class ConnectionManager {
       seen.add(cube.name)
       try {
         managed.semanticLayer.registerCube(cube)
-        this.cubeConnectionMap.set(cube.name, connectionId)
         registered.push(cube)
       } catch (err: any) {
         console.error(`Failed to register cube ${cube.name}:`, err.message)

@@ -1,9 +1,9 @@
 /**
- * DC-BI database schema
- * Core tables for the BI platform plus sample analytics data
+ * Drizby internal database schema (SQLite)
+ * Core tables for the BI platform
  */
 
-import { pgTable, integer, text, real, boolean, timestamp, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
+import { sqliteTable, integer, text, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import { relations } from 'drizzle-orm'
 
 // ============================================================================
@@ -11,66 +11,66 @@ import { relations } from 'drizzle-orm'
 // ============================================================================
 
 // Connections - manages database connections to different data sources
-export const connections = pgTable('connections', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+export const connections = sqliteTable('connections', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   description: text('description'),
   engineType: text('engine_type').notNull(), // 'postgres', 'mysql', 'sqlite', 'duckdb'
   connectionString: text('connection_string').notNull(),
-  isActive: boolean('is_active').default(true),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
   organisationId: integer('organisation_id').notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow()
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 }, (table) => [
   index('idx_connections_org').on(table.organisationId)
 ])
 
-// Schema files - stores Drizzle pgTable() definitions as TypeScript source
-export const schemaFiles = pgTable('schema_files', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+// Schema files - stores Drizzle table definitions as TypeScript source
+export const schemaFiles = sqliteTable('schema_files', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(), // e.g. "orders.ts"
   sourceCode: text('source_code').notNull(),
   connectionId: integer('connection_id').notNull(),
   organisationId: integer('organisation_id').notNull(),
-  compiledAt: timestamp('compiled_at'),
-  compilationErrors: jsonb('compilation_errors'),
+  compiledAt: integer('compiled_at', { mode: 'timestamp' }),
+  compilationErrors: text('compilation_errors', { mode: 'json' }),
   version: integer('version').default(1),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow()
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 }, (table) => [
   index('idx_schema_files_org').on(table.organisationId),
   index('idx_schema_files_connection').on(table.connectionId)
 ])
 
 // Cube definitions - stores cube configurations that can be edited and compiled
-export const cubeDefinitions = pgTable('cube_definitions', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+export const cubeDefinitions = sqliteTable('cube_definitions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   title: text('title'),
   description: text('description'),
   sourceCode: text('source_code'), // Raw TypeScript source
   schemaFileId: integer('schema_file_id'), // FK to schemaFiles
   connectionId: integer('connection_id').notNull(),
-  definition: jsonb('definition'), // Compiled metadata cache
-  compiledAt: timestamp('compiled_at'),
-  compilationErrors: jsonb('compilation_errors'),
-  isActive: boolean('is_active').default(true),
+  definition: text('definition', { mode: 'json' }), // Compiled metadata cache
+  compiledAt: integer('compiled_at', { mode: 'timestamp' }),
+  compilationErrors: text('compilation_errors', { mode: 'json' }),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
   organisationId: integer('organisation_id').notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow()
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 }, (table) => [
   index('idx_cube_definitions_org').on(table.organisationId),
   index('idx_cube_definitions_connection').on(table.connectionId)
 ])
 
 // Analytics pages / dashboards
-export const analyticsPages = pgTable('analytics_pages', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+export const analyticsPages = sqliteTable('analytics_pages', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   description: text('description'),
   connectionId: integer('connection_id'),
   organisationId: integer('organisation_id').notNull(),
-  config: jsonb('config').notNull().$type<{
+  config: text('config', { mode: 'json' }).notNull().$type<{
     portlets: Array<{
       id: string
       title: string
@@ -95,23 +95,24 @@ export const analyticsPages = pgTable('analytics_pages', {
       }
     }>
   }>(),
+  createdBy: integer('created_by'),
   order: integer('order').default(0),
-  isActive: boolean('is_active').default(true),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow()
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 }, (table) => [
   index('idx_analytics_pages_org').on(table.organisationId),
   index('idx_analytics_pages_org_active').on(table.organisationId, table.isActive)
 ])
 
 // Notebooks table - for storing AI notebook configurations
-export const notebooks = pgTable('notebooks', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+export const notebooks = sqliteTable('notebooks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   description: text('description'),
   connectionId: integer('connection_id'),
   organisationId: integer('organisation_id').notNull(),
-  config: jsonb('config').$type<{
+  config: text('config', { mode: 'json' }).$type<{
     blocks: Array<{
       id: string
       type: 'portlet' | 'markdown'
@@ -130,105 +131,61 @@ export const notebooks = pgTable('notebooks', {
       timestamp: number
     }>
   }>(),
+  createdBy: integer('created_by'),
   order: integer('order').default(0),
-  isActive: boolean('is_active').default(true),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow()
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 })
 
 // Settings table
-export const settings = pgTable('settings', {
+export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
   organisationId: integer('organisation_id').notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow()
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 }, (table) => [
   index('idx_settings_org').on(table.organisationId)
 ])
 
 // Users
-export const users = pgTable('users', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
   email: text('email').notNull().unique(),
   username: text('username').notNull().unique(),
   name: text('name').notNull(),
   passwordHash: text('password_hash'),
   role: text('role').notNull().default('member'),
-  isBlocked: boolean('is_blocked').notNull().default(false),
+  isBlocked: integer('is_blocked', { mode: 'boolean' }).notNull().default(false),
   avatarUrl: text('avatar_url'),
   organisationId: integer('organisation_id').notNull().default(1),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow()
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 }, (table) => [
   index('idx_users_org').on(table.organisationId)
 ])
 
 // User sessions
-export const userSessions = pgTable('user_sessions', {
+export const userSessions = sqliteTable('user_sessions', {
   id: text('id').primaryKey(), // 64-char hex
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  expiresAt: timestamp('expires_at').notNull(),
-  createdAt: timestamp('created_at').defaultNow()
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 })
 
 // OAuth accounts
-export const oauthAccounts = pgTable('oauth_accounts', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+export const oauthAccounts = sqliteTable('oauth_accounts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   provider: text('provider').notNull(),
   providerUserId: text('provider_user_id').notNull(),
   accessToken: text('access_token'),
   refreshToken: text('refresh_token'),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow()
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date())
 }, (table) => [
   uniqueIndex('idx_oauth_provider_user').on(table.provider, table.providerUserId)
-])
-
-// ============================================================================
-// Sample Data Tables (for the built-in demo data source)
-// ============================================================================
-
-export const employees = pgTable('employees', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
-  name: text('name').notNull(),
-  email: text('email'),
-  active: boolean('active').default(true),
-  departmentId: integer('department_id'),
-  organisationId: integer('organisation_id').notNull(),
-  salary: real('salary'),
-  city: text('city'),
-  region: text('region'),
-  country: text('country'),
-  createdAt: timestamp('created_at').defaultNow()
-}, (table) => [
-  index('idx_employees_org').on(table.organisationId),
-  index('idx_employees_org_created').on(table.organisationId, table.createdAt)
-])
-
-export const departments = pgTable('departments', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
-  name: text('name').notNull(),
-  organisationId: integer('organisation_id').notNull(),
-  budget: real('budget')
-}, (table) => [
-  index('idx_departments_org').on(table.organisationId)
-])
-
-export const productivity = pgTable('productivity', {
-  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
-  employeeId: integer('employee_id').notNull(),
-  departmentId: integer('department_id'),
-  date: timestamp('date').notNull(),
-  linesOfCode: integer('lines_of_code').default(0),
-  pullRequests: integer('pull_requests').default(0),
-  happinessIndex: integer('happiness_index'),
-  organisationId: integer('organisation_id').notNull(),
-  createdAt: timestamp('created_at').defaultNow()
-}, (table) => [
-  index('idx_productivity_org').on(table.organisationId),
-  index('idx_productivity_org_date').on(table.organisationId, table.date)
 ])
 
 // ============================================================================
@@ -255,25 +212,6 @@ export const cubeDefinitionsRelations = relations(cubeDefinitions, ({ one }) => 
   schemaFile: one(schemaFiles, {
     fields: [cubeDefinitions.schemaFileId],
     references: [schemaFiles.id]
-  })
-}))
-
-export const employeesRelations = relations(employees, ({ one, many }) => ({
-  department: one(departments, {
-    fields: [employees.departmentId],
-    references: [departments.id]
-  }),
-  productivityMetrics: many(productivity)
-}))
-
-export const departmentsRelations = relations(departments, ({ many }) => ({
-  employees: many(employees)
-}))
-
-export const productivityRelations = relations(productivity, ({ one }) => ({
-  employee: one(employees, {
-    fields: [productivity.employeeId],
-    references: [employees.id]
   })
 }))
 
@@ -307,15 +245,9 @@ export const schema = {
   users,
   userSessions,
   oauthAccounts,
-  employees,
-  departments,
-  productivity,
   connectionsRelations,
   schemaFilesRelations,
   cubeDefinitionsRelations,
-  employeesRelations,
-  departmentsRelations,
-  productivityRelations,
   usersRelations,
   userSessionsRelations,
   oauthAccountsRelations

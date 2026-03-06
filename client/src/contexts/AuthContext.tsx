@@ -16,6 +16,7 @@ interface AuthState {
   authenticated: boolean
   googleEnabled: boolean
   login: (email: string, password: string) => Promise<void>
+  register: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   refetch: () => void
 }
@@ -50,6 +51,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await refetch()
   }, [refetch])
 
+  const register = useCallback(async (name: string, email: string, password: string) => {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ name, email, password })
+    })
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.error || 'Registration failed')
+    }
+    await refetch()
+  }, [refetch])
+
   const logout = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
     queryClient.clear()
@@ -64,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authenticated: data?.authenticated || false,
       googleEnabled: data?.googleEnabled || false,
       login,
+      register,
       logout,
       refetch: () => refetch()
     }}>

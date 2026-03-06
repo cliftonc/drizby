@@ -75,6 +75,46 @@ app.post('/setup', async (c) => {
   }, 201)
 })
 
+// Self-registration — creates a pending user (role: 'user')
+app.post('/register', async (c) => {
+  const db = c.get('db') as any
+  const body = await c.req.json()
+  const { name, email, password } = body
+
+  if (!name || !email || !password) {
+    return c.json({ error: 'Name, email, and password are required' }, 400)
+  }
+
+  if (password.length < 8) {
+    return c.json({ error: 'Password must be at least 8 characters' }, 400)
+  }
+
+  const passwordHash = await hashPassword(password)
+
+  try {
+    const [user] = await db.insert(users).values({
+      name,
+      email,
+      username: email.split('@')[0],
+      passwordHash,
+      role: 'user',
+      organisationId: 1
+    }).returning()
+
+    const sessionId = await createSession(db, user.id)
+    setSessionCookie(c, sessionId)
+
+    return c.json({
+      user: { id: user.id, email: user.email, name: user.name, role: user.role }
+    }, 201)
+  } catch (err: any) {
+    if (err.code === '23505' || err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return c.json({ error: 'An account with this email already exists' }, 409)
+    }
+    throw err
+  }
+})
+
 // Login with email + password
 app.post('/login', async (c) => {
   const db = c.get('db') as any
@@ -231,7 +271,7 @@ app.get('/google/callback', async (c) => {
           email: profile.email,
           username,
           name: profile.name,
-          role: userCount === 0 ? 'admin' : 'member',
+          role: userCount === 0 ? 'admin' : 'user',
           avatarUrl: profile.picture,
           organisationId: 1
         }).returning()

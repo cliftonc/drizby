@@ -1,8 +1,9 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import PendingApprovalPage from '../pages/PendingApprovalPage'
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isLoading, needsSetup, authenticated } = useAuth()
+  const { isLoading, needsSetup, authenticated, user } = useAuth()
 
   if (isLoading) {
     return (
@@ -18,6 +19,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (!authenticated) {
     return <Navigate to="/login" replace />
+  }
+
+  if (user?.role === 'user') {
+    return <PendingApprovalPage />
   }
 
   return <>{children}</>

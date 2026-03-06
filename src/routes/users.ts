@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { users } from '../../schema'
 import { hashPassword } from '../auth/password'
+import { guardPermission } from '../permissions/guard'
 
 interface Variables {
   db: DrizzleDatabase
@@ -11,12 +12,10 @@ interface Variables {
 
 const app = new Hono<{ Variables: Variables }>()
 
-// All routes require admin
+// All routes require manage User permission
 app.use('*', async (c, next) => {
-  const auth = c.get('auth') as any
-  if (auth.user.role !== 'admin') {
-    return c.json({ error: 'Admin access required' }, 403)
-  }
+  const denied = guardPermission(c, 'manage', 'User')
+  if (denied) return denied
   await next()
 })
 
@@ -72,7 +71,7 @@ app.post('/', async (c) => {
       createdAt: user.createdAt
     }, 201)
   } catch (err: any) {
-    if (err.code === '23505') {
+    if (err.code === '23505' || err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return c.json({ error: 'Email already exists' }, 409)
     }
     throw err

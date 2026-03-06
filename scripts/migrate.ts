@@ -3,26 +3,27 @@
  */
 
 import 'dotenv/config'
-import { drizzle } from 'drizzle-orm/postgres-js'
-import { migrate } from 'drizzle-orm/postgres-js/migrator'
-import postgres from 'postgres'
+import { mkdirSync } from 'node:fs'
+import Database from 'better-sqlite3'
+import { drizzle } from 'drizzle-orm/better-sqlite3'
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://dc_bi_user:dc_bi_pass123@localhost:54930/dc_bi_db'
+const dbPath = process.env.DATABASE_PATH || 'data/drizby.sqlite'
 
-async function runMigration() {
-  console.log('Running database migrations...')
-  const client = postgres(connectionString, { max: 1 })
-  const db = drizzle(client)
+mkdirSync('data', { recursive: true })
 
-  try {
-    await migrate(db, { migrationsFolder: './drizzle' })
-    console.log('Migrations completed successfully')
-  } catch (error) {
-    console.error('Migration failed:', error)
-    process.exit(1)
-  } finally {
-    await client.end()
-  }
+console.log('Running database migrations...')
+const sqlite = new Database(dbPath)
+sqlite.pragma('journal_mode = WAL')
+sqlite.pragma('foreign_keys = ON')
+const db = drizzle(sqlite)
+
+try {
+  migrate(db, { migrationsFolder: './drizzle' })
+  console.log('Migrations completed successfully')
+} catch (error) {
+  console.error('Migration failed:', error)
+  process.exit(1)
+} finally {
+  sqlite.close()
 }
-
-runMigration()

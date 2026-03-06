@@ -260,10 +260,12 @@ function typeCheckAndCompile(
 export function compileSchema(sourceCode: string): CompileResult {
   const drizzleOrm = esmRequire('drizzle-orm')
   const drizzlePgCore = esmRequire('drizzle-orm/pg-core')
+  const drizzleSqliteCore = esmRequire('drizzle-orm/sqlite-core')
 
   return typeCheckAndCompile(sourceCode, (specifier: string) => {
     if (specifier === 'drizzle-orm') return drizzleOrm
     if (specifier === 'drizzle-orm/pg-core') return drizzlePgCore
+    if (specifier === 'drizzle-orm/sqlite-core') return drizzleSqliteCore
     throw new Error(`Module '${specifier}' is not allowed in schema files`)
   })
 }
@@ -280,6 +282,7 @@ export function compileCube(
 ): CompileResult {
   const drizzleOrm = esmRequire('drizzle-orm')
   const drizzlePgCore = esmRequire('drizzle-orm/pg-core')
+  const drizzleSqliteCore = esmRequire('drizzle-orm/sqlite-core')
   const drizzleCubeServer = esmRequire('drizzle-cube/server')
 
   // Build virtual files for schema imports so type-checking resolves them.
@@ -287,7 +290,7 @@ export function compileCube(
   const schemaVirtualFiles: Record<string, string> = {}
   for (const [name, exports] of Object.entries(schemaExports)) {
     if (schemaSources && schemaSources[name]) {
-      // Use actual source — type checker sees pgTable() return with real column keys
+      // Use actual source — type checker sees table definitions with real column keys
       schemaVirtualFiles[`/src/${name}.ts`] = schemaSources[name]
     } else {
       // Fallback: stub with `any`
@@ -302,6 +305,7 @@ export function compileCube(
     (specifier: string) => {
       if (specifier === 'drizzle-orm') return drizzleOrm
       if (specifier === 'drizzle-orm/pg-core') return drizzlePgCore
+      if (specifier === 'drizzle-orm/sqlite-core') return drizzleSqliteCore
       if (specifier === 'drizzle-cube/server') return drizzleCubeServer
 
       const normalized = specifier.replace(/^\.\//, '').replace(/\.ts$/, '')

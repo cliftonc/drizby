@@ -6,11 +6,12 @@
 import { Hono } from 'hono'
 import { eq, and, asc } from 'drizzle-orm'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { notebooks } from '../../schema'
+import { notebooks, users } from '../../schema'
 
 interface Variables {
   db: DrizzleDatabase
   organisationId: number
+  auth: { userId: number; user: any }
 }
 
 const notebooksApp = new Hono<{ Variables: Variables }>()
@@ -26,12 +27,17 @@ notebooksApp.get('/', async (c) => {
   const organisationId = c.get('organisationId')
 
   try {
-    const items = await db
-      .select()
+    const rows = await db
+      .select({
+        notebook: notebooks,
+        createdByName: users.name,
+      })
       .from(notebooks)
+      .leftJoin(users, eq(notebooks.createdBy, users.id))
       .where(and(eq(notebooks.organisationId, organisationId), eq(notebooks.isActive, true)))
       .orderBy(asc(notebooks.order), asc(notebooks.name))
 
+    const items = rows.map((r: any) => ({ ...r.notebook, createdByName: r.createdByName }))
     return c.json({ data: items, meta: { total: items.length } })
   } catch (error) {
     console.error('Error fetching notebooks:', error)
@@ -48,14 +54,18 @@ notebooksApp.get('/:id', async (c) => {
   if (isNaN(id)) return c.json({ error: 'Invalid notebook ID' }, 400)
 
   try {
-    const item = await db
-      .select()
+    const rows = await db
+      .select({
+        notebook: notebooks,
+        createdByName: users.name,
+      })
       .from(notebooks)
+      .leftJoin(users, eq(notebooks.createdBy, users.id))
       .where(and(eq(notebooks.id, id), eq(notebooks.organisationId, organisationId), eq(notebooks.isActive, true)))
       .limit(1)
 
-    if (item.length === 0) return c.json({ error: 'Notebook not found' }, 404)
-    return c.json({ data: item[0] })
+    if (rows.length === 0) return c.json({ error: 'Notebook not found' }, 404)
+    return c.json({ data: { ...rows[0].notebook, createdByName: rows[0].createdByName } })
   } catch (error) {
     console.error('Error fetching notebook:', error)
     return c.json({ error: 'Failed to fetch notebook' }, 500)
@@ -69,10 +79,11 @@ notebooksApp.post('/', async (c) => {
 
   try {
     const body = await c.req.json()
-    const { name, description, config, order = 0 } = body
+    const { name, description, config, connectionId, order = 0 } = body
 
     if (!name) return c.json({ error: 'Missing required field: name' }, 400)
 
+    const auth = c.get('auth') as any
     const newItem = await db
       .insert(notebooks)
       .values({
@@ -80,7 +91,9 @@ notebooksApp.post('/', async (c) => {
         description,
         order,
         organisationId,
-        config: config || { blocks: [], messages: [] }
+        connectionId: connectionId || null,
+        config: config || { blocks: [], messages: [] },
+        createdBy: auth?.userId || null
       })
       .returning()
 
@@ -95,19 +108,29 @@ notebooksApp.post('/', async (c) => {
 notebooksApp.put('/:id', async (c) => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
+  const auth = c.get('auth') as any
   const id = parseInt(c.req.param('id'), 10)
 
   if (isNaN(id)) return c.json({ error: 'Invalid notebook ID' }, 400)
 
   try {
+    // Members can only update their own notebooks
+    if (auth?.user?.role !== 'admin') {
+      const [existing] = await db.select({ createdBy: notebooks.createdBy }).from(notebooks)
+        .where(and(eq(notebooks.id, id), eq(notebooks.organisationId, organisationId)))
+      if (!existing) return c.json({ error: 'Notebook not found' }, 404)
+      if (existing.createdBy !== auth?.userId) return c.json({ error: 'You can only edit your own notebooks' }, 403)
+    }
+
     const body = await c.req.json()
-    const { name, description, config, order } = body
+    const { name, description, config, connectionId, order } = body
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() }
     if (name !== undefined) updateData.name = name
     if (description !== undefined) updateData.description = description
     if (order !== undefined) updateData.order = order
     if (config !== undefined) updateData.config = config
+    if (connectionId !== undefined) updateData.connectionId = connectionId
 
     const updated = await db
       .update(notebooks)
@@ -127,11 +150,20 @@ notebooksApp.put('/:id', async (c) => {
 notebooksApp.delete('/:id', async (c) => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
+  const auth = c.get('auth') as any
   const id = parseInt(c.req.param('id'), 10)
 
   if (isNaN(id)) return c.json({ error: 'Invalid notebook ID' }, 400)
 
   try {
+    // Members can only delete their own notebooks
+    if (auth?.user?.role !== 'admin') {
+      const [existing] = await db.select({ createdBy: notebooks.createdBy }).from(notebooks)
+        .where(and(eq(notebooks.id, id), eq(notebooks.organisationId, organisationId)))
+      if (!existing) return c.json({ error: 'Notebook not found' }, 404)
+      if (existing.createdBy !== auth?.userId) return c.json({ error: 'You can only delete your own notebooks' }, 403)
+    }
+
     const deleted = await db
       .update(notebooks)
       .set({ isActive: false, updatedAt: new Date() })

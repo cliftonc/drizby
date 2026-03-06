@@ -9,12 +9,20 @@ import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { cubeDefinitions, connections } from '../../schema'
 import { connectionManager } from '../services/connection-manager'
 import { invalidateCubeAppCache } from '../../app'
+import { guardPermission } from '../permissions/guard'
 
 interface Variables {
   db: DrizzleDatabase
 }
 
 const app = new Hono<{ Variables: Variables }>()
+
+// Admin-only: all cube definition management routes
+app.use('*', async (c, next) => {
+  const denied = guardPermission(c, 'manage', 'CubeDefinition')
+  if (denied) return denied
+  await next()
+})
 
 // List all cube definitions
 app.get('/', async (c) => {
@@ -124,7 +132,7 @@ app.delete('/:id', async (c) => {
   const deleted = result[0]
   if (deleted.definition?.cubes) {
     for (const cubeName of deleted.definition.cubes) {
-      connectionManager.unregisterCube(cubeName)
+      connectionManager.unregisterCube(deleted.connectionId, cubeName)
     }
   }
   invalidateCubeAppCache(deleted.connectionId)

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function LoginPage() {
@@ -29,7 +29,10 @@ export default function LoginPage() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--dc-auth-bg)' }}>
       <div style={{ width: '100%', maxWidth: 380, padding: 32 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dc-text)', marginBottom: 8, textAlign: 'center' }}>DC-BI</h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
+          <img src="/logo.png" alt="" style={{ width: 32, height: 32 }} />
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dc-text)', margin: 0 }}>Drizby</h1>
+        </div>
         <p style={{ color: 'var(--dc-text-muted)', fontSize: 14, textAlign: 'center', marginBottom: 32 }}>Sign in to your account</p>
 
         {error && (
@@ -68,6 +71,11 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
+
+        <p style={{ color: 'var(--dc-text-muted)', fontSize: 13, textAlign: 'center', marginTop: 16, marginBottom: 0 }}>
+          Don't have an account?{' '}
+          <Link to="/register" style={{ color: 'var(--dc-primary)', textDecoration: 'none' }}>Create an account</Link>
+        </p>
 
         {googleEnabled && (
           <>

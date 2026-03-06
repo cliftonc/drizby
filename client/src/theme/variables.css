@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* DC-BI Light Theme (Default) */
+/* Drizby Light Theme (Default) */
 :root, [data-theme="light"] {
   --dc-surface: #ffffff;
   --dc-surface-secondary: #f9fafb;
@@ -99,7 +99,7 @@
   --dc-badge-blocked-text: #dc2626;
 }
 
-/* DC-BI Dark Theme */
+/* Drizby Dark Theme */
 [data-theme="dark"], html.dark {
   --dc-surface: #1e293b;
   --dc-surface-secondary: #334155;
@@ -161,14 +161,14 @@
   --dc-muted-border: #475569;
 
   /* Sidebar */
-  --dc-sidebar-bg: #0f172a;
+  --dc-sidebar-bg: #0b1120;
   --dc-sidebar-text: rgba(255, 255, 255, 0.7);
-  --dc-sidebar-active: rgba(96, 165, 250, 0.3);
+  --dc-sidebar-active: rgba(96, 165, 250, 0.2);
 
   /* Layout tokens */
   --dc-bg: var(--dc-surface);
   --dc-bg-secondary: var(--dc-surface-secondary);
-  --dc-background: #0f172a;
+  --dc-background: #151d2e;
   --dc-primary-rgb: 96, 165, 250;
   --dc-primary-bg: #1e3a8a;
   --dc-accent-text: #ffffff;
