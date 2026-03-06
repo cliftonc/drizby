@@ -18,6 +18,7 @@ interface ManagedConnection {
   drizzle: DrizzleDatabase
   semanticLayer: SemanticLayerCompiler
   schemaExports: Record<string, Record<string, any>> // schemaName -> exports
+  schemaSources: Record<string, string> // schemaName -> source code
 }
 
 class ConnectionManager {
@@ -73,6 +74,7 @@ class ConnectionManager {
       drizzle: db,
       semanticLayer,
       schemaExports: {},
+      schemaSources: {},
     }
 
     this.connections.set(connectionId, managed)
@@ -165,6 +167,7 @@ class ConnectionManager {
           if (result.errors.length === 0) {
             const name = sf.name.replace(/\.ts$/, '')
             managed.schemaExports[name] = result.exports
+            managed.schemaSources[name] = sf.sourceCode
             // Update compiledAt in DB
             await db.update(schemaFiles)
               .set({ compiledAt: new Date(), compilationErrors: null })
@@ -197,7 +200,7 @@ class ConnectionManager {
       if (!managed) continue
 
       try {
-        const result = compileCube(cubeDef.sourceCode, managed.schemaExports)
+        const result = compileCube(cubeDef.sourceCode, managed.schemaExports, managed.schemaSources)
         if (result.errors.length === 0) {
           // Find exported cubes and register them
           const registeredCubes = this.registerExportedCubes(result.exports, managed, cubeDef.connectionId)
@@ -234,8 +237,22 @@ class ConnectionManager {
     if (result.errors.length === 0) {
       const normalizedName = name.replace(/\.ts$/, '')
       managed.schemaExports[normalizedName] = result.exports
+      managed.schemaSources[normalizedName] = sourceCode
     }
     return { errors: result.errors }
+  }
+
+  /**
+   * Unregister a cube by name from the semantic layer.
+   */
+  unregisterCube(cubeName: string): boolean {
+    const connectionId = this.cubeConnectionMap.get(cubeName)
+    if (connectionId === undefined) return false
+    const managed = this.connections.get(connectionId)
+    if (!managed) return false
+    managed.semanticLayer.unregisterCube(cubeName)
+    this.cubeConnectionMap.delete(cubeName)
+    return true
   }
 
   /**
@@ -245,7 +262,7 @@ class ConnectionManager {
     const managed = this.connections.get(connectionId)
     if (!managed) return { cubes: [], errors: [{ message: `Connection ${connectionId} not found` }] }
 
-    const result = compileCube(sourceCode, managed.schemaExports)
+    const result = compileCube(sourceCode, managed.schemaExports, managed.schemaSources)
     if (result.errors.length > 0) {
       return { cubes: [], errors: result.errors }
     }

@@ -8,8 +8,9 @@ import { eq, and } from 'drizzle-orm'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { schemaFiles, connections } from '../../schema'
 import { connectionManager } from '../services/connection-manager'
+import { invalidateCubeAppCache } from '../../app'
 import { compileSchema, generateSchemaTypes } from '../services/cube-compiler'
-import postgres from 'postgres'
+import { getTableConfig } from 'drizzle-orm/pg-core'
 
 interface Variables {
   db: DrizzleDatabase
@@ -81,6 +82,17 @@ app.delete('/:id', async (c) => {
     .where(and(eq(schemaFiles.id, id), eq(schemaFiles.organisationId, 1)))
     .returning()
   if (result.length === 0) return c.json({ error: 'Schema file not found' }, 404)
+
+  // Remove schema exports from connection manager and invalidate cube app cache
+  const deleted = result[0]
+  const managed = connectionManager.get(deleted.connectionId)
+  if (managed) {
+    const name = deleted.name.replace(/\.ts$/, '')
+    delete managed.schemaExports[name]
+    delete managed.schemaSources[name]
+  }
+  invalidateCubeAppCache(deleted.connectionId)
+
   return c.json({ success: true })
 })
 
@@ -101,6 +113,8 @@ app.post('/:id/compile', async (c) => {
     await db.update(schemaFiles)
       .set({ compiledAt: new Date(), compilationErrors: null })
       .where(eq(schemaFiles.id, id))
+    // Schema change may affect compiled cubes — invalidate cached cube app
+    invalidateCubeAppCache(sf.connectionId)
   } else {
     await db.update(schemaFiles)
       .set({ compilationErrors: result.errors })
@@ -127,6 +141,127 @@ app.get('/:id/types', async (c) => {
   return c.text(dts, 200, { 'Content-Type': 'application/typescript' })
 })
 
+// Validate schema files against the live database.
+// For each table defined in schema files, checks that the table exists and columns match.
+app.post('/validate-against-db', async (c) => {
+  const db = c.get('db') as any
+  const body = await c.req.json()
+  const { connectionId } = body
+
+  const conn = await db.select().from(connections)
+    .where(and(eq(connections.id, connectionId), eq(connections.organisationId, 1)))
+  if (conn.length === 0) return c.json({ error: 'Connection not found' }, 400)
+
+  const managed = connectionManager.get(connectionId)
+  if (!managed) return c.json({ error: 'Connection not initialized' }, 400)
+
+  // Compile all schema files for this connection
+  const allSchemas = await db.select().from(schemaFiles)
+    .where(and(eq(schemaFiles.connectionId, connectionId), eq(schemaFiles.organisationId, 1)))
+
+  if (allSchemas.length === 0) {
+    return c.json({ valid: false, error: 'No schema files found for this connection.' })
+  }
+
+  const compileErrors: Array<{ file: string; errors: any[] }> = []
+  const tables: Array<{ varName: string; tableName: string; columns: Array<{ name: string; dataType: string }> }> = []
+
+  for (const sf of allSchemas) {
+    const result = compileSchema(sf.sourceCode)
+    if (result.errors.length > 0) {
+      compileErrors.push({ file: sf.name, errors: result.errors })
+      continue
+    }
+    // Extract table config from each exported pgTable object
+    for (const [varName, exp] of Object.entries(result.exports)) {
+      try {
+        const config = getTableConfig(exp as any)
+        tables.push({
+          varName,
+          tableName: config.name,
+          columns: config.columns.map((col: any) => ({
+            name: col.name,
+            dataType: col.columnType,
+          })),
+        })
+      } catch {
+        // Not a pgTable export, skip
+      }
+    }
+  }
+
+  if (compileErrors.length > 0) {
+    return c.json({ valid: false, error: 'Schema files have compilation errors', compileErrors })
+  }
+
+  if (tables.length === 0) {
+    return c.json({ valid: false, error: 'No tables found in schema files.' })
+  }
+
+  // Query the live DB for the tables we care about
+  const client = managed.client
+  const tableNames = tables.map(t => t.tableName)
+
+  try {
+    const dbColumns = await client`
+      SELECT c.table_name, c.column_name, c.data_type, c.is_nullable
+      FROM information_schema.columns c
+      WHERE c.table_schema = 'public'
+        AND c.table_name = ANY(${tableNames})
+      ORDER BY c.table_name, c.ordinal_position
+    `
+
+    // Also check which tables actually exist
+    const dbTables = await client`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = ANY(${tableNames})
+    `
+    const existingTables = new Set(dbTables.map((r: any) => r.table_name))
+
+    // Build column lookup: tableName -> { colName -> data_type }
+    const dbColumnMap = new Map<string, Map<string, string>>()
+    for (const col of dbColumns) {
+      if (!dbColumnMap.has(col.table_name)) dbColumnMap.set(col.table_name, new Map())
+      dbColumnMap.get(col.table_name)!.set(col.column_name, col.data_type)
+    }
+
+    const issues: Array<{ table: string; issue: string }> = []
+
+    for (const table of tables) {
+      if (!existingTables.has(table.tableName)) {
+        issues.push({ table: table.tableName, issue: `Table "${table.tableName}" does not exist in the database` })
+        continue
+      }
+
+      const dbCols = dbColumnMap.get(table.tableName)
+      if (!dbCols) continue
+
+      for (const col of table.columns) {
+        if (!dbCols.has(col.name)) {
+          issues.push({ table: table.tableName, issue: `Column "${col.name}" not found in table "${table.tableName}"` })
+        }
+      }
+
+      // Check for DB columns not in schema (informational)
+      const schemaCols = new Set(table.columns.map(c => c.name))
+      for (const [dbColName] of dbCols) {
+        if (!schemaCols.has(dbColName)) {
+          issues.push({ table: table.tableName, issue: `Column "${dbColName}" exists in DB but not in schema for "${table.tableName}" (optional)` })
+        }
+      }
+    }
+
+    return c.json({
+      valid: issues.filter(i => !i.issue.includes('(optional)')).length === 0,
+      tables: tables.map(t => t.tableName),
+      issues,
+    })
+  } catch (err: any) {
+    return c.json({ error: `Validation failed: ${err.message}` }, 500)
+  }
+})
+
 // Introspect a database connection and generate pgTable() source
 app.post('/introspect', async (c) => {
   const db = c.get('db') as any
@@ -137,9 +272,12 @@ app.post('/introspect', async (c) => {
     .where(and(eq(connections.id, connectionId), eq(connections.organisationId, 1)))
   if (conn.length === 0) return c.json({ error: 'Connection not found' }, 400)
 
-  let client: postgres.Sql | null = null
+  // Use the managed connection's existing postgres client
+  const managed = connectionManager.get(connectionId)
+  if (!managed) return c.json({ error: 'Connection not initialized' }, 400)
+
   try {
-    client = postgres(conn[0].connectionString)
+    const client = managed.client
 
     // Query information_schema for tables and columns
     const tables = await client`
@@ -173,8 +311,6 @@ app.post('/introspect', async (c) => {
     return c.json({ source, tables: tables.map((t: any) => t.table_name) })
   } catch (err: any) {
     return c.json({ error: `Introspection failed: ${err.message}` }, 500)
-  } finally {
-    if (client) await client.end()
   }
 })
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Editor, { type OnMount } from '@monaco-editor/react'
 
@@ -36,6 +36,17 @@ interface Connection {
 
 type FileItem = { type: 'schema'; data: SchemaFile } | { type: 'cube'; data: CubeDefinition }
 
+function useAppTheme(): 'light' | 'dark' {
+  return useSyncExternalStore(
+    (cb) => {
+      const observer = new MutationObserver(cb)
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+      return () => observer.disconnect()
+    },
+    () => (document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')
+  )
+}
+
 export default function SchemaEditorPage() {
   const queryClient = useQueryClient()
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null)
@@ -43,8 +54,11 @@ export default function SchemaEditorPage() {
   const [isDirty, setIsDirty] = useState(false)
   const [compileOutput, setCompileOutput] = useState<{ success?: boolean; errors?: any[]; cubes?: string[]; exports?: string[] } | null>(null)
   const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null)
+  const appTheme = useAppTheme()
+  const monacoTheme = appTheme === 'dark' ? 'dc-dark' : 'dc-light'
   const editorRef = useRef<any>(null)
   const monacoRef = useRef<any>(null)
+  const handleSaveRef = useRef(() => {})
 
   const { data: connections = [] } = useQuery<Connection[]>({
     queryKey: ['connections'],
@@ -112,8 +126,13 @@ export default function SchemaEditorPage() {
     onSuccess: (data) => {
       setCompileOutput(data)
       queryClient.invalidateQueries({ queryKey: ['schema-files'] })
-      if (data.success) setMarkers([])
-      else setMarkersFromErrors(data.errors || [])
+      if (data.success) {
+        setMarkers([])
+        // Schema changes may affect cubes — invalidate cube meta cache
+        queryClient.invalidateQueries({ queryKey: ['cube', 'meta'] })
+      } else {
+        setMarkersFromErrors(data.errors || [])
+      }
     }
   })
 
@@ -126,8 +145,13 @@ export default function SchemaEditorPage() {
     onSuccess: (data) => {
       setCompileOutput(data)
       queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
-      if (data.success) setMarkers([])
-      else setMarkersFromErrors(data.errors || [])
+      if (data.success) {
+        setMarkers([])
+        // Invalidate cube meta so Analysis Builder / dashboards pick up new cubes
+        queryClient.invalidateQueries({ queryKey: ['cube', 'meta'] })
+      } else {
+        setMarkersFromErrors(data.errors || [])
+      }
     }
   })
 
@@ -219,6 +243,32 @@ export default function SchemaEditorPage() {
     }
   })
 
+  // Validate schema against live database
+  const validateSchema = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/schema-files/validate-against-db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId: selectedConnectionId })
+      })
+      return res.json()
+    },
+    onSuccess: (data) => {
+      if (data.error) {
+        setCompileOutput({ success: false, errors: [{ message: data.error }, ...(data.compileErrors || []).flatMap((ce: any) => ce.errors.map((e: any) => ({ message: `${ce.file}: ${e.message}` })))] })
+      } else if (data.valid) {
+        const info = data.tables?.length ? `Tables validated: ${data.tables.join(', ')}` : 'Schema matches database'
+        const optional = (data.issues || []).filter((i: any) => i.issue.includes('(optional)'))
+        const extras = optional.length > 0 ? [{ message: `Note: ${optional.length} extra column(s) in DB not in schema (safe to ignore)` }] : []
+        setCompileOutput({ success: true, errors: extras, exports: [info] })
+      } else {
+        const realIssues = (data.issues || []).filter((i: any) => !i.issue.includes('(optional)'))
+        const errors = realIssues.map((i: any) => ({ message: i.issue }))
+        setCompileOutput({ success: false, errors })
+      }
+    }
+  })
+
   const setMarkers = useCallback((markers: any[]) => {
     if (monacoRef.current && editorRef.current) {
       const model = editorRef.current.getModel()
@@ -244,6 +294,81 @@ export default function SchemaEditorPage() {
     editorRef.current = editor
     monacoRef.current = monaco
 
+    // Define custom dark theme matching DC-BI's blue-slate palette
+    monaco.editor.defineTheme('dc-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '64748b', fontStyle: 'italic' },
+        { token: 'keyword', foreground: '93c5fd' },
+        { token: 'string', foreground: '86efac' },
+        { token: 'number', foreground: 'fbbf24' },
+        { token: 'type', foreground: '7dd3fc' },
+        { token: 'identifier', foreground: 'e2e8f0' },
+        { token: 'delimiter', foreground: '94a3b8' },
+      ],
+      colors: {
+        'editor.background': '#0f172a',
+        'editor.foreground': '#e2e8f0',
+        'editor.lineHighlightBackground': '#1e293b',
+        'editor.selectionBackground': '#334155',
+        'editor.inactiveSelectionBackground': '#1e293b',
+        'editorLineNumber.foreground': '#475569',
+        'editorLineNumber.activeForeground': '#94a3b8',
+        'editorCursor.foreground': '#60a5fa',
+        'editorIndentGuide.background': '#1e293b',
+        'editorIndentGuide.activeBackground': '#334155',
+        'editorWidget.background': '#1e293b',
+        'editorWidget.border': '#334155',
+        'editorSuggestWidget.background': '#1e293b',
+        'editorSuggestWidget.border': '#334155',
+        'editorSuggestWidget.selectedBackground': '#334155',
+        'editorHoverWidget.background': '#1e293b',
+        'editorHoverWidget.border': '#334155',
+        'editor.findMatchBackground': '#60a5fa33',
+        'editor.findMatchHighlightBackground': '#60a5fa22',
+        'minimap.background': '#0f172a',
+        'scrollbarSlider.background': '#33415580',
+        'scrollbarSlider.hoverBackground': '#47556980',
+        'scrollbarSlider.activeBackground': '#64748b80',
+      }
+    })
+
+    // Define custom light theme
+    monaco.editor.defineTheme('dc-light', {
+      base: 'vs',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
+        { token: 'keyword', foreground: '2563eb' },
+        { token: 'string', foreground: '059669' },
+        { token: 'number', foreground: 'd97706' },
+        { token: 'type', foreground: '0284c7' },
+      ],
+      colors: {
+        'editor.background': '#ffffff',
+        'editor.foreground': '#1e293b',
+        'editor.lineHighlightBackground': '#f8fafc',
+        'editor.selectionBackground': '#dbeafe',
+        'editorLineNumber.foreground': '#94a3b8',
+        'editorLineNumber.activeForeground': '#475569',
+        'editorCursor.foreground': '#3b82f6',
+        'editorWidget.background': '#ffffff',
+        'editorWidget.border': '#e2e8f0',
+        'editorSuggestWidget.background': '#ffffff',
+        'editorSuggestWidget.border': '#e2e8f0',
+        'editorSuggestWidget.selectedBackground': '#eff6ff',
+      }
+    })
+
+    // Apply the right theme immediately
+    monaco.editor.setTheme(appTheme === 'dark' ? 'dc-dark' : 'dc-light')
+
+    // Cmd/Ctrl+S to save
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      handleSaveRef.current()
+    })
+
     // Configure TypeScript defaults
     monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
       target: monaco.languages.typescript.ScriptTarget.ES2022,
@@ -258,9 +383,15 @@ export default function SchemaEditorPage() {
     loadExtraLibs(monaco)
   }
 
-  const loadExtraLibs = async (monaco: any) => {
+  // Update Monaco theme when app theme changes
+  useEffect(() => {
+    if (monacoRef.current) {
+      monacoRef.current.editor.setTheme(appTheme === 'dark' ? 'dc-dark' : 'dc-light')
+    }
+  }, [appTheme])
+
+  const loadExtraLibs = (monaco: any) => {
     // Provide ambient module declarations so Monaco resolves imports without errors.
-    // These declare the shape of the modules users import in schema/cube files.
     const drizzleOrmPgCoreDecl = `
 declare module 'drizzle-orm/pg-core' {
   export function pgTable(name: string, columns: Record<string, any>, extra?: (table: any) => any[]): any;
@@ -332,21 +463,32 @@ declare module 'drizzle-cube/server' {
     monaco.languages.typescript.typescriptDefaults.addExtraLib(drizzleOrmDecl, 'file:///node_modules/drizzle-orm/index.d.ts')
     monaco.languages.typescript.typescriptDefaults.addExtraLib(drizzleCubeDecl, 'file:///node_modules/drizzle-cube/server/index.d.ts')
 
-    // Load schema file types for relative imports (e.g. './demo-schema')
+    // Register schema files as background models for relative import resolution in cube files.
+    // Uses real source code so TS infers proper pgTable column types for autocomplete.
+    updateSchemaModels(monaco, selectedFile)
+  }
+
+  const updateSchemaModels = (monaco: any, currentFile?: FileItem | null) => {
+    const currentSchemaName = currentFile?.type === 'schema'
+      ? currentFile.data.name.replace(/\.ts$/, '')
+      : null
+
     for (const sf of schemaFiles) {
-      try {
-        const res = await fetch(`/api/schema-files/${sf.id}/types`)
-        if (res.ok) {
-          const dts = await res.text()
-          if (dts) {
-            const name = sf.name.replace(/\.ts$/, '')
-            monaco.languages.typescript.typescriptDefaults.addExtraLib(
-              dts,
-              `file:///./${name}.d.ts`
-            )
-          }
+      const name = sf.name.replace(/\.ts$/, '')
+      const uri = monaco.Uri.parse(`file:///src/${name}.ts`)
+
+      // Skip the file currently open in the editor — the Editor component owns that model.
+      if (name === currentSchemaName) continue
+
+      const existing = monaco.editor.getModel(uri)
+      if (existing) {
+        // Update content if source changed (e.g. after save/compile)
+        if (existing.getValue() !== sf.sourceCode) {
+          existing.setValue(sf.sourceCode)
         }
-      } catch {}
+      } else {
+        monaco.editor.createModel(sf.sourceCode, 'typescript', uri)
+      }
     }
   }
 
@@ -358,6 +500,11 @@ declare module 'drizzle-cube/server' {
     setIsDirty(false)
     setCompileOutput(null)
     setMarkers([])
+
+    // Refresh background schema models: recreate for the file we just left, skip the newly opened one
+    if (monacoRef.current) {
+      updateSchemaModels(monacoRef.current, file)
+    }
   }
 
   const handleSave = () => {
@@ -365,6 +512,7 @@ declare module 'drizzle-cube/server' {
     if (selectedFile.type === 'schema') saveSchema.mutate(selectedFile.data)
     else saveCube.mutate(selectedFile.data)
   }
+  handleSaveRef.current = handleSave
 
   const handleCompile = () => {
     if (!selectedFile) return
@@ -396,6 +544,16 @@ declare module 'drizzle-cube/server' {
     await fetch(endpoint, { method: 'DELETE' })
     queryClient.invalidateQueries({ queryKey: ['schema-files'] })
     queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
+    queryClient.invalidateQueries({ queryKey: ['cube', 'meta'] })
+
+    // Clean up background model for deleted schema file
+    if (selectedFile.type === 'schema' && monacoRef.current) {
+      const name = selectedFile.data.name.replace(/\.ts$/, '')
+      const uri = monacoRef.current.Uri.parse(`file:///src/${name}.ts`)
+      const model = monacoRef.current.editor.getModel(uri)
+      if (model) model.dispose()
+    }
+
     setSelectedFile(null)
     setEditorContent('')
     setCompileOutput(null)
@@ -435,6 +593,10 @@ declare module 'drizzle-cube/server' {
         <button onClick={handleCompile} disabled={!selectedFile || isCompiling}
           style={toolbarBtn(!selectedFile || isCompiling, true)}>
           {isCompiling ? 'Compiling...' : 'Compile'}
+        </button>
+        <button onClick={() => validateSchema.mutate()} disabled={!selectedConnectionId || validateSchema.isPending || filteredSchemas.length === 0}
+          style={toolbarBtn(!selectedConnectionId || validateSchema.isPending || filteredSchemas.length === 0)}>
+          {validateSchema.isPending ? 'Validating...' : 'Validate Schema'}
         </button>
         <button onClick={handleDelete} disabled={!selectedFile}
           style={{ ...toolbarBtn(!selectedFile), color: selectedFile ? '#ef4444' : undefined }}>
@@ -529,7 +691,8 @@ declare module 'drizzle-cube/server' {
               <div style={{ flex: 1, minHeight: 0 }}>
                 <Editor
                   language="typescript"
-                  theme="vs-dark"
+                  theme={monacoTheme}
+                  path={`file:///src/${selectedFile.type === 'schema' ? selectedFile.data.name : selectedFile.data.name.replace(/[^a-zA-Z0-9_-]/g, '_') + '.ts'}`}
                   value={editorContent}
                   onChange={(value) => {
                     setEditorContent(value || '')
@@ -555,12 +718,14 @@ declare module 'drizzle-cube/server' {
                   padding: '8px 12px',
                   maxHeight: 150,
                   overflow: 'auto',
-                  backgroundColor: compileOutput.success ? '#0a2e0a' : '#2e0a0a',
+                  backgroundColor: compileOutput.success
+                    ? (appTheme === 'dark' ? '#0a2e0a' : '#f0fdf4')
+                    : (appTheme === 'dark' ? '#2e0a0a' : '#fef2f2'),
                   fontSize: 12,
                   fontFamily: 'monospace'
                 }}>
                   {compileOutput.success ? (
-                    <div style={{ color: '#22c55e' }}>
+                    <div style={{ color: appTheme === 'dark' ? '#22c55e' : '#16a34a' }}>
                       Compilation successful.
                       {compileOutput.cubes && compileOutput.cubes.length > 0 && (
                         <span> Registered cubes: {compileOutput.cubes.join(', ')}</span>
@@ -587,7 +752,31 @@ declare module 'drizzle-cube/server' {
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: 'var(--dc-text-secondary)', fontSize: 14
             }}>
-              Select a file from the sidebar to edit, or create a new one.
+              {filteredSchemas.length === 0 && selectedConnectionId ? (
+                <div style={{ textAlign: 'center', maxWidth: 400 }}>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--dc-text)', marginBottom: 8 }}>
+                    No schemas for this connection
+                  </div>
+                  <p style={{ marginBottom: 16, lineHeight: 1.5 }}>
+                    Pull your database schema to generate Drizzle table definitions automatically.
+                  </p>
+                  <button
+                    onClick={() => introspect.mutate()}
+                    disabled={introspect.isPending}
+                    style={{
+                      ...toolbarBtn(introspect.isPending, true),
+                      padding: '10px 24px', fontSize: 14
+                    }}
+                  >
+                    {introspect.isPending ? 'Pulling schema...' : 'Pull Schema from Database'}
+                  </button>
+                  <div style={{ marginTop: 12, fontSize: 12 }}>
+                    or <button onClick={() => createSchema.mutate()} style={{ background: 'none', border: 'none', color: 'var(--dc-primary)', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>create a blank schema file</button>
+                  </div>
+                </div>
+              ) : (
+                'Select a file from the sidebar to edit, or create a new one.'
+              )}
             </div>
           )}
         </div>

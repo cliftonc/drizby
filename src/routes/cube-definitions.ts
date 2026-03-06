@@ -8,6 +8,7 @@ import { eq, and } from 'drizzle-orm'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { cubeDefinitions, connections } from '../../schema'
 import { connectionManager } from '../services/connection-manager'
+import { invalidateCubeAppCache } from '../../app'
 
 interface Variables {
   db: DrizzleDatabase
@@ -119,6 +120,15 @@ app.delete('/:id', async (c) => {
     return c.json({ error: 'Cube definition not found' }, 404)
   }
 
+  // Unregister cubes from semantic layer and invalidate cube app cache
+  const deleted = result[0]
+  if (deleted.definition?.cubes) {
+    for (const cubeName of deleted.definition.cubes) {
+      connectionManager.unregisterCube(cubeName)
+    }
+  }
+  invalidateCubeAppCache(deleted.connectionId)
+
   return c.json({ success: true })
 })
 
@@ -149,6 +159,8 @@ app.post('/:id/compile', async (c) => {
         definition: { cubes: result.cubes }
       })
       .where(eq(cubeDefinitions.id, id))
+    // Invalidate cached cube app so next request picks up new cubes
+    invalidateCubeAppCache(cubeDef.connectionId)
   } else {
     await db.update(cubeDefinitions)
       .set({ compilationErrors: result.errors })
@@ -178,7 +190,7 @@ app.post('/validate', async (c) => {
 
   // Compile without registering - just check for errors
   const { compileCube } = await import('../services/cube-compiler')
-  const result = compileCube(sourceCode, managed.schemaExports)
+  const result = compileCube(sourceCode, managed.schemaExports, managed.schemaSources)
 
   return c.json({
     valid: result.errors.length === 0,
