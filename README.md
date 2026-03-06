@@ -85,15 +85,21 @@ Multi-database connection management:
 
 ## Quick Start
 
-One command to build and run:
+One command:
 
 ```bash
-git clone https://github.com/cliftonc/drizby.git && cd drizby && docker build -t drizby . && docker run -p 3461:3461 -v drizby-data:/app/data drizby
+docker run -p 3461:3461 -v drizby-data:/app/data ghcr.io/cliftonc/drizby:main
 ```
 
 Open [http://localhost:3461](http://localhost:3461) and follow the setup wizard to create your admin account. A demo dataset with sample employee/productivity data is seeded automatically on first run.
 
 The `-v drizby-data:/app/data` flag persists your databases and configuration across container restarts. To start fresh, run `docker volume rm drizby-data`.
+
+### Build from source
+
+```bash
+git clone https://github.com/cliftonc/drizby.git && cd drizby && docker build -t drizby . && docker run -p 3461:3461 -v drizby-data:/app/data drizby
+```
 
 ### From Source (development)
 
