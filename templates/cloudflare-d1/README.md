@@ -3,6 +3,7 @@
 ## Prerequisites
 - Cloudflare account (Workers Paid plan, $5/mo)
 - Wrangler CLI: `npm i -g wrangler && wrangler login`
+- Docker with BuildKit/buildx (`docker buildx version` — included in Docker Desktop, or `brew install docker-buildx`)
 
 ## Steps
 
