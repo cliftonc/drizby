@@ -1,7 +1,0 @@
-{
-  "name": "drizby-cloudflare",
-  "private": true,
-  "dependencies": {
-    "@cloudflare/containers": "^0.0.1"
-  }
-}

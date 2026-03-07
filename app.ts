@@ -21,6 +21,7 @@ import cubeDefsApp from './src/routes/cube-definitions'
 import editorTypesApp from './src/routes/editor-types'
 import notebooksApp from './src/routes/notebooks'
 import schemaFilesApp from './src/routes/schema-files'
+import seedDemoApp from './src/routes/seed-demo'
 import settingsApp from './src/routes/settings'
 import usersApp from './src/routes/users'
 import { getAIAgentConfig } from './src/services/ai-settings'
@@ -225,6 +226,7 @@ app.all('/cubejs-api/v1/*', async c => {
 })
 
 // Mount platform API routes (protected by authMiddleware above)
+app.route('/api/seed-demo', seedDemoApp)
 app.route('/api/connections', connectionsApp)
 app.route('/api/cube-definitions', cubeDefsApp)
 app.route('/api/schema-files', schemaFilesApp)

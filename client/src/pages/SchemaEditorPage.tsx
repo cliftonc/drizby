@@ -664,6 +664,7 @@ export default function SchemaEditorPage() {
     setCompileOutput(null)
     setMarkers([])
     updateUrl(selectedConnectionId, file)
+    setFileBrowserOpen(false)
 
     // Refresh background schema models: recreate for the file we just left, skip the newly opened one
     if (monacoRef.current) {
@@ -736,6 +737,7 @@ export default function SchemaEditorPage() {
 
   const isCompiling = compileSchema.isPending || compileCube.isPending
   const isSaving = saveSchema.isPending || saveCube.isPending
+  const [fileBrowserOpen, setFileBrowserOpen] = useState(false)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 0 }}>
@@ -749,8 +751,20 @@ export default function SchemaEditorPage() {
           borderBottom: '1px solid var(--dc-border)',
           marginBottom: 0,
           flexShrink: 0,
+          flexWrap: 'wrap',
         }}
       >
+        {/* Mobile file browser toggle */}
+        <button
+          onClick={() => setFileBrowserOpen(o => !o)}
+          className="md:hidden bg-transparent border-none cursor-pointer p-1 flex items-center"
+          style={{ color: 'var(--dc-text-muted)' }}
+          title="Toggle file browser"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" />
+          </svg>
+        </button>
         <h1 className="text-xl sm:text-2xl font-semibold text-dc-text" style={{ margin: 0 }}>
           Semantic Layer
         </h1>
@@ -842,11 +856,18 @@ export default function SchemaEditorPage() {
         </button>
       </div>
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
+        {/* Mobile file browser backdrop */}
+        {fileBrowserOpen && (
+          <div
+            className="fixed inset-0 bg-black/30 z-10 md:hidden"
+            onClick={() => setFileBrowserOpen(false)}
+          />
+        )}
         {/* Left sidebar — file tree */}
         <div
+          className={`${fileBrowserOpen ? 'fixed left-0 top-12 bottom-0 w-[260px] z-20 shadow-lg' : 'hidden'} md:relative md:block md:w-[220px] md:shadow-none`}
           style={{
-            width: 220,
             flexShrink: 0,
             borderRight: '1px solid var(--dc-border)',
             overflow: 'auto',

@@ -3,40 +3,12 @@
  * CRUD for managing connections to different data sources
  */
 
-import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { and, eq, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { connections, cubeDefinitions, schemaFiles } from '../../schema'
-import { guardPermission } from '../permissions/guard'
+import { eq, and } from 'drizzle-orm'
+import type { DrizzleDatabase } from 'drizzle-cube/server'
+import { connections, schemaFiles, cubeDefinitions } from '../../schema'
 import { connectionManager } from '../services/connection-manager'
-
-async function testConnection(engineType: string, connectionString: string): Promise<void> {
-  if (engineType === 'sqlite') {
-    if (connectionString.startsWith('d1:')) {
-      const { drizzle } = await import('drizzle-orm/d1')
-      const databaseId = connectionString.replace(/^d1:/, '')
-      const testDb = drizzle({
-        connection: {
-          accountId: process.env.CF_ACCOUNT_ID!,
-          databaseId,
-          token: process.env.CF_API_TOKEN!,
-        },
-      })
-      await testDb.run(sql`SELECT 1`)
-    } else {
-      const Database = (await import('better-sqlite3')).default
-      const filePath = connectionString.replace(/^file:/, '')
-      const sqlite = new Database(filePath, { readonly: true })
-      sqlite.prepare('SELECT 1').get()
-      sqlite.close()
-    }
-  } else {
-    const postgres = (await import('postgres')).default
-    const pgSql = postgres(connectionString, { max: 1, connect_timeout: 10 })
-    await pgSql`SELECT 1`
-    await pgSql.end()
-  }
-}
+import { guardPermission } from '../permissions/guard'
 
 interface Variables {
   db: DrizzleDatabase
@@ -52,53 +24,42 @@ const adminGuard = async (c: any, next: any) => {
 }
 
 // List all connections (readable by members too)
-app.get('/', async c => {
+app.get('/', async (c) => {
   const db = c.get('db') as any
-  const result = await db
-    .select({
-      id: connections.id,
-      name: connections.name,
-      description: connections.description,
-      engineType: connections.engineType,
-      isActive: connections.isActive,
-      createdAt: connections.createdAt,
-      updatedAt: connections.updatedAt,
-    })
-    .from(connections)
+  const result = await db.select({
+    id: connections.id,
+    name: connections.name,
+    description: connections.description,
+    engineType: connections.engineType,
+    isActive: connections.isActive,
+    createdAt: connections.createdAt,
+    updatedAt: connections.updatedAt
+  }).from(connections)
     .where(eq(connections.organisationId, 1))
 
   return c.json(result)
 })
 
 // Connection status — schema/cube compilation status per connection
-app.get('/status', async c => {
+app.get('/status', async (c) => {
   const db = c.get('db') as any
 
-  const allConns = await db
-    .select({
-      id: connections.id,
-      name: connections.name,
-    })
-    .from(connections)
-    .where(eq(connections.organisationId, 1))
+  const allConns = await db.select({
+    id: connections.id,
+    name: connections.name,
+  }).from(connections).where(eq(connections.organisationId, 1))
 
-  const allSchemas = await db
-    .select({
-      connectionId: schemaFiles.connectionId,
-      compiledAt: schemaFiles.compiledAt,
-    })
-    .from(schemaFiles)
-    .where(eq(schemaFiles.organisationId, 1))
+  const allSchemas = await db.select({
+    connectionId: schemaFiles.connectionId,
+    compiledAt: schemaFiles.compiledAt,
+  }).from(schemaFiles).where(eq(schemaFiles.organisationId, 1))
 
-  const allCubes = await db
-    .select({
-      connectionId: cubeDefinitions.connectionId,
-      compiledAt: cubeDefinitions.compiledAt,
-      definition: cubeDefinitions.definition,
-      isActive: cubeDefinitions.isActive,
-    })
-    .from(cubeDefinitions)
-    .where(eq(cubeDefinitions.organisationId, 1))
+  const allCubes = await db.select({
+    connectionId: cubeDefinitions.connectionId,
+    compiledAt: cubeDefinitions.compiledAt,
+    definition: cubeDefinitions.definition,
+    isActive: cubeDefinitions.isActive,
+  }).from(cubeDefinitions).where(eq(cubeDefinitions.organisationId, 1))
 
   const result = allConns.map((conn: any) => {
     const schemas = allSchemas.filter((s: any) => s.connectionId === conn.id)
@@ -122,21 +83,19 @@ app.get('/status', async c => {
 })
 
 // Get single connection
-app.get('/:id', async c => {
+app.get('/:id', async (c) => {
   const db = c.get('db') as any
-  const id = Number.parseInt(c.req.param('id'))
-  const result = await db
-    .select({
-      id: connections.id,
-      name: connections.name,
-      description: connections.description,
-      engineType: connections.engineType,
-      connectionString: connections.connectionString,
-      isActive: connections.isActive,
-      createdAt: connections.createdAt,
-      updatedAt: connections.updatedAt,
-    })
-    .from(connections)
+  const id = parseInt(c.req.param('id'))
+  const result = await db.select({
+    id: connections.id,
+    name: connections.name,
+    description: connections.description,
+    engineType: connections.engineType,
+    connectionString: connections.connectionString,
+    isActive: connections.isActive,
+    createdAt: connections.createdAt,
+    updatedAt: connections.updatedAt
+  }).from(connections)
     .where(and(eq(connections.id, id), eq(connections.organisationId, 1)))
 
   if (result.length === 0) {
@@ -147,29 +106,22 @@ app.get('/:id', async c => {
 })
 
 // Create connection (admin only)
-app.post('/', adminGuard, async c => {
+app.post('/', adminGuard, async (c) => {
   const db = c.get('db') as any
   const body = await c.req.json()
 
-  const result = await db
-    .insert(connections)
-    .values({
-      name: body.name,
-      description: body.description,
-      engineType: body.engineType,
-      connectionString: body.connectionString,
-      organisationId: 1,
-    })
-    .returning()
+  const result = await db.insert(connections).values({
+    name: body.name,
+    description: body.description,
+    engineType: body.engineType,
+    connectionString: body.connectionString,
+    organisationId: 1
+  }).returning()
 
   // Initialize in connection manager so it's immediately available
   const created = result[0]
   try {
-    await connectionManager.createConnection(
-      created.id,
-      created.connectionString,
-      created.engineType
-    )
+    await connectionManager.createConnection(created.id, created.connectionString, created.engineType)
   } catch (err) {
     console.error(`Failed to initialize new connection ${created.id}:`, err)
   }
@@ -178,12 +130,9 @@ app.post('/', adminGuard, async c => {
 })
 
 // Test arbitrary connection (admin only)
-app.post('/test', adminGuard, async c => {
+app.post('/test', adminGuard, async (c) => {
   const body = await c.req.json()
-  const { engineType, connectionString } = body as {
-    engineType?: string
-    connectionString?: string
-  }
+  const { engineType, connectionString } = body as { engineType?: string; connectionString?: string }
 
   if (!engineType || !connectionString) {
     return c.json({ success: false, message: 'engineType and connectionString are required' })
@@ -192,34 +141,45 @@ app.post('/test', adminGuard, async c => {
   const start = Date.now()
 
   try {
-    await testConnection(engineType, connectionString)
+    if (engineType === 'sqlite') {
+      const Database = (await import('better-sqlite3')).default
+      const filePath = connectionString.replace(/^file:/, '')
+      const sqlite = new Database(filePath, { readonly: true })
+      sqlite.prepare('SELECT 1').get()
+      sqlite.close()
+    } else {
+      const postgres = (await import('postgres')).default
+      const sql = postgres(connectionString, { max: 1, connect_timeout: 10 })
+      await sql`SELECT 1`
+      await sql.end()
+    }
+
     return c.json({
       success: true,
-      message: `Connected successfully (${Date.now() - start}ms)`,
+      message: `Connected successfully (${Date.now() - start}ms)`
     })
   } catch (err: any) {
     return c.json({
       success: false,
-      message: err.message || 'Connection failed',
+      message: err.message || 'Connection failed'
     })
   }
 })
 
 // Update connection (admin only)
-app.put('/:id', adminGuard, async c => {
+app.put('/:id', adminGuard, async (c) => {
   const db = c.get('db') as any
-  const id = Number.parseInt(c.req.param('id'))
+  const id = parseInt(c.req.param('id'))
   const body = await c.req.json()
 
-  const result = await db
-    .update(connections)
+  const result = await db.update(connections)
     .set({
       name: body.name,
       description: body.description,
       engineType: body.engineType,
       connectionString: body.connectionString,
       isActive: body.isActive,
-      updatedAt: new Date(),
+      updatedAt: new Date()
     })
     .where(and(eq(connections.id, id), eq(connections.organisationId, 1)))
     .returning()
@@ -232,12 +192,11 @@ app.put('/:id', adminGuard, async c => {
 })
 
 // Delete connection (admin only)
-app.delete('/:id', adminGuard, async c => {
+app.delete('/:id', adminGuard, async (c) => {
   const db = c.get('db') as any
-  const id = Number.parseInt(c.req.param('id'))
+  const id = parseInt(c.req.param('id'))
 
-  const result = await db
-    .delete(connections)
+  const result = await db.delete(connections)
     .where(and(eq(connections.id, id), eq(connections.organisationId, 1)))
     .returning()
 
@@ -251,13 +210,11 @@ app.delete('/:id', adminGuard, async c => {
 })
 
 // Test connection by ID (admin only)
-app.post('/:id/test', adminGuard, async c => {
+app.post('/:id/test', adminGuard, async (c) => {
   const db = c.get('db') as any
-  const id = Number.parseInt(c.req.param('id'))
+  const id = parseInt(c.req.param('id'))
 
-  const result = await db
-    .select()
-    .from(connections)
+  const result = await db.select().from(connections)
     .where(and(eq(connections.id, id), eq(connections.organisationId, 1)))
 
   if (result.length === 0) {
@@ -268,17 +225,30 @@ app.post('/:id/test', adminGuard, async c => {
   const start = Date.now()
 
   try {
-    await testConnection(conn.engineType, conn.connectionString)
+    if (conn.engineType === 'sqlite') {
+      const Database = (await import('better-sqlite3')).default
+      const filePath = conn.connectionString.replace(/^file:/, '')
+      const sqlite = new Database(filePath, { readonly: true })
+      sqlite.prepare('SELECT 1').get()
+      sqlite.close()
+    } else {
+      const postgres = (await import('postgres')).default
+      const sql = postgres(conn.connectionString, { max: 1, connect_timeout: 10 })
+      await sql`SELECT 1`
+      await sql.end()
+    }
+
     return c.json({
       success: true,
-      message: `Connected successfully (${Date.now() - start}ms)`,
+      message: `Connected successfully (${Date.now() - start}ms)`
     })
   } catch (err: any) {
     return c.json({
       success: false,
-      message: err.message || 'Connection failed',
+      message: err.message || 'Connection failed'
     })
   }
 })
+
 
 export default app

@@ -35,71 +35,102 @@ export default function SettingsNav() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
+  const allItems = sections.flatMap(s => s.items).filter(item => !item.adminOnly || isAdmin)
+
   return (
-    <nav
-      style={{
-        width: 200,
-        flexShrink: 0,
-        borderRight: '1px solid var(--dc-border)',
-        paddingRight: 24,
-      }}
-    >
-      <h2
-        style={{
-          fontSize: 18,
-          fontWeight: 600,
-          color: 'var(--dc-text)',
-          marginBottom: 24,
-          marginTop: 0,
-        }}
-      >
-        Settings
-      </h2>
-      {sections.map(section => {
-        const visibleItems = section.items.filter(item => !item.adminOnly || isAdmin)
-        if (visibleItems.length === 0) return null
-        return (
-          <div key={section.label} style={{ marginBottom: 24 }}>
-            <h3
+    <>
+      {/* Mobile: horizontal scrollable tabs */}
+      <nav className="flex md:hidden overflow-x-auto gap-2 border-b border-dc-border pb-3 mb-0">
+        {allItems.map(item => {
+          const isActive = location.pathname === item.path
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              className="whitespace-nowrap no-underline transition-colors"
               style={{
-                fontSize: 11,
-                fontWeight: 500,
-                color: 'var(--dc-text-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                marginBottom: 8,
-                marginTop: 0,
+                padding: '6px 14px',
+                borderRadius: 9999,
+                fontSize: 13,
+                border: isActive ? '1px solid var(--dc-primary)' : '1px solid var(--dc-border)',
+                color: isActive ? 'var(--dc-primary)' : 'var(--dc-text-muted)',
+                backgroundColor: isActive ? 'rgba(var(--dc-primary-rgb), 0.1)' : 'transparent',
+                fontWeight: isActive ? 500 : 400,
               }}
             >
-              {section.label}
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {visibleItems.map(item => {
-                const isActive = location.pathname === item.path
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    style={{
-                      display: 'block',
-                      padding: '6px 12px',
-                      borderRadius: 6,
-                      fontSize: 13,
-                      textDecoration: 'none',
-                      color: isActive ? 'var(--dc-text)' : 'var(--dc-text-muted)',
-                      backgroundColor: isActive ? 'var(--dc-surface-hover)' : 'transparent',
-                      fontWeight: isActive ? 500 : 400,
-                      transition: 'background-color 0.15s',
-                    }}
-                  >
-                    {item.label}
-                  </Link>
-                )
-              })}
+              {item.label}
+            </Link>
+          )
+        })}
+      </nav>
+
+      {/* Desktop: vertical nav with section headers */}
+      <nav
+        className="hidden md:block"
+        style={{
+          width: 200,
+          flexShrink: 0,
+          borderRight: '1px solid var(--dc-border)',
+          paddingRight: 24,
+        }}
+      >
+        <h2
+          style={{
+            fontSize: 18,
+            fontWeight: 600,
+            color: 'var(--dc-text)',
+            marginBottom: 24,
+            marginTop: 0,
+          }}
+        >
+          Settings
+        </h2>
+        {sections.map(section => {
+          const visibleItems = section.items.filter(item => !item.adminOnly || isAdmin)
+          if (visibleItems.length === 0) return null
+          return (
+            <div key={section.label} style={{ marginBottom: 24 }}>
+              <h3
+                style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: 'var(--dc-text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  marginBottom: 8,
+                  marginTop: 0,
+                }}
+              >
+                {section.label}
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {visibleItems.map(item => {
+                  const isActive = location.pathname === item.path
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      style={{
+                        display: 'block',
+                        padding: '6px 12px',
+                        borderRadius: 6,
+                        fontSize: 13,
+                        textDecoration: 'none',
+                        color: isActive ? 'var(--dc-text)' : 'var(--dc-text-muted)',
+                        backgroundColor: isActive ? 'var(--dc-surface-hover)' : 'transparent',
+                        fontWeight: isActive ? 500 : 400,
+                        transition: 'background-color 0.15s',
+                      }}
+                    >
+                      {item.label}
+                    </Link>
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        )
-      })}
-    </nav>
+          )
+        })}
+      </nav>
+    </>
   )
 }

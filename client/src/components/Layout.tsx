@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import ThemeToggle from './ThemeToggle'
@@ -110,6 +110,20 @@ const icons = {
       <path d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
     </svg>
   ),
+  hamburger: (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+    </svg>
+  ),
 }
 
 interface NavItem {
@@ -135,8 +149,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY)
     return saved ? Number.parseInt(saved, 10) : DEFAULT_WIDTH
   })
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const isDragging = useRef(false)
   const collapsed = sidebarWidth < COLLAPSE_THRESHOLD
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false)
+  }, [location.pathname])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -172,220 +192,205 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(newWidth))
   }, [collapsed])
 
+  const renderNavItems = (isMobile: boolean) => {
+    const items = navItems.filter(item => !item.adminOnly || user?.role === 'admin')
+    return items.map(item => {
+      const isActive =
+        location.pathname === item.path ||
+        (item.path !== '/' && location.pathname.startsWith(item.path))
+
+      return (
+        <Link
+          key={item.path}
+          to={item.path}
+          title={!isMobile && collapsed ? item.label : undefined}
+          className="flex items-center no-underline whitespace-nowrap overflow-hidden transition-colors"
+          style={{
+            gap: !isMobile && collapsed ? 0 : 10,
+            justifyContent: !isMobile && collapsed ? 'center' : 'flex-start',
+            padding: !isMobile && collapsed ? '8px 0' : '7px 12px',
+            color: isActive ? '#fff' : 'var(--dc-sidebar-text)',
+            backgroundColor: isActive ? 'var(--dc-sidebar-active)' : 'transparent',
+            fontSize: 13,
+          }}
+        >
+          <span
+            className="flex items-center justify-center shrink-0"
+            style={{ opacity: isActive ? 1 : 0.7 }}
+          >
+            {item.icon}
+          </span>
+          {(isMobile || !collapsed) && item.label}
+        </Link>
+      )
+    })
+  }
+
+  const renderSettingsLink = (isMobile: boolean) => {
+    const isActive = location.pathname.startsWith('/settings')
+    return (
+      <Link
+        to="/settings"
+        title={!isMobile && collapsed ? 'Settings' : undefined}
+        className="flex items-center no-underline whitespace-nowrap overflow-hidden transition-colors"
+        style={{
+          gap: !isMobile && collapsed ? 0 : 10,
+          justifyContent: !isMobile && collapsed ? 'center' : 'flex-start',
+          padding: !isMobile && collapsed ? '8px 0' : '7px 12px',
+          color: isActive ? '#fff' : 'var(--dc-sidebar-text)',
+          backgroundColor: isActive ? 'var(--dc-sidebar-active)' : 'transparent',
+          fontSize: 13,
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+        }}
+      >
+        <span
+          className="flex items-center justify-center shrink-0"
+          style={{ opacity: isActive ? 1 : 0.7 }}
+        >
+          {icons.settings}
+        </span>
+        {(isMobile || !collapsed) && 'Settings'}
+      </Link>
+    )
+  }
+
+  const renderUserRow = (isMobile: boolean) => (
+    <div
+      className="flex items-center gap-2"
+      style={{
+        padding: !isMobile && collapsed ? '6px 0' : '6px 12px',
+        borderTop: '1px solid rgba(255,255,255,0.1)',
+        justifyContent: !isMobile && collapsed ? 'center' : 'space-between',
+      }}
+    >
+      {(isMobile || !collapsed) && user && (
+        <span className="text-[11px] whitespace-nowrap overflow-hidden text-ellipsis min-w-0" style={{ color: 'rgba(255,255,255,0.5)' }}>
+          {user.name}
+        </span>
+      )}
+      <button
+        onClick={async () => {
+          await logout()
+          navigate('/login')
+        }}
+        title="Sign out"
+        className="shrink-0 flex items-center bg-transparent border-none cursor-pointer p-0"
+        style={{ color: 'rgba(255,255,255,0.35)' }}
+      >
+        {!isMobile && collapsed ? icons.logout : <span className="text-[11px]">Sign out</span>}
+      </button>
+    </div>
+  )
+
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      {/* Sidebar */}
+    <div className="flex h-screen overflow-hidden">
+      {/* Mobile top bar */}
+      <div
+        className="flex md:hidden items-center justify-between h-12 px-3 shrink-0 fixed top-0 left-0 right-0 z-30"
+        style={{ backgroundColor: 'var(--dc-sidebar-bg)', color: 'var(--dc-sidebar-text)' }}
+      >
+        <button
+          onClick={() => setMobileMenuOpen(o => !o)}
+          className="bg-transparent border-none cursor-pointer p-1 flex items-center"
+          style={{ color: 'var(--dc-sidebar-text)' }}
+        >
+          {icons.hamburger}
+        </button>
+        <div className="flex items-center gap-1.5">
+          <img
+            src="/logo.png"
+            alt="Drizby"
+            className="w-5 h-5"
+            style={{ filter: 'brightness(0) invert(1)', opacity: 0.9 }}
+          />
+          <span className="text-base font-bold">Drizby</span>
+        </div>
+        <ThemeToggle />
+      </div>
+
+      {/* Mobile backdrop */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 top-12 bg-black/50 z-40 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Mobile drawer */}
       <nav
+        className={`fixed inset-y-0 left-0 top-12 w-[280px] z-50 flex flex-col overflow-hidden md:hidden transform transition-transform duration-200 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        style={{
+          backgroundColor: 'var(--dc-sidebar-bg)',
+          color: 'var(--dc-sidebar-text)',
+          paddingTop: 12,
+          paddingBottom: 12,
+        }}
+      >
+        <div className="py-2 flex-1 overflow-auto">
+          {renderNavItems(true)}
+        </div>
+        {renderSettingsLink(true)}
+        {renderUserRow(true)}
+      </nav>
+
+      {/* Desktop sidebar */}
+      <nav
+        className="hidden md:flex flex-col overflow-hidden shrink-0"
         style={{
           width: sidebarWidth,
           minWidth: MIN_WIDTH,
           backgroundColor: 'var(--dc-sidebar-bg)',
           color: 'var(--dc-sidebar-text)',
           padding: '12px 0',
-          flexShrink: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
           transition: isDragging.current ? 'none' : 'width 0.15s ease',
         }}
       >
         <div
+          className="flex items-center whitespace-nowrap overflow-hidden"
           style={{
             padding: collapsed ? '0 0 12px' : '0 12px 12px',
             borderBottom: '1px solid rgba(255,255,255,0.1)',
-            display: 'flex',
-            alignItems: 'center',
             justifyContent: collapsed ? 'center' : 'space-between',
             gap: 8,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="flex items-center gap-1.5">
             <img
               src="/logo.png"
               alt="Drizby"
-              style={{
-                width: 24,
-                height: 24,
-                flexShrink: 0,
-                filter: 'brightness(0) invert(1)',
-                opacity: 0.9,
-              }}
+              className="w-6 h-6 shrink-0"
+              style={{ filter: 'brightness(0) invert(1)', opacity: 0.9 }}
             />
-            {!collapsed && <span style={{ fontSize: 18, fontWeight: 700 }}>Drizby</span>}
+            {!collapsed && <span className="text-lg font-bold">Drizby</span>}
           </div>
           {!collapsed && <ThemeToggle />}
         </div>
 
-        <div style={{ padding: '8px 0', flex: 1, overflow: 'auto' }}>
-          {navItems
-            .filter(item => !item.adminOnly || user?.role === 'admin')
-            .map(item => {
-              const isActive =
-                location.pathname === item.path ||
-                (item.path !== '/' && location.pathname.startsWith(item.path))
-
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  title={collapsed ? item.label : undefined}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: collapsed ? 0 : 10,
-                    justifyContent: collapsed ? 'center' : 'flex-start',
-                    padding: collapsed ? '8px 0' : '7px 12px',
-                    color: isActive ? '#fff' : 'var(--dc-sidebar-text)',
-                    backgroundColor: isActive ? 'var(--dc-sidebar-active)' : 'transparent',
-                    textDecoration: 'none',
-                    fontSize: 13,
-                    transition: 'background-color 0.15s',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <span
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      opacity: isActive ? 1 : 0.7,
-                    }}
-                  >
-                    {item.icon}
-                  </span>
-                  {!collapsed && item.label}
-                </Link>
-              )
-            })}
+        <div className="py-2 flex-1 overflow-auto">
+          {renderNavItems(false)}
         </div>
-
-        {/* Settings link */}
-        {(() => {
-          const isActive = location.pathname.startsWith('/settings')
-          return (
-            <Link
-              to="/settings"
-              title={collapsed ? 'Settings' : undefined}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: collapsed ? 0 : 10,
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                padding: collapsed ? '8px 0' : '7px 12px',
-                color: isActive ? '#fff' : 'var(--dc-sidebar-text)',
-                backgroundColor: isActive ? 'var(--dc-sidebar-active)' : 'transparent',
-                textDecoration: 'none',
-                fontSize: 13,
-                transition: 'background-color 0.15s',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                borderTop: '1px solid rgba(255,255,255,0.1)',
-              }}
-            >
-              <span
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                  opacity: isActive ? 1 : 0.7,
-                }}
-              >
-                {icons.settings}
-              </span>
-              {!collapsed && 'Settings'}
-            </Link>
-          )
-        })()}
-
-        {/* User row */}
-        <div
-          style={{
-            padding: collapsed ? '6px 0' : '6px 12px',
-            borderTop: '1px solid rgba(255,255,255,0.1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'space-between',
-            gap: 8,
-          }}
-        >
-          {!collapsed && user && (
-            <span
-              style={{
-                fontSize: 11,
-                color: 'rgba(255,255,255,0.5)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                minWidth: 0,
-              }}
-            >
-              {user.name}
-            </span>
-          )}
-          <button
-            onClick={async () => {
-              await logout()
-              navigate('/login')
-            }}
-            title="Sign out"
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'rgba(255,255,255,0.35)',
-              cursor: 'pointer',
-              padding: 0,
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
-            {collapsed ? icons.logout : <span style={{ fontSize: 11 }}>Sign out</span>}
-          </button>
-        </div>
+        {renderSettingsLink(false)}
+        {renderUserRow(false)}
       </nav>
 
-      {/* Resize handle */}
+      {/* Resize handle — desktop only */}
       <div
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClick}
-        style={{
-          width: 4,
-          cursor: 'col-resize',
-          backgroundColor: 'transparent',
-          flexShrink: 0,
-          position: 'relative',
-          zIndex: 10,
-        }}
+        className="hidden md:block w-1 cursor-col-resize shrink-0 relative z-10"
       >
         <div
+          className="absolute inset-y-0 left-0 w-1 transition-colors"
           style={{
-            position: 'absolute',
-            top: 0,
-            bottom: 0,
-            left: 0,
-            width: 4,
             backgroundColor: isDragging.current ? 'var(--dc-primary)' : 'transparent',
-            transition: 'background-color 0.15s',
           }}
         />
       </div>
 
       {/* Main content */}
       <main
-        style={{
-          flex: 1,
-          padding: 24,
-          backgroundColor: 'var(--dc-background)',
-          overflow: 'auto',
-          minWidth: 0,
-          display: 'flex',
-          flexDirection: 'column',
-        }}
+        className="flex-1 p-3 md:p-6 overflow-auto min-w-0 flex flex-col mt-12 md:mt-0"
+        style={{ backgroundColor: 'var(--dc-background)' }}
       >
         {children}
       </main>

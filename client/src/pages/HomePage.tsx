@@ -31,7 +31,7 @@ const suggestions = [
 // Subtle animated gradient divider
 function Divider() {
   return (
-    <div style={{ position: 'relative', height: 1, margin: '32px 0', overflow: 'hidden' }}>
+    <div className="relative h-px my-5 md:my-8 overflow-hidden">
       <div
         style={{
           position: 'absolute',
@@ -379,19 +379,8 @@ export default function HomePage() {
 
       <div style={{ position: 'relative' }}>
         {/* Hero input */}
-        <div style={{ paddingTop: 32, paddingBottom: 8 }}>
-          <h2
-            style={{
-              fontSize: 28,
-              fontWeight: 800,
-              textAlign: 'center',
-              marginBottom: 28,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 10,
-            }}
-          >
+        <div className="pt-4 md:pt-8 pb-2">
+          <h2 className="text-xl md:text-[28px] font-extrabold text-center mb-5 md:mb-7 flex items-center justify-center gap-2.5">
             <span
               style={{
                 background:
@@ -455,7 +444,7 @@ export default function HomePage() {
                   backgroundColor: 'transparent',
                   resize: 'none',
                   borderRadius: 16,
-                  padding: '16px 20px 56px',
+                  padding: '12px 16px 52px',
                   fontSize: 14,
                   lineHeight: 1.6,
                   border: 'none',
@@ -527,7 +516,7 @@ export default function HomePage() {
                     >
                       <path d="M12 4.5v15m7.5-7.5h-15" />
                     </svg>
-                    New Notebook
+                    <span className="hidden md:inline">New Notebook</span>
                   </button>
                 </div>
                 <button
@@ -566,24 +555,16 @@ export default function HomePage() {
             </div>
 
             {/* Suggestion chips */}
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                justifyContent: 'center',
-                gap: 8,
-                marginTop: 16,
-              }}
-            >
+            <div className="flex flex-wrap justify-center gap-1.5 md:gap-2 mt-3 md:mt-4">
               {suggestions.map(s => (
                 <button
                   key={s}
                   onClick={() => handleAsk(s)}
                   disabled={isCreating}
+                  className="text-[11px] md:text-xs"
                   style={{
                     padding: '4px 12px',
                     borderRadius: 20,
-                    fontSize: 12,
                     border: '1px solid var(--dc-border)',
                     backgroundColor: 'var(--dc-surface)',
                     color: 'var(--dc-text-muted)',
@@ -775,13 +756,7 @@ export default function HomePage() {
               </Link>
             </div>
           ) : (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: 12,
-              }}
-            >
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {dashboards.map(d => (
                 <Link key={d.id} to={`/dashboards/${d.id}`} style={{ textDecoration: 'none' }}>
                   <div
