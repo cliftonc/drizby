@@ -17,15 +17,23 @@
    wrangler d1 execute drizby-db --file=../../drizzle/0000_short_freak.sql
    ```
 
-3. Set secrets (you'll be prompted for each value):
+3. Get your Cloudflare credentials:
+
+   **CF_ACCOUNT_ID:** Go to the [Cloudflare dashboard](https://dash.cloudflare.com), select your account — the Account ID is shown in the right sidebar on the overview page, or in the URL: `dash.cloudflare.com/<account-id>`.
+
+   **CF_API_TOKEN:** Go to [API Tokens](https://dash.cloudflare.com/profile/api-tokens) → Create Token → use the "Edit Cloudflare Workers" template, then add **D1 Edit** permissions under Account resources.
+
+   **D1_DATABASE_ID / D1_DEMO_DATABASE_ID:** Shown in the output of `wrangler d1 create` from step 1 (the `database_id` field).
+
+4. Set secrets (you'll be prompted for each value):
    ```sh
+   wrangler secret put CF_ACCOUNT_ID
    wrangler secret put CF_API_TOKEN
    wrangler secret put D1_DATABASE_ID
    wrangler secret put D1_DEMO_DATABASE_ID
-   wrangler secret put CF_ACCOUNT_ID
    ```
 
-4. Deploy:
+5. Deploy:
    ```sh
    wrangler deploy
    ```
