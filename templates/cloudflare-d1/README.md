@@ -21,9 +21,9 @@
    # → note the database_id (this is your D1_DEMO_DATABASE_ID)
    ```
 
-3. Apply migrations to the platform DB using its database ID:
+3. Apply migrations to the platform DB:
    ```sh
-   wrangler d1 execute --remote <D1_DATABASE_ID> --file=../../drizzle/0000_short_freak.sql
+   wrangler d1 execute drizby-db --remote --file=../../drizzle/0000_short_freak.sql
    ```
 
 4. Get your Cloudflare credentials:
