@@ -11,8 +11,8 @@ RUN npm ci --legacy-peer-deps
 
 COPY . .
 
-# Build client (Vite → dist/)
-RUN npm run build:client
+# Build client (Vite → dist/) and server (esbuild → dist/server.js)
+RUN npm run build
 
 # ---- Deps stage: production deps with native modules ----
 FROM node:24-alpine AS deps
@@ -23,8 +23,6 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --legacy-peer-deps
-# tsx needed to run TypeScript server (no server compile step)
-RUN npm i --legacy-peer-deps tsx
 RUN npm cache clean --force
 
 # ---- Runtime stage ----
@@ -35,19 +33,15 @@ RUN apk add --no-cache libstdc++
 
 WORKDIR /app
 
-# Pre-built node_modules (with native bindings already compiled)
+# Production node_modules (only needed for native modules + external deps)
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json ./
 
-# Built client assets
+# Built client assets + bundled server
 COPY --from=builder /app/dist ./dist
 
-# Server source (executed via tsx)
-COPY app.ts schema.ts drizzle.config.ts ./
-COPY src/ ./src/
-COPY scripts/ ./scripts/
+# Drizzle migrations
 COPY drizzle/ ./drizzle/
-COPY schema/ ./schema/
 
 # Data volume for SQLite databases
 RUN mkdir -p data
@@ -59,5 +53,5 @@ ENV PORT=3461
 
 EXPOSE 3461
 
-# Migrations run automatically on startup (src/index.ts → runMigrations)
-CMD ["npx", "tsx", "src/index.ts"]
+# Migrations run automatically on startup (bundled in dist/server.js)
+CMD ["node", "dist/server.js"]
