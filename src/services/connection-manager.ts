@@ -4,11 +4,11 @@
  * On startup, loads all connections/schemas/cubes from DB, compiles, and registers.
  */
 
-import { eq } from 'drizzle-orm'
 import { SemanticLayerCompiler } from 'drizzle-cube/server'
-import type { DrizzleDatabase, Cube } from 'drizzle-cube/server'
-import { connections, schemaFiles, cubeDefinitions } from '../../schema'
-import { compileSchema, compileCube } from './cube-compiler'
+import type { Cube, DrizzleDatabase } from 'drizzle-cube/server'
+import { eq } from 'drizzle-orm'
+import { connections, cubeDefinitions, schemaFiles } from '../../schema'
+import { compileCube, compileSchema } from './cube-compiler'
 
 interface ManagedConnection {
   connectionId: number
@@ -62,14 +62,27 @@ class ConnectionManager {
     let db: DrizzleDatabase
 
     if (engineType === 'sqlite') {
-      const Database = (await import('better-sqlite3')).default
-      const { drizzle } = await import('drizzle-orm/better-sqlite3')
-      const filePath = connectionString.replace(/^file:/, '')
-      const sqlite = new Database(filePath)
-      sqlite.pragma('journal_mode = WAL')
-      sqlite.pragma('foreign_keys = ON')
-      client = sqlite
-      db = drizzle(sqlite) as unknown as DrizzleDatabase
+      if (connectionString.startsWith('d1:')) {
+        const { drizzle } = await import('drizzle-orm/d1')
+        const databaseId = connectionString.replace(/^d1:/, '')
+        db = drizzle({
+          connection: {
+            accountId: process.env.CF_ACCOUNT_ID!,
+            databaseId,
+            token: process.env.CF_API_TOKEN!,
+          },
+        }) as unknown as DrizzleDatabase
+        client = null // No native handle to close
+      } else {
+        const Database = (await import('better-sqlite3')).default
+        const { drizzle } = await import('drizzle-orm/better-sqlite3')
+        const filePath = connectionString.replace(/^file:/, '')
+        const sqlite = new Database(filePath)
+        sqlite.pragma('journal_mode = WAL')
+        sqlite.pragma('foreign_keys = ON')
+        client = sqlite
+        db = drizzle(sqlite) as unknown as DrizzleDatabase
+      }
     } else {
       const postgres = (await import('postgres')).default
       const { drizzle } = await import('drizzle-orm/postgres-js')
@@ -104,10 +117,12 @@ class ConnectionManager {
     if (!managed) return
 
     try {
-      if (managed.engineType === 'sqlite') {
-        managed.client.close()
-      } else {
-        await managed.client.end()
+      if (managed.client) {
+        if (managed.engineType === 'sqlite') {
+          managed.client.close()
+        } else {
+          await managed.client.end()
+        }
       }
     } catch {}
 
@@ -163,18 +178,21 @@ class ConnectionManager {
             managed.schemaExports[name] = result.exports
             managed.schemaSources[name] = sf.sourceCode
             // Update compiledAt in DB
-            await db.update(schemaFiles)
+            await db
+              .update(schemaFiles)
               .set({ compiledAt: new Date(), compilationErrors: null })
               .where(eq(schemaFiles.id, sf.id))
           } else {
-            await db.update(schemaFiles)
+            await db
+              .update(schemaFiles)
               .set({ compilationErrors: result.errors })
               .where(eq(schemaFiles.id, sf.id))
             console.error(`Schema ${sf.name} compilation errors:`, result.errors)
           }
         } catch (err: any) {
           console.error(`Schema ${sf.name} compilation failed:`, err.message)
-          await db.update(schemaFiles)
+          await db
+            .update(schemaFiles)
             .set({ compilationErrors: [{ message: err.message }] })
             .where(eq(schemaFiles.id, sf.id))
         }
@@ -198,22 +216,26 @@ class ConnectionManager {
         if (result.errors.length === 0) {
           // Find exported cubes and register them
           const registeredCubes = this.registerExportedCubes(result.exports, managed)
-          await db.update(cubeDefinitions)
+          await db
+            .update(cubeDefinitions)
             .set({
               compiledAt: new Date(),
               compilationErrors: null,
-              definition: registeredCubes.length > 0 ? { cubes: registeredCubes.map(c => c.name) } : null
+              definition:
+                registeredCubes.length > 0 ? { cubes: registeredCubes.map(c => c.name) } : null,
             })
             .where(eq(cubeDefinitions.id, cubeDef.id))
         } else {
-          await db.update(cubeDefinitions)
+          await db
+            .update(cubeDefinitions)
             .set({ compilationErrors: result.errors })
             .where(eq(cubeDefinitions.id, cubeDef.id))
           console.error(`Cube ${cubeDef.name} compilation errors:`, result.errors)
         }
       } catch (err: any) {
         console.error(`Cube ${cubeDef.name} compilation failed:`, err.message)
-        await db.update(cubeDefinitions)
+        await db
+          .update(cubeDefinitions)
           .set({ compilationErrors: [{ message: err.message }] })
           .where(eq(cubeDefinitions.id, cubeDef.id))
       }
@@ -249,9 +271,13 @@ class ConnectionManager {
   /**
    * Compile a single cube definition and register its cubes.
    */
-  compileCubeDefinition(connectionId: number, sourceCode: string): { cubes: string[]; errors: any[] } {
+  compileCubeDefinition(
+    connectionId: number,
+    sourceCode: string
+  ): { cubes: string[]; errors: any[] } {
     const managed = this.connections.get(connectionId)
-    if (!managed) return { cubes: [], errors: [{ message: `Connection ${connectionId} not found` }] }
+    if (!managed)
+      return { cubes: [], errors: [{ message: `Connection ${connectionId} not found` }] }
 
     const result = compileCube(sourceCode, managed.schemaExports, managed.schemaSources)
     if (result.errors.length > 0) {
@@ -266,13 +292,17 @@ class ConnectionManager {
    * Find and register all Cube objects from compiled exports.
    */
   private isCube(value: any): value is Cube {
-    return value && typeof value === 'object' && value.name && value.dimensions && value.measures && value.sql
+    return (
+      value &&
+      typeof value === 'object' &&
+      value.name &&
+      value.dimensions &&
+      value.measures &&
+      value.sql
+    )
   }
 
-  private registerExportedCubes(
-    exports: Record<string, any>,
-    managed: ManagedConnection
-  ): Cube[] {
+  private registerExportedCubes(exports: Record<string, any>, managed: ManagedConnection): Cube[] {
     const registered: Cube[] = []
     const seen = new Set<string>()
 

@@ -3,9 +3,9 @@
  * CRUD operations for dashboard configurations
  */
 
-import { Hono } from 'hono'
-import { eq, and, asc } from 'drizzle-orm'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
+import { and, asc, eq } from 'drizzle-orm'
+import { Hono } from 'hono'
 import { analyticsPages, users } from '../../schema'
 import { productivityDashboardConfig } from '../dashboard-config'
 
@@ -23,7 +23,7 @@ analyticsApp.use('*', async (c, next) => {
 })
 
 // Get all analytics pages
-analyticsApp.get('/', async (c) => {
+analyticsApp.get('/', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
 
@@ -36,10 +36,7 @@ analyticsApp.get('/', async (c) => {
       .from(analyticsPages)
       .leftJoin(users, eq(analyticsPages.createdBy, users.id))
       .where(
-        and(
-          eq(analyticsPages.organisationId, organisationId),
-          eq(analyticsPages.isActive, true)
-        )
+        and(eq(analyticsPages.organisationId, organisationId), eq(analyticsPages.isActive, true))
       )
       .orderBy(asc(analyticsPages.order), asc(analyticsPages.name))
 
@@ -52,12 +49,12 @@ analyticsApp.get('/', async (c) => {
 })
 
 // Get specific analytics page
-analyticsApp.get('/:id', async (c) => {
+analyticsApp.get('/:id', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
-  const id = parseInt(c.req.param('id'))
+  const id = Number.parseInt(c.req.param('id'))
 
-  if (isNaN(id)) return c.json({ error: 'Invalid page ID' }, 400)
+  if (Number.isNaN(id)) return c.json({ error: 'Invalid page ID' }, 400)
 
   try {
     const rows = await db
@@ -85,7 +82,7 @@ analyticsApp.get('/:id', async (c) => {
 })
 
 // Create new analytics page
-analyticsApp.post('/', async (c) => {
+analyticsApp.post('/', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
 
@@ -100,7 +97,15 @@ analyticsApp.post('/', async (c) => {
     const auth = c.get('auth') as any
     const newPage = await db
       .insert(analyticsPages)
-      .values({ name, description, order, organisationId, config, connectionId: connectionId || null, createdBy: auth?.userId || null })
+      .values({
+        name,
+        description,
+        order,
+        organisationId,
+        config,
+        connectionId: connectionId || null,
+        createdBy: auth?.userId || null,
+      })
       .returning()
 
     return c.json({ data: newPage[0] }, 201)
@@ -111,7 +116,7 @@ analyticsApp.post('/', async (c) => {
 })
 
 // Create example analytics page
-analyticsApp.post('/create-example', async (c) => {
+analyticsApp.post('/create-example', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
 
@@ -130,21 +135,24 @@ analyticsApp.post('/create-example', async (c) => {
 })
 
 // Update analytics page
-analyticsApp.put('/:id', async (c) => {
+analyticsApp.put('/:id', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
   const auth = c.get('auth') as any
-  const id = parseInt(c.req.param('id'))
+  const id = Number.parseInt(c.req.param('id'))
 
-  if (isNaN(id)) return c.json({ error: 'Invalid page ID' }, 400)
+  if (Number.isNaN(id)) return c.json({ error: 'Invalid page ID' }, 400)
 
   try {
     // Members can only update their own dashboards
     if (auth?.user?.role !== 'admin') {
-      const [existing] = await db.select({ createdBy: analyticsPages.createdBy }).from(analyticsPages)
+      const [existing] = await db
+        .select({ createdBy: analyticsPages.createdBy })
+        .from(analyticsPages)
         .where(and(eq(analyticsPages.id, id), eq(analyticsPages.organisationId, organisationId)))
       if (!existing) return c.json({ error: 'Analytics page not found' }, 404)
-      if (existing.createdBy !== auth?.userId) return c.json({ error: 'You can only edit your own dashboards' }, 403)
+      if (existing.createdBy !== auth?.userId)
+        return c.json({ error: 'You can only edit your own dashboards' }, 403)
     }
 
     const body = await c.req.json()
@@ -172,21 +180,24 @@ analyticsApp.put('/:id', async (c) => {
 })
 
 // Reset analytics page to default configuration
-analyticsApp.post('/:id/reset', async (c) => {
+analyticsApp.post('/:id/reset', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
   const auth = c.get('auth') as any
-  const id = parseInt(c.req.param('id'))
+  const id = Number.parseInt(c.req.param('id'))
 
-  if (isNaN(id)) return c.json({ error: 'Invalid page ID' }, 400)
+  if (Number.isNaN(id)) return c.json({ error: 'Invalid page ID' }, 400)
 
   try {
     // Members can only reset their own dashboards
     if (auth?.user?.role !== 'admin') {
-      const [existing] = await db.select({ createdBy: analyticsPages.createdBy }).from(analyticsPages)
+      const [existing] = await db
+        .select({ createdBy: analyticsPages.createdBy })
+        .from(analyticsPages)
         .where(and(eq(analyticsPages.id, id), eq(analyticsPages.organisationId, organisationId)))
       if (!existing) return c.json({ error: 'Analytics page not found' }, 404)
-      if (existing.createdBy !== auth?.userId) return c.json({ error: 'You can only reset your own dashboards' }, 403)
+      if (existing.createdBy !== auth?.userId)
+        return c.json({ error: 'You can only reset your own dashboards' }, 403)
     }
 
     const resetPage = await db
@@ -204,13 +215,13 @@ analyticsApp.post('/:id/reset', async (c) => {
 })
 
 // Save thumbnail for analytics page (stores base64 in config for dev)
-analyticsApp.post('/:id/thumbnail', async (c) => {
+analyticsApp.post('/:id/thumbnail', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
   const auth = c.get('auth') as any
-  const id = parseInt(c.req.param('id'))
+  const id = Number.parseInt(c.req.param('id'))
 
-  if (isNaN(id)) return c.json({ error: 'Invalid page ID' }, 400)
+  if (Number.isNaN(id)) return c.json({ error: 'Invalid page ID' }, 400)
 
   try {
     const body = await c.req.json()
@@ -223,7 +234,13 @@ analyticsApp.post('/:id/thumbnail', async (c) => {
     const existingPage = await db
       .select()
       .from(analyticsPages)
-      .where(and(eq(analyticsPages.id, id), eq(analyticsPages.organisationId, organisationId), eq(analyticsPages.isActive, true)))
+      .where(
+        and(
+          eq(analyticsPages.id, id),
+          eq(analyticsPages.organisationId, organisationId),
+          eq(analyticsPages.isActive, true)
+        )
+      )
       .limit(1)
 
     if (existingPage.length === 0) return c.json({ error: 'Analytics page not found' }, 404)
@@ -248,21 +265,24 @@ analyticsApp.post('/:id/thumbnail', async (c) => {
 })
 
 // Delete (soft delete) analytics page
-analyticsApp.delete('/:id', async (c) => {
+analyticsApp.delete('/:id', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
   const auth = c.get('auth') as any
-  const id = parseInt(c.req.param('id'))
+  const id = Number.parseInt(c.req.param('id'))
 
-  if (isNaN(id)) return c.json({ error: 'Invalid page ID' }, 400)
+  if (Number.isNaN(id)) return c.json({ error: 'Invalid page ID' }, 400)
 
   try {
     // Members can only delete their own dashboards
     if (auth?.user?.role !== 'admin') {
-      const [existing] = await db.select({ createdBy: analyticsPages.createdBy }).from(analyticsPages)
+      const [existing] = await db
+        .select({ createdBy: analyticsPages.createdBy })
+        .from(analyticsPages)
         .where(and(eq(analyticsPages.id, id), eq(analyticsPages.organisationId, organisationId)))
       if (!existing) return c.json({ error: 'Analytics page not found' }, 404)
-      if (existing.createdBy !== auth?.userId) return c.json({ error: 'You can only delete your own dashboards' }, 403)
+      if (existing.createdBy !== auth?.userId)
+        return c.json({ error: 'You can only delete your own dashboards' }, 403)
     }
 
     const deletedPage = await db

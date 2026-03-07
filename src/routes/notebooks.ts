@@ -3,9 +3,9 @@
  * CRUD operations for AI notebook configurations
  */
 
-import { Hono } from 'hono'
-import { eq, and, asc } from 'drizzle-orm'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
+import { and, asc, eq } from 'drizzle-orm'
+import { Hono } from 'hono'
 import { notebooks, users } from '../../schema'
 
 interface Variables {
@@ -22,7 +22,7 @@ notebooksApp.use('*', async (c, next) => {
 })
 
 // Get all notebooks
-notebooksApp.get('/', async (c) => {
+notebooksApp.get('/', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
 
@@ -46,12 +46,12 @@ notebooksApp.get('/', async (c) => {
 })
 
 // Get specific notebook
-notebooksApp.get('/:id', async (c) => {
+notebooksApp.get('/:id', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
-  const id = parseInt(c.req.param('id'), 10)
+  const id = Number.parseInt(c.req.param('id'), 10)
 
-  if (isNaN(id)) return c.json({ error: 'Invalid notebook ID' }, 400)
+  if (Number.isNaN(id)) return c.json({ error: 'Invalid notebook ID' }, 400)
 
   try {
     const rows = await db
@@ -61,7 +61,13 @@ notebooksApp.get('/:id', async (c) => {
       })
       .from(notebooks)
       .leftJoin(users, eq(notebooks.createdBy, users.id))
-      .where(and(eq(notebooks.id, id), eq(notebooks.organisationId, organisationId), eq(notebooks.isActive, true)))
+      .where(
+        and(
+          eq(notebooks.id, id),
+          eq(notebooks.organisationId, organisationId),
+          eq(notebooks.isActive, true)
+        )
+      )
       .limit(1)
 
     if (rows.length === 0) return c.json({ error: 'Notebook not found' }, 404)
@@ -73,7 +79,7 @@ notebooksApp.get('/:id', async (c) => {
 })
 
 // Create new notebook
-notebooksApp.post('/', async (c) => {
+notebooksApp.post('/', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
 
@@ -93,7 +99,7 @@ notebooksApp.post('/', async (c) => {
         organisationId,
         connectionId: connectionId || null,
         config: config || { blocks: [], messages: [] },
-        createdBy: auth?.userId || null
+        createdBy: auth?.userId || null,
       })
       .returning()
 
@@ -105,21 +111,24 @@ notebooksApp.post('/', async (c) => {
 })
 
 // Update notebook
-notebooksApp.put('/:id', async (c) => {
+notebooksApp.put('/:id', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
   const auth = c.get('auth') as any
-  const id = parseInt(c.req.param('id'), 10)
+  const id = Number.parseInt(c.req.param('id'), 10)
 
-  if (isNaN(id)) return c.json({ error: 'Invalid notebook ID' }, 400)
+  if (Number.isNaN(id)) return c.json({ error: 'Invalid notebook ID' }, 400)
 
   try {
     // Members can only update their own notebooks
     if (auth?.user?.role !== 'admin') {
-      const [existing] = await db.select({ createdBy: notebooks.createdBy }).from(notebooks)
+      const [existing] = await db
+        .select({ createdBy: notebooks.createdBy })
+        .from(notebooks)
         .where(and(eq(notebooks.id, id), eq(notebooks.organisationId, organisationId)))
       if (!existing) return c.json({ error: 'Notebook not found' }, 404)
-      if (existing.createdBy !== auth?.userId) return c.json({ error: 'You can only edit your own notebooks' }, 403)
+      if (existing.createdBy !== auth?.userId)
+        return c.json({ error: 'You can only edit your own notebooks' }, 403)
     }
 
     const body = await c.req.json()
@@ -147,21 +156,24 @@ notebooksApp.put('/:id', async (c) => {
 })
 
 // Delete (soft delete) notebook
-notebooksApp.delete('/:id', async (c) => {
+notebooksApp.delete('/:id', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
   const auth = c.get('auth') as any
-  const id = parseInt(c.req.param('id'), 10)
+  const id = Number.parseInt(c.req.param('id'), 10)
 
-  if (isNaN(id)) return c.json({ error: 'Invalid notebook ID' }, 400)
+  if (Number.isNaN(id)) return c.json({ error: 'Invalid notebook ID' }, 400)
 
   try {
     // Members can only delete their own notebooks
     if (auth?.user?.role !== 'admin') {
-      const [existing] = await db.select({ createdBy: notebooks.createdBy }).from(notebooks)
+      const [existing] = await db
+        .select({ createdBy: notebooks.createdBy })
+        .from(notebooks)
         .where(and(eq(notebooks.id, id), eq(notebooks.organisationId, organisationId)))
       if (!existing) return c.json({ error: 'Notebook not found' }, 404)
-      if (existing.createdBy !== auth?.userId) return c.json({ error: 'You can only delete your own notebooks' }, 403)
+      if (existing.createdBy !== auth?.userId)
+        return c.json({ error: 'You can only delete your own notebooks' }, 403)
     }
 
     const deleted = await db

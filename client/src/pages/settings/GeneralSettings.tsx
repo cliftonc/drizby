@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useConfirm } from '../../hooks/useConfirm'
 import { usePrompt } from '../../hooks/usePrompt'
@@ -33,7 +33,7 @@ export default function GeneralSettings() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ currentPassword, newPassword })
+        body: JSON.stringify({ currentPassword, newPassword }),
       })
       if (!res.ok) {
         const data = await res.json()
@@ -57,9 +57,10 @@ export default function GeneralSettings() {
   const handleFactoryReset = useCallback(async () => {
     const confirmed = await confirm({
       title: 'Factory Reset',
-      message: 'This will permanently delete ALL data: connections, schemas, cubes, dashboards, notebooks, users, and settings. This cannot be undone.',
+      message:
+        'This will permanently delete ALL data: connections, schemas, cubes, dashboards, notebooks, users, and settings. This cannot be undone.',
       confirmText: 'Continue',
-      variant: 'danger'
+      variant: 'danger',
     })
     if (!confirmed) return
 
@@ -67,7 +68,7 @@ export default function GeneralSettings() {
       title: 'Confirm Factory Reset',
       message: 'Type "RESET" to confirm you want to wipe all data.',
       placeholder: 'RESET',
-      submitText: 'Reset Everything'
+      submitText: 'Reset Everything',
     })
     if (typed !== 'RESET') return
 
@@ -75,7 +76,7 @@ export default function GeneralSettings() {
     try {
       const res = await fetch('/api/settings/factory-reset', {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
       })
       if (!res.ok) {
         const data = await res.json()
@@ -90,16 +91,51 @@ export default function GeneralSettings() {
   }, [confirm, prompt])
 
   const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '6px 12px', backgroundColor: 'var(--dc-input-bg)', border: '1px solid var(--dc-input-border)',
-    borderRadius: 6, color: 'var(--dc-input-text)', fontSize: 13, outline: 'none', boxSizing: 'border-box'
+    width: '100%',
+    padding: '6px 12px',
+    backgroundColor: 'var(--dc-input-bg)',
+    border: '1px solid var(--dc-input-border)',
+    borderRadius: 6,
+    color: 'var(--dc-input-text)',
+    fontSize: 13,
+    outline: 'none',
+    boxSizing: 'border-box',
   }
 
   return (
     <div style={{ maxWidth: 480 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--dc-text)', marginBottom: 24, marginTop: 0 }}>Your Profile</h2>
+      <h2
+        style={{
+          fontSize: 18,
+          fontWeight: 600,
+          color: 'var(--dc-text)',
+          marginBottom: 24,
+          marginTop: 0,
+        }}
+      >
+        Your Profile
+      </h2>
 
-      <div style={{ marginBottom: 32, padding: 16, backgroundColor: 'var(--dc-surface)', borderRadius: 8, border: '1px solid var(--dc-border)' }}>
-        <h3 style={{ fontSize: 13, fontWeight: 500, color: 'var(--dc-text-secondary)', marginBottom: 12, marginTop: 0 }}>Profile</h3>
+      <div
+        style={{
+          marginBottom: 32,
+          padding: 16,
+          backgroundColor: 'var(--dc-surface)',
+          borderRadius: 8,
+          border: '1px solid var(--dc-border)',
+        }}
+      >
+        <h3
+          style={{
+            fontSize: 13,
+            fontWeight: 500,
+            color: 'var(--dc-text-secondary)',
+            marginBottom: 12,
+            marginTop: 0,
+          }}
+        >
+          Profile
+        </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: 'var(--dc-text-muted)' }}>Name</span>
@@ -111,48 +147,166 @@ export default function GeneralSettings() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: 'var(--dc-text-muted)' }}>Role</span>
-            <span style={{ color: 'var(--dc-text)', textTransform: 'capitalize' }}>{user?.role}</span>
+            <span style={{ color: 'var(--dc-text)', textTransform: 'capitalize' }}>
+              {user?.role}
+            </span>
           </div>
         </div>
       </div>
 
-      <div style={{ padding: 16, backgroundColor: 'var(--dc-surface)', borderRadius: 8, border: '1px solid var(--dc-border)' }}>
-        <h3 style={{ fontSize: 13, fontWeight: 500, color: 'var(--dc-text-secondary)', marginBottom: 12, marginTop: 0 }}>Change Password</h3>
+      <div
+        style={{
+          padding: 16,
+          backgroundColor: 'var(--dc-surface)',
+          borderRadius: 8,
+          border: '1px solid var(--dc-border)',
+        }}
+      >
+        <h3
+          style={{
+            fontSize: 13,
+            fontWeight: 500,
+            color: 'var(--dc-text-secondary)',
+            marginBottom: 12,
+            marginTop: 0,
+          }}
+        >
+          Change Password
+        </h3>
 
         {error && (
-          <div style={{ backgroundColor: 'var(--dc-error-bg)', border: '1px solid var(--dc-error-border)', color: 'var(--dc-error)', fontSize: 12, padding: '8px 12px', borderRadius: 6, marginBottom: 12 }}>{error}</div>
+          <div
+            style={{
+              backgroundColor: 'var(--dc-error-bg)',
+              border: '1px solid var(--dc-error-border)',
+              color: 'var(--dc-error)',
+              fontSize: 12,
+              padding: '8px 12px',
+              borderRadius: 6,
+              marginBottom: 12,
+            }}
+          >
+            {error}
+          </div>
         )}
         {message && (
-          <div style={{ backgroundColor: 'var(--dc-success-bg)', border: '1px solid var(--dc-success-border)', color: 'var(--dc-success)', fontSize: 12, padding: '8px 12px', borderRadius: 6, marginBottom: 12 }}>{message}</div>
+          <div
+            style={{
+              backgroundColor: 'var(--dc-success-bg)',
+              border: '1px solid var(--dc-success-border)',
+              color: 'var(--dc-success)',
+              fontSize: 12,
+              padding: '8px 12px',
+              borderRadius: 6,
+              marginBottom: 12,
+            }}
+          >
+            {message}
+          </div>
         )}
 
         <form onSubmit={handlePasswordChange}>
           <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 4 }}>Current Password</label>
-            <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} style={inputStyle} />
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                color: 'var(--dc-text-muted)',
+                marginBottom: 4,
+              }}
+            >
+              Current Password
+            </label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={e => setCurrentPassword(e.target.value)}
+              style={inputStyle}
+            />
           </div>
           <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 4 }}>New Password</label>
-            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required style={inputStyle} />
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                color: 'var(--dc-text-muted)',
+                marginBottom: 4,
+              }}
+            >
+              New Password
+            </label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              required
+              style={inputStyle}
+            />
           </div>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 4 }}>Confirm New Password</label>
-            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required style={inputStyle} />
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                color: 'var(--dc-text-muted)',
+                marginBottom: 4,
+              }}
+            >
+              Confirm New Password
+            </label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              required
+              style={inputStyle}
+            />
           </div>
           <button
             type="submit"
             disabled={loading}
-            style={{ padding: '6px 16px', backgroundColor: 'var(--dc-primary)', color: 'var(--dc-primary-content)', fontWeight: 500, borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, opacity: loading ? 0.5 : 1 }}
+            style={{
+              padding: '6px 16px',
+              backgroundColor: 'var(--dc-primary)',
+              color: 'var(--dc-primary-content)',
+              fontWeight: 500,
+              borderRadius: 6,
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 13,
+              opacity: loading ? 0.5 : 1,
+            }}
           >
             {loading ? 'Updating...' : 'Update Password'}
           </button>
         </form>
       </div>
       {user?.role === 'admin' && (
-        <div style={{ marginTop: 32, padding: 16, backgroundColor: 'var(--dc-surface)', borderRadius: 8, border: '1px solid var(--dc-error-border, #ef4444)' }}>
-          <h3 style={{ fontSize: 13, fontWeight: 500, color: 'var(--dc-error, #ef4444)', marginBottom: 4, marginTop: 0 }}>Danger Zone</h3>
-          <p style={{ fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 12, marginTop: 0 }}>
-            Permanently delete all data and reset Drizby to a fresh state. Demo data will be re-created on next server restart.
+        <div
+          style={{
+            marginTop: 32,
+            padding: 16,
+            backgroundColor: 'var(--dc-surface)',
+            borderRadius: 8,
+            border: '1px solid var(--dc-error-border, #ef4444)',
+          }}
+        >
+          <h3
+            style={{
+              fontSize: 13,
+              fontWeight: 500,
+              color: 'var(--dc-error, #ef4444)',
+              marginBottom: 4,
+              marginTop: 0,
+            }}
+          >
+            Danger Zone
+          </h3>
+          <p
+            style={{ fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 12, marginTop: 0 }}
+          >
+            Permanently delete all data and reset Drizby to a fresh state. Demo data will be
+            re-created on next server restart.
           </p>
           <button
             onClick={handleFactoryReset}
@@ -166,7 +320,7 @@ export default function GeneralSettings() {
               border: '1px solid var(--dc-error-border, #ef4444)',
               cursor: resetting ? 'not-allowed' : 'pointer',
               fontSize: 13,
-              opacity: resetting ? 0.5 : 1
+              opacity: resetting ? 0.5 : 1,
             }}
           >
             {resetting ? 'Resetting...' : 'Factory Reset'}

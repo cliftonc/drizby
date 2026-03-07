@@ -6,7 +6,11 @@ interface ConnectionSelectorProps {
   className?: string
 }
 
-export default function ConnectionSelector({ value, onChange, className }: ConnectionSelectorProps) {
+export default function ConnectionSelector({
+  value,
+  onChange,
+  className,
+}: ConnectionSelectorProps) {
   const { data: connections = [], isLoading } = useConnections()
 
   if (isLoading || connections.length <= 1) return null
@@ -14,11 +18,16 @@ export default function ConnectionSelector({ value, onChange, className }: Conne
   return (
     <select
       value={value ?? ''}
-      onChange={(e) => onChange(parseInt(e.target.value))}
-      className={className ?? 'px-3 py-1.5 text-sm border border-dc-border rounded-md bg-dc-surface text-dc-text'}
+      onChange={e => onChange(Number.parseInt(e.target.value))}
+      className={
+        className ??
+        'px-3 py-1.5 text-sm border border-dc-border rounded-md bg-dc-surface text-dc-text'
+      }
     >
-      {connections.map((conn) => (
-        <option key={conn.id} value={conn.id}>{conn.name}</option>
+      {connections.map(conn => (
+        <option key={conn.id} value={conn.id}>
+          {conn.name}
+        </option>
       ))}
     </select>
   )

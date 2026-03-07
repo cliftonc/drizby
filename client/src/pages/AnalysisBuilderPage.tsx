@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
 import { AnalysisBuilder } from 'drizzle-cube/client'
+import { useEffect, useState } from 'react'
 import ConnectionCubeProvider from '../components/ConnectionCubeProvider'
 import ConnectionSelector from '../components/ConnectionSelector'
 import { useConnections } from '../hooks/useConnections'
@@ -11,7 +11,7 @@ export default function AnalysisBuilderPage() {
 
   const [connectionId, setConnectionId] = useState<number | undefined>(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
-    return stored ? parseInt(stored) : undefined
+    return stored ? Number.parseInt(stored) : undefined
   })
 
   // Initialize to first connection, or reset if stored connection no longer exists
@@ -31,7 +31,12 @@ export default function AnalysisBuilderPage() {
   if (!connectionId) {
     return (
       <div className="text-center py-8">
-        <img src="/logo.png" alt="Loading..." className="inline-block animate-spin" style={{ width: 32, height: 32, animationDuration: '1.5s' }} />
+        <img
+          src="/logo.png"
+          alt="Loading..."
+          className="inline-block animate-spin"
+          style={{ width: 32, height: 32, animationDuration: '1.5s' }}
+        />
         <p className="mt-2 text-dc-text-muted">Loading connections...</p>
       </div>
     )

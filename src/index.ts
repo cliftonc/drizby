@@ -4,13 +4,58 @@
 
 import 'dotenv/config'
 import { serve } from '@hono/node-server'
-import { runMigrations, db } from './db/index'
 import app, { initializeConnections } from '../app'
-import { connections, schemaFiles, cubeDefinitions, analyticsPages } from '../schema'
+import { analyticsPages, connections, cubeDefinitions, schemaFiles } from '../schema'
+import { db, isD1Mode, runMigrations } from './db/index'
 
-const port = parseInt(process.env.PORT || '3461')
+const port = Number.parseInt(process.env.PORT || '3461')
 
 const DEMO_DB_PATH = 'data/demo.sqlite'
+
+async function seedDemoD1() {
+  const { sql } = await import('drizzle-orm')
+  const { drizzle } = await import('drizzle-orm/d1')
+  const { DEMO_DDL, deptData, makeEmployeeData, makeProductivityData } = await import(
+    '../scripts/demo-data'
+  )
+
+  const demoDbId = process.env.D1_DEMO_DATABASE_ID!
+  const demoDrizzle = drizzle({
+    connection: {
+      accountId: process.env.CF_ACCOUNT_ID!,
+      databaseId: demoDbId,
+      token: process.env.CF_API_TOKEN!,
+    },
+  })
+
+  // Create tables via raw DDL
+  const statements = DEMO_DDL.split(';')
+    .map(s => s.trim())
+    .filter(Boolean)
+  for (const stmt of statements) {
+    await demoDrizzle.run(sql.raw(stmt))
+  }
+
+  // Seed departments
+  const { departments, employees, productivity } = await import('../schema/demo')
+  const depts = await demoDrizzle.insert(departments).values(deptData).returning()
+  console.log(`D1: Seeded ${depts.length} departments`)
+
+  // Seed employees
+  const employeeData = makeEmployeeData(depts.map((d: any) => d.id))
+  const emps = await demoDrizzle.insert(employees).values(employeeData).returning()
+  console.log(`D1: Seeded ${emps.length} employees`)
+
+  // Seed productivity data
+  const prodData = makeProductivityData(emps)
+  const BATCH_SIZE = 100
+  for (let i = 0; i < prodData.length; i += BATCH_SIZE) {
+    await demoDrizzle.insert(productivity).values(prodData.slice(i, i + BATCH_SIZE))
+  }
+  console.log(`D1: Seeded ${prodData.length} productivity records`)
+
+  return demoDbId
+}
 
 async function autoSeed() {
   // Check if any connections exist
@@ -19,18 +64,30 @@ async function autoSeed() {
 
   console.log('No connections found — auto-seeding demo data...')
 
-  // Dynamically import seed-demo to create the demo SQLite file
-  const { seedDemo } = await import('../scripts/seed-demo')
-  seedDemo(DEMO_DB_PATH)
+  let connectionString: string
+
+  if (isD1Mode()) {
+    // Seed demo data into D1 via HTTP API
+    const demoDbId = await seedDemoD1()
+    connectionString = `d1:${demoDbId}`
+  } else {
+    // Seed demo data into local SQLite file
+    const { seedDemo } = await import('../scripts/seed-demo')
+    seedDemo(DEMO_DB_PATH)
+    connectionString = `file:${DEMO_DB_PATH}`
+  }
 
   // Register as a connection
-  const [demoConnection] = await db.insert(connections).values({
-    name: 'Demo SQLite',
-    description: 'Built-in demo database with sample employee data',
-    engineType: 'sqlite',
-    connectionString: `file:${DEMO_DB_PATH}`,
-    organisationId: 1
-  }).returning()
+  const [demoConnection] = await db
+    .insert(connections)
+    .values({
+      name: 'Demo SQLite',
+      description: 'Built-in demo database with sample employee data',
+      engineType: 'sqlite',
+      connectionString,
+      organisationId: 1,
+    })
+    .returning()
 
   // Seed schema file
   const DEMO_SCHEMA_SOURCE = `import { sqliteTable, integer, text, real } from 'drizzle-orm/sqlite-core'
@@ -162,12 +219,15 @@ productivityCube = defineCube('Productivity', {
 export const allCubes = [employeesCube, departmentsCube, productivityCube]
 `
 
-  const [demoSchemaFile] = await db.insert(schemaFiles).values({
-    name: 'demo-schema.ts',
-    sourceCode: DEMO_SCHEMA_SOURCE,
-    connectionId: demoConnection.id,
-    organisationId: 1,
-  }).returning()
+  const [demoSchemaFile] = await db
+    .insert(schemaFiles)
+    .values({
+      name: 'demo-schema.ts',
+      sourceCode: DEMO_SCHEMA_SOURCE,
+      connectionId: demoConnection.id,
+      organisationId: 1,
+    })
+    .returning()
 
   await db.insert(cubeDefinitions).values({
     name: 'Demo Cubes',
@@ -185,13 +245,52 @@ export const allCubes = [employeesCube, departmentsCube, productivityCube]
     connectionId: demoConnection.id,
     config: {
       portlets: [
-        { id: 'p1', title: 'Employees by Department', query: JSON.stringify({ measures: ['Employees.count'], dimensions: ['Departments.name'] }), chartType: 'bar', chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.count'] }, w: 6, h: 4, x: 0, y: 0 },
-        { id: 'p2', title: 'Average Salary', query: JSON.stringify({ measures: ['Employees.avgSalary'], dimensions: ['Departments.name'] }), chartType: 'bar', chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.avgSalary'] }, w: 6, h: 4, x: 6, y: 0 },
-        { id: 'p3', title: 'Code Output Over Time', query: JSON.stringify({ measures: ['Productivity.totalLinesOfCode'], timeDimensions: [{ dimension: 'Productivity.date', granularity: 'week' }] }), chartType: 'line', chartConfig: { xAxis: ['Productivity.date'], yAxis: ['Productivity.totalLinesOfCode'] }, w: 12, h: 4, x: 0, y: 4 }
+        {
+          id: 'p1',
+          title: 'Employees by Department',
+          query: JSON.stringify({
+            measures: ['Employees.count'],
+            dimensions: ['Departments.name'],
+          }),
+          chartType: 'bar',
+          chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.count'] },
+          w: 6,
+          h: 4,
+          x: 0,
+          y: 0,
+        },
+        {
+          id: 'p2',
+          title: 'Average Salary',
+          query: JSON.stringify({
+            measures: ['Employees.avgSalary'],
+            dimensions: ['Departments.name'],
+          }),
+          chartType: 'bar',
+          chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.avgSalary'] },
+          w: 6,
+          h: 4,
+          x: 6,
+          y: 0,
+        },
+        {
+          id: 'p3',
+          title: 'Code Output Over Time',
+          query: JSON.stringify({
+            measures: ['Productivity.totalLinesOfCode'],
+            timeDimensions: [{ dimension: 'Productivity.date', granularity: 'week' }],
+          }),
+          chartType: 'line',
+          chartConfig: { xAxis: ['Productivity.date'], yAxis: ['Productivity.totalLinesOfCode'] },
+          w: 12,
+          h: 4,
+          x: 0,
+          y: 4,
+        },
       ],
-      filters: []
+      filters: [],
     },
-    organisationId: 1
+    organisationId: 1,
   })
 
   console.log('Auto-seed complete: demo connection, schema, cubes, and dashboard created')
@@ -200,7 +299,7 @@ export const allCubes = [employeesCube, departmentsCube, productivityCube]
 async function start() {
   // Run migrations
   console.log('Running migrations...')
-  runMigrations()
+  await runMigrations()
 
   // Auto-seed demo data if no connections exist
   await autoSeed()
@@ -213,13 +312,13 @@ async function start() {
 
   serve({
     fetch: app.fetch,
-    port
+    port,
   })
 
   console.log(`Server running on port ${port}`)
 }
 
-start().catch((err) => {
+start().catch(err => {
   console.error('Failed to start server:', err)
   process.exit(1)
 })

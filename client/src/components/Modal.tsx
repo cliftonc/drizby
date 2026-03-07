@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 interface ModalProps {
   isOpen: boolean
@@ -25,10 +25,14 @@ export function Modal({ isOpen, onClose, children, maxWidth = 'max-w-md' }: Moda
   return (
     <div
       ref={overlayRef}
-      onClick={(e) => { if (e.target === overlayRef.current) onClose() }}
+      onClick={e => {
+        if (e.target === overlayRef.current) onClose()
+      }}
       className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
     >
-      <div className={`bg-dc-surface rounded-xl shadow-xl ${maxWidth} w-full border border-dc-border`}>
+      <div
+        className={`bg-dc-surface rounded-xl shadow-xl ${maxWidth} w-full border border-dc-border`}
+      >
         {children}
       </div>
     </div>
@@ -134,8 +138,10 @@ export function PromptModal({
           ref={inputRef}
           type="text"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit() }}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') handleSubmit()
+          }}
           placeholder={placeholder}
           className="w-full px-3 py-2 border border-dc-border rounded-lg bg-dc-surface text-dc-text placeholder:text-dc-text-muted focus:outline-none focus:ring-2 focus:ring-dc-primary mb-6"
         />

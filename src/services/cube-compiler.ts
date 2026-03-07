@@ -3,11 +3,11 @@
  * Type-checks and compiles TypeScript source using sandboxed require
  */
 
-import ts from 'typescript'
+import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { existsSync, readFileSync } from 'fs'
-import { dirname, join, resolve } from 'path'
-import { fileURLToPath } from 'url'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 
 const esmRequire = createRequire(import.meta.url)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -102,7 +102,7 @@ function typeCheckAndCompile(
   if (virtualFiles) {
     for (const [path, content] of Object.entries(virtualFiles)) {
       // Remap /src/X.ts → /virtual/src/X.ts
-      const virtualPath = path.startsWith('/src/') ? '/virtual' + path : path
+      const virtualPath = path.startsWith('/src/') ? `/virtual${path}` : path
       files.set(virtualPath, content)
     }
   }
@@ -115,8 +115,8 @@ function typeCheckAndCompile(
 
   // Real filesystem-backed module resolution host
   const realModuleResolutionHost: ts.ModuleResolutionHost = {
-    fileExists: (f) => existsSync(f),
-    readFile: (f) => tryReadRealFile(f),
+    fileExists: f => existsSync(f),
+    readFile: f => tryReadRealFile(f),
   }
 
   const host: ts.CompilerHost = {
@@ -138,13 +138,13 @@ function typeCheckAndCompile(
       }
       return undefined
     },
-    getDefaultLibFileName: (options) => join(tsLibDir, ts.getDefaultLibFileName(options)),
+    getDefaultLibFileName: options => join(tsLibDir, ts.getDefaultLibFileName(options)),
     writeFile: () => {},
     getCurrentDirectory: () => PROJECT_ROOT,
-    getCanonicalFileName: (f) => f,
+    getCanonicalFileName: f => f,
     useCaseSensitiveFileNames: () => true,
     getNewLine: () => '\n',
-    fileExists: (name) => {
+    fileExists: name => {
       if (files.has(name)) return true
       if (existsSync(name)) return true
       // TS lib files
@@ -154,7 +154,7 @@ function typeCheckAndCompile(
       } catch {}
       return false
     },
-    readFile: (name) => {
+    readFile: name => {
       if (files.has(name)) return files.get(name)
       const real = tryReadRealFile(name)
       if (real !== undefined) return real
@@ -166,7 +166,7 @@ function typeCheckAndCompile(
       return moduleNames.map(name => {
         // Relative imports within virtual /src/ files → check virtual files
         if (isVirtualFile && (name.startsWith('./') || name.startsWith('../'))) {
-          const virtualResolved = '/virtual/src/' + name.replace(/^\.\//, '').replace(/\.ts$/, '') + '.ts'
+          const virtualResolved = `/virtual/src/${name.replace(/^\.\//, '').replace(/\.ts$/, '')}.ts`
           if (files.has(virtualResolved)) {
             return { resolvedFileName: virtualResolved, isExternalLibraryImport: false }
           }
@@ -181,7 +181,12 @@ function typeCheckAndCompile(
         // For virtual files, resolve packages from project root
         // For real files (node_modules internals), resolve from their actual location
         const resolveFrom = isVirtualFile ? join(PROJECT_ROOT, 'index.ts') : containingFile
-        const result = ts.resolveModuleName(name, resolveFrom, TS_COMPILE_OPTIONS, realModuleResolutionHost)
+        const result = ts.resolveModuleName(
+          name,
+          resolveFrom,
+          TS_COMPILE_OPTIONS,
+          realModuleResolutionHost
+        )
         if (result.resolvedModule) {
           return result.resolvedModule
         }
@@ -192,23 +197,23 @@ function typeCheckAndCompile(
   }
 
   // Create program and type-check
-  const program = ts.createProgram([fileName], {
-    ...TS_COMPILE_OPTIONS,
-    noEmit: true,
-    skipLibCheck: true,
-  }, host)
+  const program = ts.createProgram(
+    [fileName],
+    {
+      ...TS_COMPILE_OPTIONS,
+      noEmit: true,
+      skipLibCheck: true,
+    },
+    host
+  )
 
-  const diagnostics = [
-    ...program.getSyntacticDiagnostics(),
-    ...program.getSemanticDiagnostics(),
-  ]
+  const diagnostics = [...program.getSyntacticDiagnostics(), ...program.getSemanticDiagnostics()]
 
   for (const d of diagnostics) {
     // Only report diagnostics from user virtual files
     if (d.file && !d.file.fileName.startsWith('/virtual/src/')) continue
-    const pos = d.file && d.start !== undefined
-      ? d.file.getLineAndCharacterOfPosition(d.start)
-      : undefined
+    const pos =
+      d.file && d.start !== undefined ? d.file.getLineAndCharacterOfPosition(d.start) : undefined
     errors.push({
       message: ts.flattenDiagnosticMessageText(d.messageText, '\n'),
       line: pos ? pos.line + 1 : undefined,
@@ -289,13 +294,13 @@ export function compileCube(
   // Use the actual schema source code so the type checker sees real column types.
   const schemaVirtualFiles: Record<string, string> = {}
   for (const [name, exports] of Object.entries(schemaExports)) {
-    if (schemaSources && schemaSources[name]) {
+    if (schemaSources?.[name]) {
       // Use actual source — type checker sees table definitions with real column keys
       schemaVirtualFiles[`/src/${name}.ts`] = schemaSources[name]
     } else {
       // Fallback: stub with `any`
       const exportNames = Object.keys(exports)
-      const stub = exportNames.map(n => `export declare const ${n}: any;`).join('\n') + '\n'
+      const stub = `${exportNames.map(n => `export declare const ${n}: any;`).join('\n')}\n`
       schemaVirtualFiles[`/src/${name}.ts`] = stub
     }
   }
@@ -336,7 +341,9 @@ function validateCubeExports(exports: Record<string, any>): CompileError[] {
     if (cube.dimensions) {
       for (const [key, dim] of Object.entries(cube.dimensions) as [string, any][]) {
         if (dim.sql === undefined || dim.sql === null) {
-          errors.push({ message: `Cube "${cube.name}": dimension "${key}" has undefined sql reference. Check that the column exists on the table.` })
+          errors.push({
+            message: `Cube "${cube.name}": dimension "${key}" has undefined sql reference. Check that the column exists on the table.`,
+          })
         }
       }
     }
@@ -344,7 +351,9 @@ function validateCubeExports(exports: Record<string, any>): CompileError[] {
     if (cube.measures) {
       for (const [key, measure] of Object.entries(cube.measures) as [string, any][]) {
         if (measure.sql === undefined || measure.sql === null) {
-          errors.push({ message: `Cube "${cube.name}": measure "${key}" has undefined sql reference. Check that the column exists on the table.` })
+          errors.push({
+            message: `Cube "${cube.name}": measure "${key}" has undefined sql reference. Check that the column exists on the table.`,
+          })
         }
       }
     }
@@ -354,10 +363,14 @@ function validateCubeExports(exports: Record<string, any>): CompileError[] {
         if (join.on) {
           for (const cond of join.on) {
             if (cond.source === undefined || cond.source === null) {
-              errors.push({ message: `Cube "${cube.name}": join "${key}" has undefined source column.` })
+              errors.push({
+                message: `Cube "${cube.name}": join "${key}" has undefined source column.`,
+              })
             }
             if (cond.target === undefined || cond.target === null) {
-              errors.push({ message: `Cube "${cube.name}": join "${key}" has undefined target column.` })
+              errors.push({
+                message: `Cube "${cube.name}": join "${key}" has undefined target column.`,
+              })
             }
           }
         }

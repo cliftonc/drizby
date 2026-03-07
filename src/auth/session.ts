@@ -1,7 +1,7 @@
-import { randomBytes } from 'crypto'
-import { eq, and, gt } from 'drizzle-orm'
+import { randomBytes } from 'node:crypto'
+import { and, eq, gt } from 'drizzle-orm'
 import type { Context } from 'hono'
-import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { userSessions, users } from '../../schema'
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
@@ -15,7 +15,7 @@ export async function createSession(db: any, userId: number): Promise<string> {
   await db.insert(userSessions).values({
     id: sessionId,
     userId,
-    expiresAt
+    expiresAt,
   })
 
   return sessionId
@@ -27,14 +27,11 @@ export async function validateSession(db: any, sessionId: string) {
   const rows = await db
     .select({
       session: userSessions,
-      user: users
+      user: users,
     })
     .from(userSessions)
     .innerJoin(users, eq(userSessions.userId, users.id))
-    .where(and(
-      eq(userSessions.id, sessionId),
-      gt(userSessions.expiresAt, new Date())
-    ))
+    .where(and(eq(userSessions.id, sessionId), gt(userSessions.expiresAt, new Date())))
 
   if (rows.length === 0) return null
 
@@ -64,7 +61,7 @@ export function setSessionCookie(c: Context, sessionId: string) {
     sameSite: 'Lax',
     path: '/',
     maxAge: SESSION_TTL_MS / 1000,
-    secure: process.env.NODE_ENV === 'production'
+    secure: process.env.NODE_ENV === 'production',
   })
 }
 

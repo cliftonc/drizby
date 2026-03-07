@@ -1,4 +1,4 @@
-import { useState, useCallback, type ReactNode } from 'react'
+import { type ReactNode, useCallback, useState } from 'react'
 import { PromptModal } from '../components/Modal'
 
 interface PromptOptions {
@@ -25,7 +25,7 @@ export function usePrompt(): [(options: PromptOptions) => Promise<string | null>
   } | null>(null)
 
   const prompt = useCallback((options: PromptOptions): Promise<string | null> => {
-    return new Promise<string | null>((resolve) => {
+    return new Promise<string | null>(resolve => {
       setState({ options, resolve })
     })
   }, [])
@@ -35,10 +35,13 @@ export function usePrompt(): [(options: PromptOptions) => Promise<string | null>
     setState(null)
   }, [state])
 
-  const handleSubmit = useCallback((value: string) => {
-    state?.resolve(value)
-    setState(null)
-  }, [state])
+  const handleSubmit = useCallback(
+    (value: string) => {
+      state?.resolve(value)
+      setState(null)
+    },
+    [state]
+  )
 
   const Dialog = useCallback(() => {
     if (!state) return null

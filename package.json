@@ -14,7 +14,9 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "setup": "npm run db:generate && npm run db:migrate && npm run db:seed",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check . --write"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -26,6 +28,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "arctic": "^3.7.0",
     "better-sqlite3": "^12.6.2",
+    "d3": "^7.9.0",
     "dotenv": "^17.2.1",
     "drizzle-cube": "^0.4.25",
     "drizzle-orm": "^0.45.0",
@@ -33,11 +36,13 @@
     "openai": "^6.25.0",
     "postgres": "^3.4.0",
     "react-grid-layout": "^2.1.1",
+    "react-is": "^19.2.4",
     "react-resizable": "^3.0.0",
     "react-router-dom": "^6.8.0",
     "recharts": "^3.5.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
     "@heroicons/react": "^2.2.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^20.0.0",

@@ -1,9 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type {
-  Notebook,
-  CreateNotebookRequest,
-  UpdateNotebookRequest
-} from '../types'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { CreateNotebookRequest, Notebook, UpdateNotebookRequest } from '../types'
 
 const API_BASE = '/api/notebooks'
 
@@ -19,7 +15,7 @@ export function useNotebooks() {
       if (!response.ok) throw new Error('Failed to fetch notebooks')
       const data: ApiResponse<Notebook[]> = await response.json()
       return data.data
-    }
+    },
   })
 }
 
@@ -32,7 +28,7 @@ export function useNotebook(id: number | string) {
       const data: ApiResponse<Notebook> = await response.json()
       return data.data
     },
-    enabled: !!id
+    enabled: !!id,
   })
 }
 
@@ -43,7 +39,7 @@ export function useCreateNotebook() {
       const response = await fetch(API_BASE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(notebookData)
+        body: JSON.stringify(notebookData),
       })
       if (!response.ok) {
         const err = (await response.json().catch(() => ({}))) as { error?: string }
@@ -54,7 +50,7 @@ export function useCreateNotebook() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notebooks'] })
-    }
+    },
   })
 }
 
@@ -68,7 +64,7 @@ export function useUpdateNotebook() {
       const response = await fetch(`${API_BASE}/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(notebookData)
+        body: JSON.stringify(notebookData),
       })
       if (!response.ok) throw new Error('Failed to update notebook')
       const data: ApiResponse<Notebook> = await response.json()
@@ -78,7 +74,7 @@ export function useUpdateNotebook() {
       queryClient.setQueryData(['notebooks', variables.id], updatedNotebook)
       queryClient.setQueryData(['notebooks', String(variables.id)], updatedNotebook)
       queryClient.invalidateQueries({ queryKey: ['notebooks'], exact: true })
-    }
+    },
   })
 }
 
@@ -91,6 +87,6 @@ export function useDeleteNotebook() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notebooks'] })
-    }
+    },
   })
 }

@@ -3,14 +3,14 @@
  * Serves .d.ts files from node_modules for Monaco editor autocomplete
  */
 
-import { Hono } from 'hono'
-import { eq, and } from 'drizzle-orm'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join, relative } from 'node:path'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
+import { and, eq } from 'drizzle-orm'
+import { Hono } from 'hono'
 import { schemaFiles } from '../../schema'
 import { generateSchemaTypes } from '../services/cube-compiler'
-import { readFileSync, readdirSync, statSync, existsSync } from 'fs'
-import { dirname, join, relative } from 'path'
-import { createRequire } from 'node:module'
 
 const esmRequire = createRequire(import.meta.url)
 
@@ -64,7 +64,12 @@ function getDrizzleCubeTypes(): Record<string, string> {
   if (drizzleCubeCache) return drizzleCubeCache
 
   // drizzle-cube/server types: read package.json to find the types path
-  const pkgPath = join(dirname(esmRequire.resolve('drizzle-cube/server')), '..', '..', 'package.json')
+  const pkgPath = join(
+    dirname(esmRequire.resolve('drizzle-cube/server')),
+    '..',
+    '..',
+    'package.json'
+  )
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
   const serverTypesRel = pkg.exports?.['./server']?.types || 'dist/server/index.d.ts'
   const pkgDir = dirname(pkgPath)
@@ -82,20 +87,22 @@ function getDrizzleCubeTypes(): Record<string, string> {
 }
 
 // Serve all .d.ts files as JSON maps { path: content }
-app.get('/drizzle-orm', (c) => {
+app.get('/drizzle-orm', c => {
   return c.json(getDrizzleOrmTypes())
 })
 
-app.get('/drizzle-cube', (c) => {
+app.get('/drizzle-cube', c => {
   return c.json(getDrizzleCubeTypes())
 })
 
 // Serve generated schema .d.ts for a specific schema file
-app.get('/schema/:id', async (c) => {
+app.get('/schema/:id', async c => {
   const db = c.get('db') as any
-  const id = parseInt(c.req.param('id'))
+  const id = Number.parseInt(c.req.param('id'))
 
-  const rows = await db.select().from(schemaFiles)
+  const rows = await db
+    .select()
+    .from(schemaFiles)
     .where(and(eq(schemaFiles.id, id), eq(schemaFiles.organisationId, 1)))
 
   if (rows.length === 0) {

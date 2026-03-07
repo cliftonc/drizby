@@ -18,20 +18,16 @@ const sections: NavSection[] = [
     items: [
       { path: '/settings', label: 'Your Profile' },
       { path: '/settings/team', label: 'Team', adminOnly: true },
-    ]
+    ],
   },
   {
     label: 'Configuration',
-    items: [
-      { path: '/settings/ai', label: 'AI', adminOnly: true },
-    ]
+    items: [{ path: '/settings/ai', label: 'AI', adminOnly: true }],
   },
   {
     label: 'Data',
-    items: [
-      { path: '/settings/connections', label: 'Connections', adminOnly: true },
-    ]
-  }
+    items: [{ path: '/settings/connections', label: 'Connections', adminOnly: true }],
+  },
 ]
 
 export default function SettingsNav() {
@@ -40,41 +36,68 @@ export default function SettingsNav() {
   const isAdmin = user?.role === 'admin'
 
   return (
-    <nav style={{ width: 200, flexShrink: 0, borderRight: '1px solid var(--dc-border)', paddingRight: 24 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--dc-text)', marginBottom: 24, marginTop: 0 }}>Settings</h2>
+    <nav
+      style={{
+        width: 200,
+        flexShrink: 0,
+        borderRight: '1px solid var(--dc-border)',
+        paddingRight: 24,
+      }}
+    >
+      <h2
+        style={{
+          fontSize: 18,
+          fontWeight: 600,
+          color: 'var(--dc-text)',
+          marginBottom: 24,
+          marginTop: 0,
+        }}
+      >
+        Settings
+      </h2>
       {sections.map(section => {
         const visibleItems = section.items.filter(item => !item.adminOnly || isAdmin)
         if (visibleItems.length === 0) return null
         return (
-        <div key={section.label} style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 11, fontWeight: 500, color: 'var(--dc-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, marginTop: 0 }}>
-            {section.label}
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {visibleItems.map(item => {
-              const isActive = location.pathname === item.path
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  style={{
-                    display: 'block',
-                    padding: '6px 12px',
-                    borderRadius: 6,
-                    fontSize: 13,
-                    textDecoration: 'none',
-                    color: isActive ? 'var(--dc-text)' : 'var(--dc-text-muted)',
-                    backgroundColor: isActive ? 'var(--dc-surface-hover)' : 'transparent',
-                    fontWeight: isActive ? 500 : 400,
-                    transition: 'background-color 0.15s'
-                  }}
-                >
-                  {item.label}
-                </Link>
-              )
-            })}
+          <div key={section.label} style={{ marginBottom: 24 }}>
+            <h3
+              style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: 'var(--dc-text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginBottom: 8,
+                marginTop: 0,
+              }}
+            >
+              {section.label}
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {visibleItems.map(item => {
+                const isActive = location.pathname === item.path
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    style={{
+                      display: 'block',
+                      padding: '6px 12px',
+                      borderRadius: 6,
+                      fontSize: 13,
+                      textDecoration: 'none',
+                      color: isActive ? 'var(--dc-text)' : 'var(--dc-text-muted)',
+                      backgroundColor: isActive ? 'var(--dc-surface-hover)' : 'transparent',
+                      fontWeight: isActive ? 500 : 400,
+                      transition: 'background-color 0.15s',
+                    }}
+                  >
+                    {item.label}
+                  </Link>
+                )
+              })}
+            </div>
           </div>
-        </div>
         )
       })}
     </nav>

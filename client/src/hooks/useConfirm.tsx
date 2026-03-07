@@ -1,4 +1,4 @@
-import { useState, useCallback, type ReactNode } from 'react'
+import { type ReactNode, useCallback, useState } from 'react'
 import { ConfirmModal } from '../components/Modal'
 
 interface ConfirmOptions {
@@ -26,7 +26,7 @@ export function useConfirm(): [(options: ConfirmOptions) => Promise<boolean>, ()
   } | null>(null)
 
   const confirm = useCallback((options: ConfirmOptions): Promise<boolean> => {
-    return new Promise<boolean>((resolve) => {
+    return new Promise<boolean>(resolve => {
       setState({ options, resolve })
     })
   }, [])

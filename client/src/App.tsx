@@ -1,16 +1,16 @@
-import { Routes, Route, Navigate, useParams } from 'react-router-dom'
-import Layout from './components/Layout'
+import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import AuthGuard from './components/AuthGuard'
-import HomePage from './pages/HomePage'
+import Layout from './components/Layout'
+import AnalysisBuilderPage from './pages/AnalysisBuilderPage'
 import DashboardListPage from './pages/DashboardListPage'
 import DashboardViewPage from './pages/DashboardViewPage'
-import AnalysisBuilderPage from './pages/AnalysisBuilderPage'
-import NotebooksListPage from './pages/NotebooksListPage'
-import NotebookViewPage from './pages/NotebookViewPage'
+import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
+import NotebookViewPage from './pages/NotebookViewPage'
+import NotebooksListPage from './pages/NotebooksListPage'
 import RegisterPage from './pages/RegisterPage'
-import SetupPage from './pages/SetupPage'
 import SchemaEditorPage from './pages/SchemaEditorPage'
+import SetupPage from './pages/SetupPage'
 import SettingsPage from './pages/settings/SettingsPage'
 
 /** Redirects bare /schema-editor and /schema-editor/:connId to last-visited file URL */
@@ -23,7 +23,12 @@ function SchemaEditorRedirect() {
       try {
         const { fileType, fileName } = JSON.parse(raw)
         if (fileType && fileName) {
-          return <Navigate to={`/schema-editor/${connectionId}/${fileType}/${encodeURIComponent(fileName)}`} replace />
+          return (
+            <Navigate
+              to={`/schema-editor/${connectionId}/${fileType}/${encodeURIComponent(fileName)}`}
+              replace
+            />
+          )
         }
       } catch {}
     }
@@ -33,7 +38,12 @@ function SchemaEditorRedirect() {
       try {
         const { connectionId: connId, fileType, fileName } = JSON.parse(raw)
         if (connId && fileType && fileName) {
-          return <Navigate to={`/schema-editor/${connId}/${fileType}/${encodeURIComponent(fileName)}`} replace />
+          return (
+            <Navigate
+              to={`/schema-editor/${connId}/${fileType}/${encodeURIComponent(fileName)}`}
+              replace
+            />
+          )
         }
       } catch {}
     }
@@ -48,24 +58,30 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/setup" element={<SetupPage />} />
-      <Route path="/*" element={
-        <AuthGuard>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/dashboards" element={<DashboardListPage />} />
-              <Route path="/dashboards/:id" element={<DashboardViewPage />} />
-              <Route path="/analysis-builder" element={<AnalysisBuilderPage />} />
-              <Route path="/schema-editor" element={<SchemaEditorRedirect />} />
-              <Route path="/schema-editor/:connectionId" element={<SchemaEditorRedirect />} />
-              <Route path="/schema-editor/:connectionId/:fileType/:fileName" element={<SchemaEditorPage />} />
-              <Route path="/notebooks" element={<NotebooksListPage />} />
-              <Route path="/notebooks/:id" element={<NotebookViewPage />} />
-              <Route path="/settings/*" element={<SettingsPage />} />
-            </Routes>
-          </Layout>
-        </AuthGuard>
-      } />
+      <Route
+        path="/*"
+        element={
+          <AuthGuard>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/dashboards" element={<DashboardListPage />} />
+                <Route path="/dashboards/:id" element={<DashboardViewPage />} />
+                <Route path="/analysis-builder" element={<AnalysisBuilderPage />} />
+                <Route path="/schema-editor" element={<SchemaEditorRedirect />} />
+                <Route path="/schema-editor/:connectionId" element={<SchemaEditorRedirect />} />
+                <Route
+                  path="/schema-editor/:connectionId/:fileType/:fileName"
+                  element={<SchemaEditorPage />}
+                />
+                <Route path="/notebooks" element={<NotebooksListPage />} />
+                <Route path="/notebooks/:id" element={<NotebookViewPage />} />
+                <Route path="/settings/*" element={<SettingsPage />} />
+              </Routes>
+            </Layout>
+          </AuthGuard>
+        }
+      />
     </Routes>
   )
 }

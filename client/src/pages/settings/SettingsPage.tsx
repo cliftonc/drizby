@@ -1,9 +1,9 @@
-import { Routes, Route } from 'react-router-dom'
-import SettingsNav from './SettingsNav'
-import GeneralSettings from './GeneralSettings'
-import TeamPage from './TeamPage'
+import { Route, Routes } from 'react-router-dom'
 import ConnectionsPage from '../ConnectionsPage'
 import AISettingsPage from './AISettingsPage'
+import GeneralSettings from './GeneralSettings'
+import SettingsNav from './SettingsNav'
+import TeamPage from './TeamPage'
 
 export default function SettingsPage() {
   return (

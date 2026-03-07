@@ -1,5 +1,5 @@
 import type { Context } from 'hono'
-import type { Actions, Subjects, AppAbility } from './abilities'
+import type { Actions, AppAbility, Subjects } from './abilities'
 
 export function guardPermission(c: Context, action: Actions, subject: Subjects): Response | null {
   const ability = c.get('ability') as AppAbility | undefined

@@ -18,6 +18,12 @@ Open [http://localhost:3461](http://localhost:3461) and follow the setup wizard 
 
 The `-v drizby-data:/app/data` flag persists your databases and configuration across container restarts. To start fresh, run `docker volume rm drizby-data`.
 
+### Deploy to Cloudflare
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](./templates/cloudflare-d1)
+
+Run Drizby on Cloudflare using Containers + D1 for persistent storage. See the [Cloudflare deployment guide](./templates/cloudflare-d1/README.md) for setup instructions.
+
 ---
 
 ## Features

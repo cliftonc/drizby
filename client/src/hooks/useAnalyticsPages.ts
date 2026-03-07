@@ -1,8 +1,8 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AnalyticsPage,
   CreateAnalyticsPageRequest,
-  UpdateAnalyticsPageRequest
+  UpdateAnalyticsPageRequest,
 } from '../types'
 
 const API_BASE = '/api/analytics-pages'
@@ -19,7 +19,7 @@ export function useAnalyticsPages() {
       if (!response.ok) throw new Error('Failed to fetch analytics pages')
       const data: ApiResponse<AnalyticsPage[]> = await response.json()
       return data.data
-    }
+    },
   })
 }
 
@@ -32,7 +32,7 @@ export function useAnalyticsPage(id: number | string) {
       const data: ApiResponse<AnalyticsPage> = await response.json()
       return data.data
     },
-    enabled: !!id
+    enabled: !!id,
   })
 }
 
@@ -43,7 +43,7 @@ export function useCreateAnalyticsPage() {
       const response = await fetch(API_BASE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(pageData)
+        body: JSON.stringify(pageData),
       })
       if (!response.ok) throw new Error('Failed to create analytics page')
       const data: ApiResponse<AnalyticsPage> = await response.json()
@@ -51,7 +51,7 @@ export function useCreateAnalyticsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analytics-pages'] })
-    }
+    },
   })
 }
 
@@ -66,7 +66,7 @@ export function useCreateExamplePage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analytics-pages'] })
-    }
+    },
   })
 }
 
@@ -80,7 +80,7 @@ export function useUpdateAnalyticsPage() {
       const response = await fetch(`${API_BASE}/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(pageData)
+        body: JSON.stringify(pageData),
       })
       if (!response.ok) throw new Error('Failed to update analytics page')
       const data: ApiResponse<AnalyticsPage> = await response.json()
@@ -90,7 +90,7 @@ export function useUpdateAnalyticsPage() {
       queryClient.setQueryData(['analytics-pages', variables.id], updatedPage)
       queryClient.setQueryData(['analytics-pages', String(variables.id)], updatedPage)
       queryClient.invalidateQueries({ queryKey: ['analytics-pages'], exact: true })
-    }
+    },
   })
 }
 
@@ -106,7 +106,7 @@ export function useResetAnalyticsPage() {
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['analytics-pages'] })
       queryClient.invalidateQueries({ queryKey: ['analytics-pages', id] })
-    }
+    },
   })
 }
 
@@ -119,6 +119,6 @@ export function useDeleteAnalyticsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analytics-pages'] })
-    }
+    },
   })
 }

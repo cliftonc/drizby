@@ -6,7 +6,7 @@ export type {
   ChartDisplayConfig,
   DashboardConfig,
   CubeQuery,
-  NotebookConfig
+  NotebookConfig,
 } from 'drizzle-cube/client'
 
 import type { DashboardConfig, NotebookConfig } from 'drizzle-cube/client'

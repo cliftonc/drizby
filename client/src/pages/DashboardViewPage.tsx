@@ -1,12 +1,16 @@
-import { useParams, Link } from 'react-router-dom'
-import { useCallback, useState, useEffect, useRef } from 'react'
 import { AnalyticsDashboard, DashboardEditModal } from 'drizzle-cube/client'
-import { useAnalyticsPage, useUpdateAnalyticsPage, useResetAnalyticsPage } from '../hooks/useAnalyticsPages'
-import { useConnections } from '../hooks/useConnections'
-import { useAuth } from '../contexts/AuthContext'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
 import ConnectionCubeProvider from '../components/ConnectionCubeProvider'
-import type { DashboardConfig } from '../types'
 import { DashboardLoader } from '../components/DrizzleCubeLoader'
+import { useAuth } from '../contexts/AuthContext'
+import {
+  useAnalyticsPage,
+  useResetAnalyticsPage,
+  useUpdateAnalyticsPage,
+} from '../hooks/useAnalyticsPages'
+import { useConnections } from '../hooks/useConnections'
+import type { DashboardConfig } from '../types'
 
 export default function DashboardViewPage() {
   const { id } = useParams<{ id: string }>()
@@ -44,66 +48,75 @@ export default function DashboardViewPage() {
     setConfig(newConfig)
   }, [])
 
-  const handleSave = useCallback(async (configToSave: DashboardConfig) => {
-    if (!page || !id) return
+  const handleSave = useCallback(
+    async (configToSave: DashboardConfig) => {
+      if (!page || !id) return
 
-    try {
-      await updatePage.mutateAsync({
-        id: parseInt(id),
-        name: page.name,
-        description: page.description || undefined,
-        config: configToSave
-      })
-      setLastSaved(new Date())
-    } catch (error) {
-      console.error('Auto-save failed:', error)
-      throw error
-    }
-  }, [page, id, updatePage])
+      try {
+        await updatePage.mutateAsync({
+          id: Number.parseInt(id),
+          name: page.name,
+          description: page.description || undefined,
+          config: configToSave,
+        })
+        setLastSaved(new Date())
+      } catch (error) {
+        console.error('Auto-save failed:', error)
+        throw error
+      }
+    },
+    [page, id, updatePage]
+  )
 
   const handleDirtyStateChange = useCallback((isDirty: boolean) => {
     if (!isDirty) setLastSaved(new Date())
   }, [])
 
-  const handleSaveThumbnail = useCallback(async (thumbnailData: string): Promise<string | void> => {
-    if (!id) return
+  const handleSaveThumbnail = useCallback(
+    async (thumbnailData: string): Promise<string | undefined> => {
+      if (!id) return
 
-    try {
-      const response = await fetch(`/api/analytics-pages/${id}/thumbnail`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ thumbnailData })
-      })
-      if (response.ok) {
-        const result = await response.json() as { thumbnailUrl: string }
-        return result.thumbnailUrl
+      try {
+        const response = await fetch(`/api/analytics-pages/${id}/thumbnail`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ thumbnailData }),
+        })
+        if (response.ok) {
+          const result = (await response.json()) as { thumbnailUrl: string }
+          return result.thumbnailUrl
+        }
+      } catch (error) {
+        console.error('Error saving thumbnail:', error)
       }
-    } catch (error) {
-      console.error('Error saving thumbnail:', error)
-    }
-  }, [id])
+    },
+    [id]
+  )
 
-  const handleEditMetadata = useCallback(async (data: { name: string; description?: string }) => {
-    if (!page || !id) return
+  const handleEditMetadata = useCallback(
+    async (data: { name: string; description?: string }) => {
+      if (!page || !id) return
 
-    try {
-      await updatePage.mutateAsync({
-        id: parseInt(id),
-        name: data.name,
-        description: data.description,
-        config: config
-      })
-    } catch (error) {
-      console.error('Failed to save metadata:', error)
-      throw error
-    }
-  }, [page, id, config, updatePage])
+      try {
+        await updatePage.mutateAsync({
+          id: Number.parseInt(id),
+          name: data.name,
+          description: data.description,
+          config: config,
+        })
+      } catch (error) {
+        console.error('Failed to save metadata:', error)
+        throw error
+      }
+    },
+    [page, id, config, updatePage]
+  )
 
   const handleResetDashboard = useCallback(async () => {
     if (!id) return
 
     try {
-      const resetResult = await resetPage.mutateAsync(parseInt(id))
+      const resetResult = await resetPage.mutateAsync(Number.parseInt(id))
       setConfig(resetResult.config)
       setLastSaved(new Date())
       setShowResetConfirm(false)
@@ -115,7 +128,12 @@ export default function DashboardViewPage() {
   if (isLoading) {
     return (
       <div className="text-center py-8">
-        <img src="/logo.png" alt="Loading..." className="inline-block animate-spin" style={{ width: 32, height: 32, animationDuration: '1.5s' }} />
+        <img
+          src="/logo.png"
+          alt="Loading..."
+          className="inline-block animate-spin"
+          style={{ width: 32, height: 32, animationDuration: '1.5s' }}
+        />
         <p className="mt-2 text-dc-text-muted">Loading dashboard...</p>
       </div>
     )
@@ -125,7 +143,10 @@ export default function DashboardViewPage() {
     return (
       <div className="text-center py-8">
         <p className="text-dc-error">Failed to load dashboard</p>
-        <Link to="/dashboards" className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-dc-primary-content bg-dc-primary hover:bg-dc-primary-hover">
+        <Link
+          to="/dashboards"
+          className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-dc-primary-content bg-dc-primary hover:bg-dc-primary-hover"
+        >
           Back to Dashboards
         </Link>
       </div>
@@ -138,10 +159,21 @@ export default function DashboardViewPage() {
         <nav className="flex" aria-label="Breadcrumb">
           <ol className="flex items-center space-x-4">
             <li>
-              <Link to="/dashboards" className="text-dc-text-disabled hover:text-dc-text-muted text-sm">Dashboards</Link>
+              <Link
+                to="/dashboards"
+                className="text-dc-text-disabled hover:text-dc-text-muted text-sm"
+              >
+                Dashboards
+              </Link>
             </li>
             <li>
-              <svg className="shrink-0 h-5 w-5 text-dc-border-secondary" fill="currentColor" viewBox="0 0 20 20"><path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" /></svg>
+              <svg
+                className="shrink-0 h-5 w-5 text-dc-border-secondary"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" />
+              </svg>
             </li>
             <li>
               <span className="text-dc-text-muted text-sm truncate">{page.name}</span>
@@ -155,8 +187,18 @@ export default function DashboardViewPage() {
               <h1 className="text-xl sm:text-2xl font-semibold text-dc-text">{page.name}</h1>
               {connectionName && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-dc-surface-secondary text-dc-text-muted border border-dc-border">
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
+                  <svg
+                    className="w-3 h-3"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"
+                    />
                   </svg>
                   {connectionName}
                 </span>
@@ -168,20 +210,20 @@ export default function DashboardViewPage() {
           </div>
 
           {canEdit && (
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() => setIsEditModalOpen(true)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border border-dc-border bg-dc-surface text-dc-text hover:bg-dc-surface-hover"
-            >
-              Edit
-            </button>
-            <button
-              onClick={() => setShowResetConfirm(true)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border border-dc-border bg-dc-surface text-dc-text hover:bg-dc-surface-hover"
-            >
-              Reset
-            </button>
-          </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border border-dc-border bg-dc-surface text-dc-text hover:bg-dc-surface-hover"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => setShowResetConfirm(true)}
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border border-dc-border bg-dc-surface text-dc-text hover:bg-dc-surface-hover"
+              >
+                Reset
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -224,7 +266,8 @@ export default function DashboardViewPage() {
           <div className="bg-dc-surface rounded-lg p-6 max-w-md w-full">
             <h3 className="text-lg font-medium text-dc-text mb-4">Reset Dashboard</h3>
             <p className="text-sm text-dc-text-muted mb-6">
-              Are you sure you want to reset this dashboard to the default configuration? This cannot be undone.
+              Are you sure you want to reset this dashboard to the default configuration? This
+              cannot be undone.
             </p>
             <div className="flex justify-end gap-3">
               <button

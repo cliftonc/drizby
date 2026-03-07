@@ -3,28 +3,28 @@
  * Configurable BI platform powered by drizzle-cube
  */
 
-import { Hono } from 'hono'
-import { logger } from 'hono/logger'
-import { cors } from 'hono/cors'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { createCubeApp } from 'drizzle-cube/adapters/hono'
-import type { SecurityContext, DrizzleDatabase } from 'drizzle-cube/server'
-import { db } from './src/db/index'
-import { connectionManager } from './src/services/connection-manager'
-import connectionsApp from './src/routes/connections'
-import cubeDefsApp from './src/routes/cube-definitions'
-import schemaFilesApp from './src/routes/schema-files'
-import editorTypesApp from './src/routes/editor-types'
-import analyticsApp from './src/routes/analytics-pages'
-import notebooksApp from './src/routes/notebooks'
-import authApp from './src/routes/auth'
-import usersApp from './src/routes/users'
-import settingsApp from './src/routes/settings'
-import { getAIAgentConfig } from './src/services/ai-settings'
+import type { DrizzleDatabase, SecurityContext } from 'drizzle-cube/server'
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import { logger } from 'hono/logger'
 import { authMiddleware } from './src/auth/middleware'
-import { validateSession, getSessionCookie } from './src/auth/session'
+import { getSessionCookie, validateSession } from './src/auth/session'
+import { db } from './src/db/index'
 import { defineAbilitiesFor } from './src/permissions/abilities'
 import type { AppAbility } from './src/permissions/abilities'
+import analyticsApp from './src/routes/analytics-pages'
+import authApp from './src/routes/auth'
+import connectionsApp from './src/routes/connections'
+import cubeDefsApp from './src/routes/cube-definitions'
+import editorTypesApp from './src/routes/editor-types'
+import notebooksApp from './src/routes/notebooks'
+import schemaFilesApp from './src/routes/schema-files'
+import settingsApp from './src/routes/settings'
+import usersApp from './src/routes/users'
+import { getAIAgentConfig } from './src/services/ai-settings'
+import { connectionManager } from './src/services/connection-manager'
 
 interface Variables {
   db: DrizzleDatabase
@@ -46,12 +46,23 @@ const app = new Hono<{ Variables: Variables }>()
 
 // Middleware
 app.use('*', logger())
-app.use('*', cors({
-  origin: ['http://localhost:3460', 'http://localhost:3461'],
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Agent-Api-Key', 'X-Agent-Provider', 'X-Agent-Model', 'X-Agent-Base-URL', 'X-Connection-Id'],
-  credentials: true
-}))
+app.use(
+  '*',
+  cors({
+    origin: ['http://localhost:3460', 'http://localhost:3461'],
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Agent-Api-Key',
+      'X-Agent-Provider',
+      'X-Agent-Model',
+      'X-Agent-Base-URL',
+      'X-Connection-Id',
+    ],
+    credentials: true,
+  })
+)
 
 // Serve built client assets in production (before API routes so / serves index.html)
 if (process.env.NODE_ENV === 'production') {
@@ -59,7 +70,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Health check
-app.get('/health', (c) => {
+app.get('/health', c => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
@@ -89,7 +100,10 @@ app.use('/cubejs-api/*', async (c, next) => {
   const isDev = process.env.NODE_ENV !== 'production'
   const devApiKey = process.env.DEV_API_KEY || 'dc-bi-dev-key'
   if (isDev && c.req.header('Authorization') === `Bearer ${devApiKey}`) {
-    c.set('auth', { userId: 1, user: { id: 1, name: 'Dev User', email: 'dev@localhost', role: 'admin' } })
+    c.set('auth', {
+      userId: 1,
+      user: { id: 1, name: 'Dev User', email: 'dev@localhost', role: 'admin' },
+    })
     c.set('ability', defineAbilitiesFor('admin'))
     return next()
   }
@@ -124,10 +138,18 @@ async function getCubeApp(connectionId: number) {
     cors: {
       origin: ['http://localhost:3460', 'http://localhost:3461'],
       allowMethods: ['GET', 'POST', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Authorization', 'X-Agent-Api-Key', 'X-Agent-Provider', 'X-Agent-Model', 'X-Agent-Base-URL', 'X-Connection-Id'],
-      credentials: true
+      allowHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Agent-Api-Key',
+        'X-Agent-Provider',
+        'X-Agent-Model',
+        'X-Agent-Base-URL',
+        'X-Connection-Id',
+      ],
+      credentials: true,
     },
-    agent: agentConfig
+    agent: agentConfig,
   })
 
   cubeAppCache.set(connectionId, cubeApp)
@@ -141,12 +163,12 @@ export function invalidateCubeAppCache(connectionId?: number) {
 }
 
 // GET /cubejs-api/v1/meta — return metadata for a single connection
-app.get('/cubejs-api/v1/meta', async (c) => {
+app.get('/cubejs-api/v1/meta', async c => {
   const connectionIdHeader = c.req.header('X-Connection-Id')
   let connectionId: number | undefined
 
   if (connectionIdHeader) {
-    connectionId = parseInt(connectionIdHeader)
+    connectionId = Number.parseInt(connectionIdHeader)
   } else {
     const ids = connectionManager.getConnectionIds()
     if (ids.length > 0) connectionId = ids[0]
@@ -170,25 +192,28 @@ app.get('/cubejs-api/v1/meta', async (c) => {
       measures: cube.measures || [],
       dimensions: cube.dimensions || [],
       segments: cube.segments || [],
-      relationships: cube.relationships || []
-    }))
+      relationships: cube.relationships || [],
+    })),
   })
 })
 
 // All other cube API routes — resolve connection from header and forward
-app.all('/cubejs-api/v1/*', async (c) => {
+app.all('/cubejs-api/v1/*', async c => {
   const connectionIdHeader = c.req.header('X-Connection-Id')
   let connectionId: number | undefined
 
   if (connectionIdHeader) {
-    connectionId = parseInt(connectionIdHeader)
+    connectionId = Number.parseInt(connectionIdHeader)
   } else {
     const ids = connectionManager.getConnectionIds()
     if (ids.length > 0) connectionId = ids[0]
   }
 
   if (!connectionId) {
-    return c.json({ error: 'No connection available. Please set up a connection and compile cubes.' }, 400)
+    return c.json(
+      { error: 'No connection available. Please set up a connection and compile cubes.' },
+      400
+    )
   }
 
   const cubeApp = await getCubeApp(connectionId)
@@ -212,10 +237,13 @@ app.route('/api/settings', settingsApp)
 // Error handling
 app.onError((err, c) => {
   console.error('Application error:', err)
-  return c.json({
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-  }, 500)
+  return c.json(
+    {
+      error: 'Internal server error',
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong',
+    },
+    500
+  )
 })
 
 // SPA fallback: serve index.html for non-API routes in production
@@ -223,7 +251,7 @@ if (process.env.NODE_ENV === 'production') {
   app.use('/*', serveStatic({ root: './dist', path: 'index.html' }))
 }
 
-app.notFound((c) => {
+app.notFound(c => {
   return c.json({ error: 'Not found' }, 404)
 })
 

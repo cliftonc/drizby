@@ -1,5 +1,5 @@
-import { createContext, useContext, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { createContext, useCallback, useContext } from 'react'
 
 interface User {
   id: number
@@ -34,36 +34,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return res.json()
     },
     staleTime: 30 * 1000,
-    retry: 1
+    retry: 1,
   })
 
-  const login = useCallback(async (email: string, password: string) => {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ email, password })
-    })
-    if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error || 'Login failed')
-    }
-    await refetch()
-  }, [refetch])
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Login failed')
+      }
+      await refetch()
+    },
+    [refetch]
+  )
 
-  const register = useCallback(async (name: string, email: string, password: string) => {
-    const res = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ name, email, password })
-    })
-    if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error || 'Registration failed')
-    }
-    await refetch()
-  }, [refetch])
+  const register = useCallback(
+    async (name: string, email: string, password: string) => {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name, email, password }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Registration failed')
+      }
+      await refetch()
+    },
+    [refetch]
+  )
 
   const logout = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
@@ -72,17 +78,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refetch, queryClient])
 
   return (
-    <AuthContext.Provider value={{
-      user: data?.user || null,
-      isLoading,
-      needsSetup: data?.needsSetup || false,
-      authenticated: data?.authenticated || false,
-      googleEnabled: data?.googleEnabled || false,
-      login,
-      register,
-      logout,
-      refetch: () => refetch()
-    }}>
+    <AuthContext.Provider
+      value={{
+        user: data?.user || null,
+        isLoading,
+        needsSetup: data?.needsSetup || false,
+        authenticated: data?.authenticated || false,
+        googleEnabled: data?.googleEnabled || false,
+        login,
+        register,
+        logout,
+        refetch: () => refetch(),
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

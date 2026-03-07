@@ -1,13 +1,19 @@
-import { Hono } from 'hono'
-import { eq, count } from 'drizzle-orm'
-import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { generateCodeVerifier, generateState } from 'arctic'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { users, oauthAccounts } from '../../schema'
-import { hashPassword, verifyPassword } from '../auth/password'
-import { createSession, deleteSession, setSessionCookie, clearSessionCookie, getSessionCookie } from '../auth/session'
+import { count, eq } from 'drizzle-orm'
+import { Hono } from 'hono'
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
+import { oauthAccounts, users } from '../../schema'
+import { authMiddleware, optionalAuth } from '../auth/middleware'
 import { createGoogleClient, fetchGoogleProfile } from '../auth/oauth'
-import { optionalAuth, authMiddleware } from '../auth/middleware'
+import { hashPassword, verifyPassword } from '../auth/password'
+import {
+  clearSessionCookie,
+  createSession,
+  deleteSession,
+  getSessionCookie,
+  setSessionCookie,
+} from '../auth/session'
 
 interface Variables {
   db: DrizzleDatabase
@@ -17,7 +23,7 @@ interface Variables {
 const app = new Hono<{ Variables: Variables }>()
 
 // Check auth status (no auth required)
-app.get('/status', optionalAuth, async (c) => {
+app.get('/status', optionalAuth, async c => {
   const db = c.get('db') as any
   const [{ value: userCount }] = await db.select({ value: count() }).from(users)
   const needsSetup = userCount === 0
@@ -26,19 +32,21 @@ app.get('/status', optionalAuth, async (c) => {
   return c.json({
     needsSetup,
     authenticated: !!auth,
-    user: auth ? {
-      id: auth.user.id,
-      email: auth.user.email,
-      name: auth.user.name,
-      role: auth.user.role,
-      avatarUrl: auth.user.avatarUrl
-    } : null,
-    googleEnabled: !!createGoogleClient()
+    user: auth
+      ? {
+          id: auth.user.id,
+          email: auth.user.email,
+          name: auth.user.name,
+          role: auth.user.role,
+          avatarUrl: auth.user.avatarUrl,
+        }
+      : null,
+    googleEnabled: !!createGoogleClient(),
   })
 })
 
 // First-run setup - create initial admin
-app.post('/setup', async (c) => {
+app.post('/setup', async c => {
   const db = c.get('db') as any
   const [{ value: userCount }] = await db.select({ value: count() }).from(users)
 
@@ -58,25 +66,31 @@ app.post('/setup', async (c) => {
   }
 
   const passwordHash = await hashPassword(password)
-  const [user] = await db.insert(users).values({
-    name,
-    email,
-    username: email.split('@')[0],
-    passwordHash,
-    role: 'admin',
-    organisationId: 1
-  }).returning()
+  const [user] = await db
+    .insert(users)
+    .values({
+      name,
+      email,
+      username: email.split('@')[0],
+      passwordHash,
+      role: 'admin',
+      organisationId: 1,
+    })
+    .returning()
 
   const sessionId = await createSession(db, user.id)
   setSessionCookie(c, sessionId)
 
-  return c.json({
-    user: { id: user.id, email: user.email, name: user.name, role: user.role }
-  }, 201)
+  return c.json(
+    {
+      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+    },
+    201
+  )
 })
 
 // Self-registration — creates a pending user (role: 'user')
-app.post('/register', async (c) => {
+app.post('/register', async c => {
   const db = c.get('db') as any
   const body = await c.req.json()
   const { name, email, password } = body
@@ -92,21 +106,27 @@ app.post('/register', async (c) => {
   const passwordHash = await hashPassword(password)
 
   try {
-    const [user] = await db.insert(users).values({
-      name,
-      email,
-      username: email.split('@')[0],
-      passwordHash,
-      role: 'user',
-      organisationId: 1
-    }).returning()
+    const [user] = await db
+      .insert(users)
+      .values({
+        name,
+        email,
+        username: email.split('@')[0],
+        passwordHash,
+        role: 'user',
+        organisationId: 1,
+      })
+      .returning()
 
     const sessionId = await createSession(db, user.id)
     setSessionCookie(c, sessionId)
 
-    return c.json({
-      user: { id: user.id, email: user.email, name: user.name, role: user.role }
-    }, 201)
+    return c.json(
+      {
+        user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      },
+      201
+    )
   } catch (err: any) {
     if (err.code === '23505' || err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return c.json({ error: 'An account with this email already exists' }, 409)
@@ -116,7 +136,7 @@ app.post('/register', async (c) => {
 })
 
 // Login with email + password
-app.post('/login', async (c) => {
+app.post('/login', async c => {
   const db = c.get('db') as any
   const { email, password } = await c.req.json()
 
@@ -143,12 +163,12 @@ app.post('/login', async (c) => {
   setSessionCookie(c, sessionId)
 
   return c.json({
-    user: { id: user.id, email: user.email, name: user.name, role: user.role }
+    user: { id: user.id, email: user.email, name: user.name, role: user.role },
   })
 })
 
 // Logout
-app.post('/logout', authMiddleware, async (c) => {
+app.post('/logout', authMiddleware, async c => {
   const db = c.get('db') as any
   const sessionId = getSessionCookie(c)
   if (sessionId) {
@@ -159,7 +179,7 @@ app.post('/logout', authMiddleware, async (c) => {
 })
 
 // Get current user
-app.get('/me', authMiddleware, async (c) => {
+app.get('/me', authMiddleware, async c => {
   const auth = c.get('auth') as any
   return c.json({
     id: auth.user.id,
@@ -167,12 +187,12 @@ app.get('/me', authMiddleware, async (c) => {
     username: auth.user.username,
     name: auth.user.name,
     role: auth.user.role,
-    avatarUrl: auth.user.avatarUrl
+    avatarUrl: auth.user.avatarUrl,
   })
 })
 
 // Change password
-app.put('/password', authMiddleware, async (c) => {
+app.put('/password', authMiddleware, async c => {
   const db = c.get('db') as any
   const auth = c.get('auth') as any
   const { currentPassword, newPassword } = await c.req.json()
@@ -193,7 +213,8 @@ app.put('/password', authMiddleware, async (c) => {
   }
 
   const passwordHash = await hashPassword(newPassword)
-  await db.update(users)
+  await db
+    .update(users)
     .set({ passwordHash, updatedAt: new Date() })
     .where(eq(users.id, auth.user.id))
 
@@ -201,7 +222,7 @@ app.put('/password', authMiddleware, async (c) => {
 })
 
 // Google OAuth - initiate
-app.get('/google', async (c) => {
+app.get('/google', async c => {
   const google = createGoogleClient()
   if (!google) {
     return c.json({ error: 'Google OAuth not configured' }, 400)
@@ -212,13 +233,18 @@ app.get('/google', async (c) => {
   const url = google.createAuthorizationURL(state, codeVerifier, ['openid', 'email', 'profile'])
 
   setCookie(c, 'oauth_state', state, { httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 600 })
-  setCookie(c, 'oauth_code_verifier', codeVerifier, { httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 600 })
+  setCookie(c, 'oauth_code_verifier', codeVerifier, {
+    httpOnly: true,
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: 600,
+  })
 
   return c.redirect(url.toString())
 })
 
 // Google OAuth - callback
-app.get('/google/callback', async (c) => {
+app.get('/google/callback', async c => {
   const google = createGoogleClient()
   if (!google) {
     return c.redirect('/login?error=oauth_not_configured')
@@ -245,7 +271,8 @@ app.get('/google/callback', async (c) => {
     const db = c.get('db') as any
 
     // Check if oauth account exists
-    const [existingOauth] = await db.select()
+    const [existingOauth] = await db
+      .select()
       .from(oauthAccounts)
       .where(eq(oauthAccounts.providerUserId, profile.sub))
 
@@ -254,7 +281,8 @@ app.get('/google/callback', async (c) => {
     if (existingOauth) {
       userId = existingOauth.userId
       // Update tokens
-      await db.update(oauthAccounts)
+      await db
+        .update(oauthAccounts)
         .set({ accessToken, updatedAt: new Date() })
         .where(eq(oauthAccounts.id, existingOauth.id))
     } else {
@@ -267,14 +295,17 @@ app.get('/google/callback', async (c) => {
         // Create new user
         const username = profile.email.split('@')[0]
         const [{ value: userCount }] = await db.select({ value: count() }).from(users)
-        const [newUser] = await db.insert(users).values({
-          email: profile.email,
-          username,
-          name: profile.name,
-          role: userCount === 0 ? 'admin' : 'user',
-          avatarUrl: profile.picture,
-          organisationId: 1
-        }).returning()
+        const [newUser] = await db
+          .insert(users)
+          .values({
+            email: profile.email,
+            username,
+            name: profile.name,
+            role: userCount === 0 ? 'admin' : 'user',
+            avatarUrl: profile.picture,
+            organisationId: 1,
+          })
+          .returning()
         userId = newUser.id
       }
 
@@ -283,7 +314,7 @@ app.get('/google/callback', async (c) => {
         userId,
         provider: 'google',
         providerUserId: profile.sub,
-        accessToken
+        accessToken,
       })
     }
 

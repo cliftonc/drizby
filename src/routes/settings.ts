@@ -3,14 +3,24 @@
  * Manages AI provider configuration
  */
 
-import { Hono } from 'hono'
-import { eq, and } from 'drizzle-orm'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { settings, connections, schemaFiles, cubeDefinitions, analyticsPages, notebooks, users, userSessions, oauthAccounts } from '../../schema'
-import { getAISettings } from '../services/ai-settings'
+import { and, eq } from 'drizzle-orm'
+import { Hono } from 'hono'
 import { invalidateCubeAppCache } from '../../app'
-import { connectionManager } from '../services/connection-manager'
+import {
+  analyticsPages,
+  connections,
+  cubeDefinitions,
+  notebooks,
+  oauthAccounts,
+  schemaFiles,
+  settings,
+  userSessions,
+  users,
+} from '../../schema'
 import { guardPermission } from '../permissions/guard'
+import { getAISettings } from '../services/ai-settings'
+import { connectionManager } from '../services/connection-manager'
 
 interface Variables {
   db: DrizzleDatabase
@@ -27,7 +37,7 @@ app.use('*', async (c, next) => {
 })
 
 // GET /api/settings/ai — return AI config with masked API key
-app.get('/ai', async (c) => {
+app.get('/ai', async c => {
   const db = c.get('db') as any
   const ai = await getAISettings(db)
 
@@ -36,12 +46,12 @@ app.get('/ai', async (c) => {
     model: ai.model || '',
     baseUrl: ai.baseUrl || '',
     hasApiKey: !!ai.apiKey,
-    apiKeyHint: ai.apiKey ? '****' + ai.apiKey.slice(-4) : '',
+    apiKeyHint: ai.apiKey ? `****${ai.apiKey.slice(-4)}` : '',
   })
 })
 
 // PUT /api/settings/ai — upsert AI config
-app.put('/ai', async (c) => {
+app.put('/ai', async c => {
   const db = c.get('db') as any
   const body = await c.req.json()
   const { provider, apiKey, model, baseUrl } = body as {
@@ -63,16 +73,16 @@ app.put('/ai', async (c) => {
 
     if (value === '') {
       // Delete the row
-      await db.delete(settings).where(
-        and(eq(settings.key, key), eq(settings.organisationId, 1))
-      )
+      await db.delete(settings).where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
     } else {
       // Upsert
-      const existing = await db.select().from(settings).where(
-        and(eq(settings.key, key), eq(settings.organisationId, 1))
-      )
+      const existing = await db
+        .select()
+        .from(settings)
+        .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
       if (existing.length > 0) {
-        await db.update(settings)
+        await db
+          .update(settings)
           .set({ value, updatedAt: new Date() })
           .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
       } else {
@@ -91,7 +101,7 @@ app.put('/ai', async (c) => {
 })
 
 // POST /api/settings/factory-reset — wipe all data, delete demo.sqlite, restart auto-seed on next boot
-app.post('/factory-reset', async (c) => {
+app.post('/factory-reset', async c => {
   const db = c.get('db') as any
 
   // Tear down all managed connections
@@ -118,11 +128,16 @@ app.post('/factory-reset', async (c) => {
     const dataDir = 'data'
     for (const file of readdirSync(dataDir)) {
       if (file === 'drizby.sqlite' || file.startsWith('drizby.sqlite-')) continue
-      try { unlinkSync(join(dataDir, file)) } catch {}
+      try {
+        unlinkSync(join(dataDir, file))
+      } catch {}
     }
   } catch {}
 
-  return c.json({ success: true, message: 'Factory reset complete. Restart the server to re-seed demo data.' })
+  return c.json({
+    success: true,
+    message: 'Factory reset complete. Restart the server to re-seed demo data.',
+  })
 })
 
 export default app

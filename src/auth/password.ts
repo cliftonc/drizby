@@ -1,4 +1,4 @@
-import { scrypt, randomBytes, timingSafeEqual } from 'crypto'
+import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 
 export function hashPassword(password: string): Promise<string> {
   return new Promise((resolve, reject) => {

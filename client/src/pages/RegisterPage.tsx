@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate, Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function RegisterPage() {
@@ -34,29 +34,82 @@ export default function RegisterPage() {
   }
 
   const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '8px 12px', backgroundColor: 'var(--dc-input-bg)',
-    border: '1px solid var(--dc-input-border)', borderRadius: 6,
-    color: 'var(--dc-input-text)', fontSize: 14, outline: 'none', boxSizing: 'border-box'
+    width: '100%',
+    padding: '8px 12px',
+    backgroundColor: 'var(--dc-input-bg)',
+    border: '1px solid var(--dc-input-border)',
+    borderRadius: 6,
+    color: 'var(--dc-input-text)',
+    fontSize: 14,
+    outline: 'none',
+    boxSizing: 'border-box',
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--dc-auth-bg)' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'var(--dc-auth-bg)',
+      }}
+    >
       <div style={{ width: '100%', maxWidth: 380, padding: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            marginBottom: 8,
+          }}
+        >
           <img src="/logo.png" alt="" style={{ width: 32, height: 32 }} />
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dc-text)', margin: 0 }}>Drizby</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dc-text)', margin: 0 }}>
+            Drizby
+          </h1>
         </div>
-        <p style={{ color: 'var(--dc-text-muted)', fontSize: 14, textAlign: 'center', marginBottom: 32 }}>Create an account</p>
+        <p
+          style={{
+            color: 'var(--dc-text-muted)',
+            fontSize: 14,
+            textAlign: 'center',
+            marginBottom: 32,
+          }}
+        >
+          Create an account
+        </p>
 
         {error && (
-          <div style={{ backgroundColor: 'var(--dc-error-bg)', border: '1px solid var(--dc-error-border)', color: 'var(--dc-error)', fontSize: 13, padding: '10px 14px', borderRadius: 6, marginBottom: 16 }}>
+          <div
+            style={{
+              backgroundColor: 'var(--dc-error-bg)',
+              border: '1px solid var(--dc-error-border)',
+              color: 'var(--dc-error)',
+              fontSize: 13,
+              padding: '10px 14px',
+              borderRadius: 6,
+              marginBottom: 16,
+            }}
+          >
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--dc-text-secondary)', marginBottom: 4 }}>Name</label>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 13,
+                fontWeight: 500,
+                color: 'var(--dc-text-secondary)',
+                marginBottom: 4,
+              }}
+            >
+              Name
+            </label>
             <input
               type="text"
               value={name}
@@ -67,7 +120,17 @@ export default function RegisterPage() {
             />
           </div>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--dc-text-secondary)', marginBottom: 4 }}>Email</label>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 13,
+                fontWeight: 500,
+                color: 'var(--dc-text-secondary)',
+                marginBottom: 4,
+              }}
+            >
+              Email
+            </label>
             <input
               type="email"
               value={email}
@@ -78,7 +141,17 @@ export default function RegisterPage() {
             />
           </div>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--dc-text-secondary)', marginBottom: 4 }}>Password</label>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 13,
+                fontWeight: 500,
+                color: 'var(--dc-text-secondary)',
+                marginBottom: 4,
+              }}
+            >
+              Password
+            </label>
             <input
               type="password"
               value={password}
@@ -90,7 +163,17 @@ export default function RegisterPage() {
             />
           </div>
           <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--dc-text-secondary)', marginBottom: 4 }}>Confirm Password</label>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 13,
+                fontWeight: 500,
+                color: 'var(--dc-text-secondary)',
+                marginBottom: 4,
+              }}
+            >
+              Confirm Password
+            </label>
             <input
               type="password"
               value={confirmPassword}
@@ -102,15 +185,35 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={loading}
-            style={{ width: '100%', padding: '8px 16px', backgroundColor: 'var(--dc-primary)', color: 'var(--dc-primary-content)', fontWeight: 500, borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 14, opacity: loading ? 0.5 : 1 }}
+            style={{
+              width: '100%',
+              padding: '8px 16px',
+              backgroundColor: 'var(--dc-primary)',
+              color: 'var(--dc-primary-content)',
+              fontWeight: 500,
+              borderRadius: 6,
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 14,
+              opacity: loading ? 0.5 : 1,
+            }}
           >
             {loading ? 'Creating account...' : 'Create account'}
           </button>
         </form>
 
-        <p style={{ color: 'var(--dc-text-muted)', fontSize: 13, textAlign: 'center', marginTop: 24 }}>
+        <p
+          style={{
+            color: 'var(--dc-text-muted)',
+            fontSize: 13,
+            textAlign: 'center',
+            marginTop: 24,
+          }}
+        >
           Already have an account?{' '}
-          <Link to="/login" style={{ color: 'var(--dc-primary)', textDecoration: 'none' }}>Sign in</Link>
+          <Link to="/login" style={{ color: 'var(--dc-primary)', textDecoration: 'none' }}>
+            Sign in
+          </Link>
         </p>
       </div>
     </div>

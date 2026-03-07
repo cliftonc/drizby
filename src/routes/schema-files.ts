@@ -3,15 +3,15 @@
  * CRUD + compile + introspect for Drizzle schema files
  */
 
-import { Hono } from 'hono'
-import { eq, and } from 'drizzle-orm'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { schemaFiles, connections } from '../../schema'
-import { connectionManager } from '../services/connection-manager'
+import { and, eq } from 'drizzle-orm'
+import { Hono } from 'hono'
 import { invalidateCubeAppCache } from '../../app'
-import { compileSchema, generateSchemaTypes } from '../services/cube-compiler'
-import { getAISettings } from '../services/ai-settings'
+import { connections, schemaFiles } from '../../schema'
 import { guardPermission } from '../permissions/guard'
+import { getAISettings } from '../services/ai-settings'
+import { connectionManager } from '../services/connection-manager'
+import { compileSchema, generateSchemaTypes } from '../services/cube-compiler'
 
 interface Variables {
   db: DrizzleDatabase
@@ -27,25 +27,28 @@ app.use('*', async (c, next) => {
 })
 
 // List all schema files
-app.get('/', async (c) => {
+app.get('/', async c => {
   const db = c.get('db') as any
-  const result = await db.select().from(schemaFiles)
-    .where(eq(schemaFiles.organisationId, 1))
+  const result = await db.select().from(schemaFiles).where(eq(schemaFiles.organisationId, 1))
   return c.json(result)
 })
 
 // Generate cube definitions from schema files using AI
 // SSE endpoint: plan + generate cubes one by one, streaming progress
-app.post('/generate-cubes', async (c) => {
+app.post('/generate-cubes', async c => {
   const db = c.get('db') as any
   const body = await c.req.json()
   const { connectionId } = body
 
-  const conn = await db.select().from(connections)
+  const conn = await db
+    .select()
+    .from(connections)
     .where(and(eq(connections.id, connectionId), eq(connections.organisationId, 1)))
   if (conn.length === 0) return c.json({ error: 'Connection not found' }, 400)
 
-  const schemas = await db.select().from(schemaFiles)
+  const schemas = await db
+    .select()
+    .from(schemaFiles)
     .where(and(eq(schemaFiles.connectionId, connectionId), eq(schemaFiles.organisationId, 1)))
 
   if (schemas.length === 0) {
@@ -54,7 +57,10 @@ app.post('/generate-cubes', async (c) => {
 
   const ai = await getAISettings(db)
   if (!ai.apiKey || !ai.provider) {
-    return c.json({ error: 'AI is not configured. Go to Settings → AI to set up your API key.' }, 400)
+    return c.json(
+      { error: 'AI is not configured. Go to Settings → AI to set up your API key.' },
+      400
+    )
   }
 
   const schemaContext = schemas.map((sf: any) => ({
@@ -70,7 +76,9 @@ app.post('/generate-cubes', async (c) => {
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: any) => {
-        controller.enqueue(new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+        controller.enqueue(
+          new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+        )
       }
 
       try {
@@ -79,7 +87,14 @@ app.post('/generate-cubes', async (c) => {
         const fileNameList = schemaContext.map((s: any) => s.fileName).join(', ')
         const planPrompt = `Here are the Drizzle ORM schema files:\n\n${schemaListing}\n\nAvailable schema file names (use these EXACTLY for schemaFile): ${fileNameList}\n\nAnalyze these schemas and propose cubes to create. The "schemaFile" field must be one of the file names listed above (without .ts extension). The "tables" field must contain only table variable names that are actually exported from that schema file.`
         const planRaw = await callAI(ai, CUBE_PLAN_SYSTEM_PROMPT, planPrompt)
-        let cubes: Array<{ name: string; variableName: string; title: string; description: string; tables: string[]; schemaFile: string }>
+        let cubes: Array<{
+          name: string
+          variableName: string
+          title: string
+          description: string
+          tables: string[]
+          schemaFile: string
+        }>
         try {
           cubes = JSON.parse(planRaw)
         } catch {
@@ -104,7 +119,12 @@ app.post('/generate-cubes', async (c) => {
         const generatedParts: string[] = []
         for (let i = 0; i < cubes.length; i++) {
           const cube = cubes[i]
-          send('status', { phase: 'generating', message: `Generating ${cube.title}...`, current: i + 1, total: cubes.length })
+          send('status', {
+            phase: 'generating',
+            message: `Generating ${cube.title}...`,
+            current: i + 1,
+            total: cubes.length,
+          })
 
           const otherCubes = cubes
             .filter(c => c.name !== cube.name)
@@ -132,7 +152,7 @@ app.post('/generate-cubes', async (c) => {
         for (const cube of cubes) {
           const file = cube.schemaFile
           if (!tableImports.has(file)) tableImports.set(file, new Set())
-          for (const t of cube.tables) tableImports.get(file)!.add(t)
+          for (const t of cube.tables) tableImports.get(file)?.add(t)
         }
 
         const importLines = [
@@ -166,54 +186,62 @@ app.post('/generate-cubes', async (c) => {
       } finally {
         controller.close()
       }
-    }
+    },
   })
 
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive',
     },
   })
 })
 
 // Get single schema file
-app.get('/:id', async (c) => {
+app.get('/:id', async c => {
   const db = c.get('db') as any
-  const id = parseInt(c.req.param('id'))
-  const result = await db.select().from(schemaFiles)
+  const id = Number.parseInt(c.req.param('id'))
+  const result = await db
+    .select()
+    .from(schemaFiles)
     .where(and(eq(schemaFiles.id, id), eq(schemaFiles.organisationId, 1)))
   if (result.length === 0) return c.json({ error: 'Schema file not found' }, 404)
   return c.json(result[0])
 })
 
 // Create schema file
-app.post('/', async (c) => {
+app.post('/', async c => {
   const db = c.get('db') as any
   const body = await c.req.json()
 
-  const conn = await db.select().from(connections)
+  const conn = await db
+    .select()
+    .from(connections)
     .where(and(eq(connections.id, body.connectionId), eq(connections.organisationId, 1)))
   if (conn.length === 0) return c.json({ error: 'Connection not found' }, 400)
 
-  const result = await db.insert(schemaFiles).values({
-    name: body.name,
-    sourceCode: body.sourceCode,
-    connectionId: body.connectionId,
-    organisationId: 1,
-  }).returning()
+  const result = await db
+    .insert(schemaFiles)
+    .values({
+      name: body.name,
+      sourceCode: body.sourceCode,
+      connectionId: body.connectionId,
+      organisationId: 1,
+    })
+    .returning()
 
   return c.json(result[0], 201)
 })
 
 // Update schema file
-app.put('/:id', async (c) => {
+app.put('/:id', async c => {
   const db = c.get('db') as any
-  const id = parseInt(c.req.param('id'))
+  const id = Number.parseInt(c.req.param('id'))
   const body = await c.req.json()
 
-  const result = await db.update(schemaFiles)
+  const result = await db
+    .update(schemaFiles)
     .set({
       name: body.name,
       sourceCode: body.sourceCode,
@@ -227,10 +255,11 @@ app.put('/:id', async (c) => {
 })
 
 // Delete schema file
-app.delete('/:id', async (c) => {
+app.delete('/:id', async c => {
   const db = c.get('db') as any
-  const id = parseInt(c.req.param('id'))
-  const result = await db.delete(schemaFiles)
+  const id = Number.parseInt(c.req.param('id'))
+  const result = await db
+    .delete(schemaFiles)
     .where(and(eq(schemaFiles.id, id), eq(schemaFiles.organisationId, 1)))
     .returning()
   if (result.length === 0) return c.json({ error: 'Schema file not found' }, 404)
@@ -249,11 +278,13 @@ app.delete('/:id', async (c) => {
 })
 
 // Compile a schema file
-app.post('/:id/compile', async (c) => {
+app.post('/:id/compile', async c => {
   const db = c.get('db') as any
-  const id = parseInt(c.req.param('id'))
+  const id = Number.parseInt(c.req.param('id'))
 
-  const rows = await db.select().from(schemaFiles)
+  const rows = await db
+    .select()
+    .from(schemaFiles)
     .where(and(eq(schemaFiles.id, id), eq(schemaFiles.organisationId, 1)))
   if (rows.length === 0) return c.json({ error: 'Schema file not found' }, 404)
 
@@ -262,13 +293,15 @@ app.post('/:id/compile', async (c) => {
 
   if (result.errors.length === 0) {
     connectionManager.compileSchemaFile(sf.connectionId, sf.name, sf.sourceCode)
-    await db.update(schemaFiles)
+    await db
+      .update(schemaFiles)
       .set({ compiledAt: new Date(), compilationErrors: null })
       .where(eq(schemaFiles.id, id))
     // Schema change may affect compiled cubes — invalidate cached cube app
     invalidateCubeAppCache(sf.connectionId)
   } else {
-    await db.update(schemaFiles)
+    await db
+      .update(schemaFiles)
       .set({ compilationErrors: result.errors })
       .where(eq(schemaFiles.id, id))
   }
@@ -281,11 +314,13 @@ app.post('/:id/compile', async (c) => {
 })
 
 // Generate .d.ts types for a schema file (for Monaco autocomplete)
-app.get('/:id/types', async (c) => {
+app.get('/:id/types', async c => {
   const db = c.get('db') as any
-  const id = parseInt(c.req.param('id'))
+  const id = Number.parseInt(c.req.param('id'))
 
-  const rows = await db.select().from(schemaFiles)
+  const rows = await db
+    .select()
+    .from(schemaFiles)
     .where(and(eq(schemaFiles.id, id), eq(schemaFiles.organisationId, 1)))
   if (rows.length === 0) return c.json({ error: 'Schema file not found' }, 404)
 
@@ -294,12 +329,14 @@ app.get('/:id/types', async (c) => {
 })
 
 // Introspect a database connection using drizzle-kit pull
-app.post('/introspect', async (c) => {
+app.post('/introspect', async c => {
   const db = c.get('db') as any
   const body = await c.req.json()
   const { connectionId } = body
 
-  const conn = await db.select().from(connections)
+  const conn = await db
+    .select()
+    .from(connections)
     .where(and(eq(connections.id, connectionId), eq(connections.organisationId, 1)))
   if (conn.length === 0) return c.json({ error: 'Connection not found' }, 400)
 
@@ -307,7 +344,11 @@ app.post('/introspect', async (c) => {
   let managed = connectionManager.get(connectionId)
   if (!managed) {
     try {
-      managed = await connectionManager.createConnection(conn[0].id, conn[0].connectionString, conn[0].engineType)
+      managed = await connectionManager.createConnection(
+        conn[0].id,
+        conn[0].connectionString,
+        conn[0].engineType
+      )
     } catch (err: any) {
       return c.json({ error: `Failed to connect: ${err.message}` }, 400)
     }
@@ -325,7 +366,10 @@ app.post('/introspect', async (c) => {
  * Run `drizzle-kit pull` as a subprocess to introspect a database.
  * Returns the generated schema.ts source code and table names.
  */
-async function runDrizzleKitPull(connectionString: string, engineType: string = 'postgresql'): Promise<{ source: string; tables: string[] }> {
+async function runDrizzleKitPull(
+  connectionString: string,
+  engineType = 'postgresql'
+): Promise<{ source: string; tables: string[] }> {
   const { mkdtemp, readFile, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
@@ -338,9 +382,10 @@ async function runDrizzleKitPull(connectionString: string, engineType: string = 
   try {
     // Write a temporary drizzle config
     const dialect = engineType === 'sqlite' ? 'sqlite' : 'postgresql'
-    const dbCreds = engineType === 'sqlite'
-      ? `{ url: ${JSON.stringify(connectionString.replace(/^file:/, ''))} }`
-      : `{ url: ${JSON.stringify(connectionString)} }`
+    const dbCreds =
+      engineType === 'sqlite'
+        ? `{ url: ${JSON.stringify(connectionString.replace(/^file:/, ''))} }`
+        : `{ url: ${JSON.stringify(connectionString)} }`
     const configPath = join(tempDir, 'drizzle.config.js')
     const configContent = `module.exports = {
   dialect: '${dialect}',
@@ -364,8 +409,7 @@ ${dialect === 'postgresql' ? "  schemaFilter: ['public'],\n" : ''}}\n`
     // Extract table names from export statements
     const tableRegex = /export const \w+ = (?:pgTable|sqliteTable)\("(\w+)"/g
     const tables: string[] = []
-    let match
-    while ((match = tableRegex.exec(source)) !== null) {
+    for (let match = tableRegex.exec(source); match !== null; match = tableRegex.exec(source)) {
       tables.push(match[1])
     }
 
@@ -385,10 +429,9 @@ ${dialect === 'postgresql' ? "  schemaFilter: ['public'],\n" : ''}}\n`
 function stripTableExtras(source: string): string {
   let result = source
   const extraPattern = /\},\s*\(table\)\s*=>\s*\[/g
-  let m
   const removals: Array<{ start: number; end: number }> = []
 
-  while ((m = extraPattern.exec(source)) !== null) {
+  for (let m = extraPattern.exec(source); m !== null; m = extraPattern.exec(source)) {
     const startOfExtras = m.index + 1 // position of the comma after `}`
     let depth = 1
     let i = m.index + m[0].length
@@ -405,11 +448,19 @@ function stripTableExtras(source: string): string {
 
   // Apply removals in reverse order
   for (const { start, end } of removals.reverse()) {
-    result = result.slice(0, start) + ')' + result.slice(end)
+    result = `${result.slice(0, start)})${result.slice(end)}`
   }
 
   // Clean up imports: remove unused imports that were only for indexes/constraints
-  const indexOnlyImports = ['index', 'uniqueIndex', 'unique', 'foreignKey', 'check', 'primaryKey', 'pgPolicy']
+  const indexOnlyImports = [
+    'index',
+    'uniqueIndex',
+    'unique',
+    'foreignKey',
+    'check',
+    'primaryKey',
+    'pgPolicy',
+  ]
   for (const imp of indexOnlyImports) {
     // Only remove if not actually used in the cleaned source (outside the import line)
     const importPattern = new RegExp(`\\b${imp}\\b`)
@@ -440,7 +491,7 @@ function stripTableExtras(source: string): string {
 async function callAI(
   ai: { provider?: string; apiKey?: string; model?: string; baseUrl?: string },
   systemPrompt: string,
-  userPrompt: string,
+  userPrompt: string
 ): Promise<string> {
   if (ai.provider === 'anthropic') {
     const Anthropic = (await import('@anthropic-ai/sdk')).default
@@ -489,8 +540,12 @@ async function callAI(
       const errText = await response.text()
       throw new Error(`Gemini API error (${response.status}): ${errText.substring(0, 200)}`)
     }
-    const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }
-    const text = data.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text).join('\n')
+    const data = (await response.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+    }
+    const text = data.candidates?.[0]?.content?.parts
+      ?.map((p: { text?: string }) => p.text)
+      .join('\n')
     if (!text) throw new Error('No text response from AI')
     return extractCodeBlock(text)
   }

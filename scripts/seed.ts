@@ -4,9 +4,9 @@
  */
 
 import 'dotenv/config'
-import { seedDemo } from './seed-demo'
+import { analyticsPages, connections, cubeDefinitions, schemaFiles } from '../schema'
 import { db } from '../src/db/index'
-import { connections, schemaFiles, cubeDefinitions, analyticsPages } from '../schema'
+import { seedDemo } from './seed-demo'
 
 // Demo schema source code (TypeScript) — uses sqliteTable for the demo SQLite DB
 const DEMO_SCHEMA_SOURCE = `import { sqliteTable, integer, text, real } from 'drizzle-orm/sqlite-core'
@@ -196,22 +196,28 @@ async function seedDatabase() {
   seedDemo(DEMO_DB_PATH)
 
   // Step 2: Register it as a connection in the internal DB
-  const [demoConnection] = await db.insert(connections).values({
-    name: 'Demo SQLite',
-    description: 'Built-in demo database with sample employee data',
-    engineType: 'sqlite',
-    connectionString: `file:${DEMO_DB_PATH}`,
-    organisationId: 1
-  }).returning()
+  const [demoConnection] = await db
+    .insert(connections)
+    .values({
+      name: 'Demo SQLite',
+      description: 'Built-in demo database with sample employee data',
+      engineType: 'sqlite',
+      connectionString: `file:${DEMO_DB_PATH}`,
+      organisationId: 1,
+    })
+    .returning()
   console.log('Registered demo connection')
 
   // Step 3: Seed demo schema file
-  const [demoSchemaFile] = await db.insert(schemaFiles).values({
-    name: 'demo-schema.ts',
-    sourceCode: DEMO_SCHEMA_SOURCE,
-    connectionId: demoConnection.id,
-    organisationId: 1,
-  }).returning()
+  const [demoSchemaFile] = await db
+    .insert(schemaFiles)
+    .values({
+      name: 'demo-schema.ts',
+      sourceCode: DEMO_SCHEMA_SOURCE,
+      connectionId: demoConnection.id,
+      organisationId: 1,
+    })
+    .returning()
   console.log('Seeded demo schema file')
 
   // Step 4: Seed demo cube definitions
@@ -238,41 +244,52 @@ async function seedDatabase() {
           title: 'Employees by Department',
           query: JSON.stringify({
             measures: ['Employees.count'],
-            dimensions: ['Departments.name']
+            dimensions: ['Departments.name'],
           }),
           chartType: 'bar',
           chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.count'] },
-          w: 6, h: 4, x: 0, y: 0
+          w: 6,
+          h: 4,
+          x: 0,
+          y: 0,
         },
         {
           id: 'p2',
           title: 'Average Salary',
           query: JSON.stringify({
             measures: ['Employees.avgSalary'],
-            dimensions: ['Departments.name']
+            dimensions: ['Departments.name'],
           }),
           chartType: 'bar',
           chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.avgSalary'] },
-          w: 6, h: 4, x: 6, y: 0
+          w: 6,
+          h: 4,
+          x: 6,
+          y: 0,
         },
         {
           id: 'p3',
           title: 'Code Output Over Time',
           query: JSON.stringify({
             measures: ['Productivity.totalLinesOfCode'],
-            timeDimensions: [{
-              dimension: 'Productivity.date',
-              granularity: 'week'
-            }]
+            timeDimensions: [
+              {
+                dimension: 'Productivity.date',
+                granularity: 'week',
+              },
+            ],
           }),
           chartType: 'line',
           chartConfig: { xAxis: ['Productivity.date'], yAxis: ['Productivity.totalLinesOfCode'] },
-          w: 12, h: 4, x: 0, y: 4
-        }
+          w: 12,
+          h: 4,
+          x: 0,
+          y: 4,
+        },
       ],
-      filters: []
+      filters: [],
     },
-    organisationId: 1
+    organisationId: 1,
   })
   console.log('Seeded example dashboard')
 
@@ -280,7 +297,7 @@ async function seedDatabase() {
   process.exit(0)
 }
 
-seedDatabase().catch((err) => {
+seedDatabase().catch(err => {
   console.error('Seeding failed:', err)
   process.exit(1)
 })

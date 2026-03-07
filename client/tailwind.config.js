@@ -2,9 +2,9 @@
 export default {
   darkMode: 'class',
   content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-    "../node_modules/drizzle-cube/dist/client/**/*.{js,mjs}",
+    './index.html',
+    './src/**/*.{js,ts,jsx,tsx}',
+    '../node_modules/drizzle-cube/dist/client/**/*.{js,mjs}',
   ],
   theme: {
     extend: {
