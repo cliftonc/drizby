@@ -5,13 +5,11 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import ts from 'typescript'
 
 const esmRequire = createRequire(import.meta.url)
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const PROJECT_ROOT = resolve(__dirname, '../..')
+const PROJECT_ROOT = process.cwd()
 
 interface CompileResult {
   exports: Record<string, any>
