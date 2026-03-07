@@ -69,3 +69,18 @@ Browser → Cloudflare Worker (thin router) → Container (Drizby/Hono)
 - D1 HTTP API adds ~50-100ms latency per query
 - Cold start ~2-3s when container wakes from sleep
 - Containers are in public beta
+
+## Troubleshooting
+
+### `unknown flag: --load` during `wrangler deploy`
+
+Wrangler requires Docker BuildKit (buildx) to build the container image. If you see this error:
+
+1. Install buildx: `brew install docker-buildx`
+2. Link it as a Docker CLI plugin:
+   ```sh
+   mkdir -p ~/.docker/cli-plugins
+   ln -sfn /opt/homebrew/opt/docker-buildx/bin/docker-buildx ~/.docker/cli-plugins/docker-buildx
+   ```
+3. Activate it as the default builder: `docker buildx install`
+4. Verify: `docker buildx version`
