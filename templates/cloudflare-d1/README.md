@@ -28,7 +28,7 @@
 
 4. Get your Cloudflare credentials:
 
-   **CF_ACCOUNT_ID:** Go to the [Cloudflare dashboard](https://dash.cloudflare.com), select your account — the Account ID is shown in the right sidebar on the overview page, or in the URL: `dash.cloudflare.com/<account-id>`.
+   **CF_ACCOUNT_ID:** Go to the [Cloudflare dashboard](https://dash.cloudflare.com) → click the three-dot menu (⋮) next to your account name → "Copied account ID".
 
    **CF_API_TOKEN:** Go to [API Tokens](https://dash.cloudflare.com/profile/api-tokens) → Create Token → use the "Edit Cloudflare Workers" template, then add **D1 Edit** permissions under Account resources.
 
