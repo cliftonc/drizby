@@ -1,0 +1,16 @@
+{
+  "name": "Drizby",
+  "short_name": "Drizby",
+  "description": "Open-source BI platform powered by drizzle-cube",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#0f1117",
+  "theme_color": "#0f1117",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
