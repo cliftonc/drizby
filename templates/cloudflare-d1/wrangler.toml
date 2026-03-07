@@ -6,29 +6,6 @@ compatibility_date = "2026-03-06"
 class_name = "DrizbyContainer"
 image = "../../Dockerfile"
 max_instances = 1
-instance_type = "standard-1"
-enable_internet = true
-
-[containers.env_vars]
-NODE_ENV = "production"
-PORT = "3461"
-
-# Set these after creating D1 databases:
-# D1_DATABASE_ID = "your-drizby-db-id"
-# D1_DEMO_DATABASE_ID = "your-demo-db-id"
-# CF_ACCOUNT_ID = "your-account-id"
-
-[[containers.secrets]]
-name = "CF_API_TOKEN"
-
-[[containers.secrets]]
-name = "D1_DATABASE_ID"
-
-[[containers.secrets]]
-name = "D1_DEMO_DATABASE_ID"
-
-[[containers.secrets]]
-name = "CF_ACCOUNT_ID"
 
 [[durable_objects.bindings]]
 class_name = "DrizbyContainer"
