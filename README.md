@@ -1,5 +1,7 @@
 # Drizby
 
+**[www.drizby.com](https://www.drizby.com)**
+
 **Open-source BI platform powered by [drizzle-cube](https://drizzle.cube).** Self-service analytics, AI agentic notebooks, and a full semantic layer — in one deployable app.
 
 Drizby is a Metabase-style analytics platform that uses your existing Drizzle schemas to power dashboards, notebooks, and ad-hoc analysis. Define your metrics once in the semantic layer, then access them everywhere — dashboards, APIs, or AI agents — with consistent definitions and built-in multi-tenant security.
