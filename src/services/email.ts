@@ -184,3 +184,18 @@ ${button('Sign In', loginUrl)}
 <p style="margin:0;color:#94a3b8;font-size:13px;">If you weren't expecting this, please contact your administrator.</p>
 `, appName)
 }
+
+export function createInviteEmailTemplate(
+  userName: string,
+  inviterName: string,
+  appName: string,
+  resetUrl: string
+): string {
+  return emailLayout(`
+<h2 style="margin:0 0 16px;font-size:18px;color:#f1f5f9;">You've been invited to ${appName}</h2>
+<p style="margin:0 0 8px;">Hi ${userName},</p>
+<p style="margin:0 0 16px;">${inviterName} has invited you to join ${appName}. Click the button below to set your password and get started. This link expires in 24 hours.</p>
+${button('Accept Invite', resetUrl)}
+<p style="margin:0;color:#94a3b8;font-size:13px;">If you weren't expecting this invitation, you can safely ignore this email.</p>
+`, appName)
+}

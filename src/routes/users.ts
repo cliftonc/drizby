@@ -1,12 +1,13 @@
+import crypto from 'node:crypto'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { users } from '../../schema'
+import { passwordResetTokens, users } from '../../schema'
 import { hashPassword } from '../auth/password'
 import { guardPermission } from '../permissions/guard'
 import {
-  createAccountCreatedEmailTemplate,
   createAccountStatusEmailTemplate,
+  createInviteEmailTemplate,
   getAppName,
   getAppUrl,
   sendEmail,
@@ -45,11 +46,12 @@ app.get('/', async c => {
   return c.json(result)
 })
 
-// Create user
+// Create user — sends invite email with password reset link
 app.post('/', async c => {
   const db = c.get('db') as any
+  const auth = c.get('auth') as any
   const body = await c.req.json()
-  const { name, email, password, role } = body
+  const { name, email, role } = body
 
   if (!name || !email) {
     return c.json({ error: 'Name and email are required' }, 400)
@@ -63,23 +65,26 @@ app.post('/', async c => {
     organisationId: 1,
   }
 
-  if (password) {
-    if (password.length < 8) {
-      return c.json({ error: 'Password must be at least 8 characters' }, 400)
-    }
-    values.passwordHash = await hashPassword(password)
-  }
-
   try {
     const [user] = await db.insert(users).values(values).returning()
 
-    // Fire-and-forget: send account created email
+    // Create password reset token for invite (24h expiry)
+    const token = crypto.randomBytes(32).toString('hex')
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+    await db.insert(passwordResetTokens).values({
+      id: token,
+      userId: user.id,
+      expiresAt,
+    })
+
+    // Send invite email
     const appName = getAppName()
-    const loginUrl = `${getAppUrl()}/login`
+    const resetUrl = `${getAppUrl()}/reset-password?token=${token}`
     sendEmail(
       user.email,
-      `Your ${appName} account has been created`,
-      createAccountCreatedEmailTemplate(user.name, appName, loginUrl, !!password)
+      `You've been invited to ${appName}`,
+      createInviteEmailTemplate(user.name, auth.user.name, appName, resetUrl)
     ).catch(() => {})
 
     return c.json(

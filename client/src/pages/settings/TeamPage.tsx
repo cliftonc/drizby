@@ -19,7 +19,7 @@ export default function TeamPage() {
   const [confirmDelete, ConfirmDialog] = useConfirm()
 
   const [showCreate, setShowCreate] = useState(false)
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'member' })
+  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'member' })
   const [createError, setCreateError] = useState('')
 
   const { data: users = [], isLoading } = useQuery<UserRow[]>({
@@ -49,7 +49,7 @@ export default function TeamPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
       setShowCreate(false)
-      setNewUser({ name: '', email: '', password: '', role: 'member' })
+      setNewUser({ name: '', email: '', role: 'member' })
       setCreateError('')
     },
     onError: (err: Error) => setCreateError(err.message),
@@ -230,25 +230,6 @@ export default function TeamPage() {
                   marginBottom: 4,
                 }}
               >
-                Password
-              </label>
-              <input
-                type="password"
-                value={newUser.password}
-                onChange={e => setNewUser(u => ({ ...u, password: e.target.value }))}
-                placeholder="Optional for OAuth"
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: 12,
-                  color: 'var(--dc-text-muted)',
-                  marginBottom: 4,
-                }}
-              >
                 Role
               </label>
               <select
@@ -276,9 +257,12 @@ export default function TeamPage() {
                   opacity: createMutation.isPending ? 0.5 : 1,
                 }}
               >
-                {createMutation.isPending ? 'Creating...' : 'Create User'}
+                {createMutation.isPending ? 'Sending invite...' : 'Send Invite'}
               </button>
             </div>
+            <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: 12, color: 'var(--dc-text-muted)' }}>
+              An email will be sent with a link to set their password.
+            </p>
           </form>
         </div>
       )}
