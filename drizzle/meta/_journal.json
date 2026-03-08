@@ -15,6 +15,13 @@
       "when": 1772802202105,
       "tag": "0002_large_elektra",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1772948261867,
+      "tag": "0002_safe_triton",
+      "breakpoints": true
     }
   ]
 }

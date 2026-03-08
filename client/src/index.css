@@ -33,3 +33,42 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* ==========================================================================
+   Drizby Theme Overrides
+   Must come AFTER drizzle-cube imports to win the cascade.
+   drizzle-cube ships its own :root / [data-theme=dark] defaults in blue;
+   we override them here with the Drizby indigo-purple palette.
+   ========================================================================== */
+
+html[data-theme="drizby-light"] {
+  --dc-primary: #6366f1;
+  --dc-primary-hover: #4f46e5;
+  --dc-primary-content: #ffffff;
+  --dc-primary-rgb: 99, 102, 241;
+  --dc-primary-bg: #eef2ff;
+  --dc-info: #6366f1;
+  --dc-info-bg: #e0e7ff;
+  --dc-info-border: #a5b4fc;
+  --dc-accent: #6366f1;
+  --dc-accent-hover: #4f46e5;
+  --dc-accent-bg: #eef2ff;
+  --dc-accent-border: #a5b4fc;
+  --dc-sidebar-active: rgba(99, 102, 241, 0.3);
+}
+
+html[data-theme="drizby-dark"] {
+  --dc-primary: #818cf8;
+  --dc-primary-hover: #6366f1;
+  --dc-primary-content: #1e1b4b;
+  --dc-primary-rgb: 129, 140, 248;
+  --dc-primary-bg: #312e81;
+  --dc-info: #818cf8;
+  --dc-info-bg: #312e81;
+  --dc-info-border: #4f46e5;
+  --dc-accent: #818cf8;
+  --dc-accent-hover: #6366f1;
+  --dc-accent-bg: #312e81;
+  --dc-accent-border: #4f46e5;
+  --dc-sidebar-active: rgba(129, 140, 248, 0.2);
+}

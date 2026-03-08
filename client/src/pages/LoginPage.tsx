@@ -3,7 +3,7 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function LoginPage() {
-  const { authenticated, needsSetup, login, googleEnabled } = useAuth()
+  const { authenticated, needsSetup, pendingAdminSetup, login, googleEnabled } = useAuth()
   const [searchParams] = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   if (needsSetup) return <Navigate to="/setup" replace />
+  if (pendingAdminSetup) return <Navigate to="/pending-setup" replace />
   if (authenticated) return <Navigate to="/" replace />
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -111,17 +112,23 @@ export default function LoginPage() {
             />
           </div>
           <div style={{ marginBottom: 20 }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 13,
-                fontWeight: 500,
-                color: 'var(--dc-text-secondary)',
-                marginBottom: 4,
-              }}
-            >
-              Password
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <label
+                style={{
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: 'var(--dc-text-secondary)',
+                }}
+              >
+                Password
+              </label>
+              <Link
+                to={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`}
+                style={{ fontSize: 12, color: 'var(--dc-primary)', textDecoration: 'none' }}
+              >
+                Forgot password?
+              </Link>
+            </div>
             <input
               type="password"
               value={password}

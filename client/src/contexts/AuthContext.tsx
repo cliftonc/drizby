@@ -13,6 +13,8 @@ interface AuthState {
   user: User | null
   isLoading: boolean
   needsSetup: boolean
+  pendingAdminSetup: boolean
+  needsSeed: boolean
   authenticated: boolean
   googleEnabled: boolean
   login: (email: string, password: string) => Promise<void>
@@ -83,6 +85,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user: data?.user || null,
         isLoading,
         needsSetup: data?.needsSetup || false,
+        pendingAdminSetup: data?.pendingAdminSetup || false,
+        needsSeed: data?.needsSeed || false,
         authenticated: data?.authenticated || false,
         googleEnabled: data?.googleEnabled || false,
         login,

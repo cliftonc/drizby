@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -11,15 +11,25 @@ interface SeedProgress {
 }
 
 export default function SetupPage() {
-  const { needsSetup, authenticated, refetch } = useAuth()
+  const { needsSetup, needsSeed, authenticated, refetch } = useAuth()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [phase, setPhase] = useState<Phase>('form')
+  const [phase, setPhase] = useState<Phase>(needsSeed && authenticated ? 'seeding' : 'form')
   const [seedProgress, setSeedProgress] = useState<SeedProgress>({ step: '', progress: 0 })
+  const [autoSeedStarted, setAutoSeedStarted] = useState(false)
+
+  // Auto-trigger seeding when admin arrives after password reset
+  useEffect(() => {
+    if (needsSeed && authenticated && !autoSeedStarted) {
+      setAutoSeedStarted(true)
+      startSeeding()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsSeed, authenticated, autoSeedStarted])
 
   // During seeding/complete phases, don't redirect — even if auth context updates
   if (phase === 'done') {
@@ -27,8 +37,13 @@ export default function SetupPage() {
     return <Navigate to="/" replace />
   }
   if (phase !== 'seeding' && phase !== 'complete') {
-    if (!needsSetup && authenticated) return <Navigate to="/" replace />
-    if (!needsSetup) return <Navigate to="/login" replace />
+    if (needsSeed && authenticated) {
+      // Auto-trigger seeding for admin after password reset
+    } else if (!needsSetup && authenticated) {
+      return <Navigate to="/" replace />
+    } else if (!needsSetup && !needsSeed) {
+      return <Navigate to="/login" replace />
+    }
   }
 
   const startSeeding = () => {

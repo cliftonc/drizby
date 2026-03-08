@@ -301,7 +301,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             src="/logo.png"
             alt="Drizby"
             className="w-5 h-5"
-            style={{ filter: 'brightness(0) invert(1)', opacity: 0.9 }}
+            style={{ opacity: 1 }}
           />
           <span className="text-base font-bold">Drizby</span>
         </div>
@@ -359,7 +359,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               src="/logo.png"
               alt="Drizby"
               className="w-6 h-6 shrink-0"
-              style={{ filter: 'brightness(0) invert(1)', opacity: 0.9 }}
+              style={{ opacity: 1 }}
             />
             {!collapsed && <span className="text-lg font-bold">Drizby</span>}
           </div>

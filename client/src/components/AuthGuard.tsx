@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext'
 import PendingApprovalPage from '../pages/PendingApprovalPage'
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isLoading, needsSetup, authenticated, user } = useAuth()
+  const { isLoading, needsSetup, pendingAdminSetup, needsSeed, authenticated, user } = useAuth()
 
   if (isLoading) {
     return (
@@ -25,8 +25,17 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     return <Navigate to="/setup" replace />
   }
 
+  if (pendingAdminSetup) {
+    return <Navigate to="/pending-setup" replace />
+  }
+
   if (!authenticated) {
     return <Navigate to="/login" replace />
+  }
+
+  // Admin needs to seed demo data after password reset
+  if (needsSeed && user?.role === 'admin') {
+    return <Navigate to="/setup" replace />
   }
 
   if (user?.role === 'user') {

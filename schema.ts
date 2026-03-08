@@ -194,6 +194,16 @@ export const userSessions = sqliteTable('user_sessions', {
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })
 
+// Password reset tokens
+export const passwordResetTokens = sqliteTable('password_reset_tokens', {
+  id: text('id').primaryKey(), // 64-char hex token
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
 // OAuth accounts
 export const oauthAccounts = sqliteTable(
   'oauth_accounts',
@@ -258,6 +268,13 @@ export const oauthAccountsRelations = relations(oauthAccounts, ({ one }) => ({
   }),
 }))
 
+export const passwordResetTokensRelations = relations(passwordResetTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [passwordResetTokens.userId],
+    references: [users.id],
+  }),
+}))
+
 // Export schema for use with Drizzle
 export const schema = {
   connections,
@@ -269,12 +286,14 @@ export const schema = {
   users,
   userSessions,
   oauthAccounts,
+  passwordResetTokens,
   connectionsRelations,
   schemaFilesRelations,
   cubeDefinitionsRelations,
   usersRelations,
   userSessionsRelations,
   oauthAccountsRelations,
+  passwordResetTokensRelations,
 }
 
 export type Schema = typeof schema

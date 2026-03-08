@@ -51,6 +51,15 @@ VOLUME /app/data
 ENV NODE_ENV=production
 ENV PORT=3461
 
+# Email notifications (optional)
+# ENV RESEND_API_KEY=
+# ENV RESEND_FROM_EMAIL=
+# ENV APP_URL=
+ENV APP_NAME=Drizby
+
+# Auto-setup: if set (with RESEND_API_KEY), creates admin and sends reset email on first run
+# ENV ADMIN_EMAIL=
+
 EXPOSE 3461
 
 # Migrations run automatically on startup (bundled in dist/server.js)

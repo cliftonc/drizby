@@ -49,7 +49,7 @@ function useAppTheme(): 'light' | 'dark' {
       })
       return () => observer.disconnect()
     },
-    () => (document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')
+    () => (document.documentElement.getAttribute('data-theme') === 'drizby-dark' ? 'dark' : 'light')
   )
 }
 

@@ -4,6 +4,13 @@ import { Hono } from 'hono'
 import { users } from '../../schema'
 import { hashPassword } from '../auth/password'
 import { guardPermission } from '../permissions/guard'
+import {
+  createAccountCreatedEmailTemplate,
+  createAccountStatusEmailTemplate,
+  getAppName,
+  getAppUrl,
+  sendEmail,
+} from '../services/email'
 
 interface Variables {
   db: DrizzleDatabase
@@ -65,6 +72,16 @@ app.post('/', async c => {
 
   try {
     const [user] = await db.insert(users).values(values).returning()
+
+    // Fire-and-forget: send account created email
+    const appName = getAppName()
+    const loginUrl = `${getAppUrl()}/login`
+    sendEmail(
+      user.email,
+      `Your ${appName} account has been created`,
+      createAccountCreatedEmailTemplate(user.name, appName, loginUrl, !!password)
+    ).catch(() => {})
+
     return c.json(
       {
         id: user.id,
@@ -100,13 +117,25 @@ app.put('/:id', async c => {
   if (body.isBlocked !== undefined) updates.isBlocked = body.isBlocked
   if (body.name !== undefined) updates.name = body.name
 
-  const result = await db.update(users).set(updates).where(eq(users.id, id)).returning()
-
-  if (result.length === 0) {
+  // Check current blocked status before update for change detection
+  const [existingUser] = await db.select().from(users).where(eq(users.id, id))
+  if (!existingUser) {
     return c.json({ error: 'User not found' }, 404)
   }
 
+  const result = await db.update(users).set(updates).where(eq(users.id, id)).returning()
+
   const user = result[0]
+
+  // Fire-and-forget: send account status email when isBlocked changes
+  if (body.isBlocked !== undefined && body.isBlocked !== existingUser.isBlocked) {
+    sendEmail(
+      user.email,
+      `Your account has been ${body.isBlocked ? 'blocked' : 'unblocked'} on ${getAppName()}`,
+      createAccountStatusEmailTemplate(user.name, getAppName(), body.isBlocked)
+    ).catch(() => {})
+  }
+
   return c.json({
     id: user.id,
     email: user.email,

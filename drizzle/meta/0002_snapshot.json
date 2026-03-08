@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "bfb2d90a-6f28-4d67-b668-f8036cfa7fdf",
-  "prevId": "737b6718-1656-446d-a14d-cf76d1452e28",
+  "id": "f9e8ac19-4909-46f2-a1a4-ad1a4741b911",
+  "prevId": "bfb2d90a-6f28-4d67-b668-f8036cfa7fdf",
   "tables": {
     "analytics_pages": {
       "name": "analytics_pages",
@@ -478,6 +478,58 @@
         "oauth_accounts_user_id_users_id_fk": {
           "name": "oauth_accounts_user_id_users_id_fk",
           "tableFrom": "oauth_accounts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "password_reset_tokens": {
+      "name": "password_reset_tokens",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "password_reset_tokens_user_id_users_id_fk": {
+          "name": "password_reset_tokens_user_id_users_id_fk",
+          "tableFrom": "password_reset_tokens",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"

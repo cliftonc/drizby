@@ -4,7 +4,9 @@
 
 import 'dotenv/config'
 import { serve } from '@hono/node-server'
-import { runMigrations } from './db/index'
+import { db, runMigrations } from './db/index'
+import { runAutoSetup } from './services/auto-setup'
+import { logEmailConfig } from './services/email'
 import app, { initializeConnections } from '../app'
 
 const port = parseInt(process.env.PORT || '3461')
@@ -14,8 +16,13 @@ async function start() {
   console.log('Running migrations...')
   runMigrations()
 
+  // Auto-setup: create admin if ADMIN_EMAIL + RESEND_API_KEY are set
+  await runAutoSetup(db)
+
   // Initialize all connections and compile cubes from DB
   await initializeConnections()
+
+  logEmailConfig()
 
   console.log(`Starting Drizby server on http://localhost:${port}`)
   console.log(`Analytics API: http://localhost:${port}/cubejs-api/v1/meta`)

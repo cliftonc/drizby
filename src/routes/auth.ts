@@ -1,9 +1,10 @@
+import crypto from 'node:crypto'
 import { generateCodeVerifier, generateState } from 'arctic'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { count, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
-import { oauthAccounts, users } from '../../schema'
+import { oauthAccounts, passwordResetTokens, settings, users } from '../../schema'
 import { authMiddleware, optionalAuth } from '../auth/middleware'
 import { createGoogleClient, fetchGoogleProfile } from '../auth/oauth'
 import { hashPassword, verifyPassword } from '../auth/password'
@@ -14,6 +15,16 @@ import {
   getSessionCookie,
   setSessionCookie,
 } from '../auth/session'
+import {
+  createNewUserNotificationTemplate,
+  createPasswordChangedEmailTemplate,
+  createPasswordResetConfirmEmailTemplate,
+  createPasswordResetEmailTemplate,
+  createWelcomeEmailTemplate,
+  getAppName,
+  getAppUrl,
+  sendEmail,
+} from '../services/email'
 
 interface Variables {
   db: DrizzleDatabase
@@ -29,8 +40,24 @@ app.get('/status', optionalAuth, async c => {
   const needsSetup = userCount === 0
   const auth = c.get('auth') as any
 
+  // Check setup_status setting
+  let pendingAdminSetup = false
+  let needsSeed = false
+  if (!needsSetup) {
+    const [statusRow] = await db
+      .select()
+      .from(settings)
+      .where(eq(settings.key, 'setup_status'))
+    if (statusRow) {
+      pendingAdminSetup = statusRow.value === 'pending_admin_reset'
+      needsSeed = statusRow.value === 'needs_seed'
+    }
+  }
+
   return c.json({
     needsSetup,
+    pendingAdminSetup,
+    needsSeed,
     authenticated: !!auth,
     user: auth
       ? {
@@ -120,6 +147,31 @@ app.post('/register', async c => {
 
     const sessionId = await createSession(db, user.id)
     setSessionCookie(c, sessionId)
+
+    // Fire-and-forget: send welcome email and notify admins
+    const appName = getAppName()
+    const appUrl = getAppUrl()
+
+    sendEmail(
+      user.email,
+      `Welcome to ${appName}`,
+      createWelcomeEmailTemplate(user.name, appName, `${appUrl}/login`)
+    ).catch(() => {})
+
+    // Notify all admins
+    db.select({ email: users.email, name: users.name })
+      .from(users)
+      .where(eq(users.role, 'admin'))
+      .then((admins: any[]) => {
+        for (const admin of admins) {
+          sendEmail(
+            admin.email,
+            `New user registered on ${appName}`,
+            createNewUserNotificationTemplate(user.name, user.email, appName, `${appUrl}/settings/users`)
+          ).catch(() => {})
+        }
+      })
+      .catch(() => {})
 
     return c.json(
       {
@@ -217,6 +269,160 @@ app.put('/password', authMiddleware, async c => {
     .update(users)
     .set({ passwordHash, updatedAt: new Date() })
     .where(eq(users.id, auth.user.id))
+
+  // Fire-and-forget: send password changed notification
+  sendEmail(
+    auth.user.email,
+    `Password changed on ${getAppName()}`,
+    createPasswordChangedEmailTemplate(auth.user.name, getAppName())
+  ).catch(() => {})
+
+  return c.json({ success: true })
+})
+
+// Forgot password — public endpoint
+app.post('/forgot-password', async c => {
+  const db = c.get('db') as any
+  const { email } = await c.req.json()
+
+  // Always return 200 to avoid leaking email existence
+  if (!email) {
+    return c.json({ success: true })
+  }
+
+  const [user] = await db.select().from(users).where(eq(users.email, email))
+
+  if (user && !user.isBlocked) {
+    // Generate token
+    const token = crypto.randomBytes(32).toString('hex')
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
+    await db.insert(passwordResetTokens).values({
+      id: token,
+      userId: user.id,
+      expiresAt,
+    })
+
+    const appName = getAppName()
+    const resetUrl = `${getAppUrl()}/reset-password?token=${token}`
+
+    sendEmail(
+      user.email,
+      `Reset your ${appName} password`,
+      createPasswordResetEmailTemplate(user.name, resetUrl, appName)
+    ).catch(() => {})
+  }
+
+  return c.json({ success: true })
+})
+
+// Reset password — public endpoint
+app.post('/reset-password', async c => {
+  const db = c.get('db') as any
+  const { token, password } = await c.req.json()
+
+  if (!token || !password) {
+    return c.json({ error: 'Token and password are required' }, 400)
+  }
+
+  if (password.length < 8) {
+    return c.json({ error: 'Password must be at least 8 characters' }, 400)
+  }
+
+  // Find token
+  const [resetToken] = await db
+    .select()
+    .from(passwordResetTokens)
+    .where(eq(passwordResetTokens.id, token))
+
+  if (!resetToken) {
+    return c.json({ error: 'Invalid or expired reset link' }, 400)
+  }
+
+  if (new Date() > resetToken.expiresAt) {
+    // Clean up expired token
+    await db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, token))
+    return c.json({ error: 'Invalid or expired reset link' }, 400)
+  }
+
+  // Update password
+  const passwordHash = await hashPassword(password)
+  await db
+    .update(users)
+    .set({ passwordHash, updatedAt: new Date() })
+    .where(eq(users.id, resetToken.userId))
+
+  // Delete all tokens for this user
+  await db
+    .delete(passwordResetTokens)
+    .where(eq(passwordResetTokens.userId, resetToken.userId))
+
+  // If setup_status is pending_admin_reset, transition to needs_seed
+  const [statusRow] = await db
+    .select()
+    .from(settings)
+    .where(eq(settings.key, 'setup_status'))
+  if (statusRow?.value === 'pending_admin_reset') {
+    await db
+      .update(settings)
+      .set({ value: 'needs_seed', updatedAt: new Date() })
+      .where(eq(settings.key, 'setup_status'))
+  }
+
+  // Send confirmation email
+  const [user] = await db.select().from(users).where(eq(users.id, resetToken.userId))
+  if (user) {
+    sendEmail(
+      user.email,
+      `Password reset complete on ${getAppName()}`,
+      createPasswordResetConfirmEmailTemplate(user.name, getAppName())
+    ).catch(() => {})
+  }
+
+  return c.json({ success: true })
+})
+
+// Resend setup email — public endpoint for pending admin setup
+app.post('/resend-setup-email', async c => {
+  const db = c.get('db') as any
+
+  // Only works when setup_status is pending_admin_reset
+  const [statusRow] = await db
+    .select()
+    .from(settings)
+    .where(eq(settings.key, 'setup_status'))
+
+  if (statusRow?.value !== 'pending_admin_reset') {
+    return c.json({ success: true })
+  }
+
+  // Find the admin user (first admin)
+  const [admin] = await db.select().from(users).where(eq(users.role, 'admin'))
+  if (!admin) {
+    return c.json({ success: true })
+  }
+
+  // Delete existing tokens for this user
+  await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, admin.id))
+
+  // Create new token
+  const token = crypto.randomBytes(32).toString('hex')
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
+  await db.insert(passwordResetTokens).values({
+    id: token,
+    userId: admin.id,
+    expiresAt,
+  })
+
+  const appName = getAppName()
+  const resetUrl = `${getAppUrl()}/reset-password?token=${token}`
+
+  sendEmail(
+    admin.email,
+    `Set up your ${appName} admin account`,
+    createPasswordResetEmailTemplate(admin.name, resetUrl, appName)
+  ).catch(() => {})
 
   return c.json({ success: true })
 })

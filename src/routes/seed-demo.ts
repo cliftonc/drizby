@@ -6,7 +6,8 @@
 import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
-import { analyticsPages, connections, cubeDefinitions, schemaFiles } from '../../schema'
+import { eq } from 'drizzle-orm'
+import { analyticsPages, connections, cubeDefinitions, schemaFiles, settings } from '../../schema'
 import { guardPermission } from '../permissions/guard'
 import { connectionManager } from '../services/connection-manager'
 
@@ -303,6 +304,18 @@ app.get('/', async c => {
         demoConnection.engineType
       )
       await connectionManager.compileAll(db)
+
+      // Mark setup as complete
+      const [statusRow] = await db
+        .select()
+        .from(settings)
+        .where(eq(settings.key, 'setup_status'))
+      if (statusRow) {
+        await db
+          .update(settings)
+          .set({ value: 'complete', updatedAt: new Date() })
+          .where(eq(settings.key, 'setup_status'))
+      }
 
       await stream.writeSSE({
         id: String(id++),

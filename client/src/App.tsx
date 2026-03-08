@@ -4,11 +4,14 @@ import Layout from './components/Layout'
 import AnalysisBuilderPage from './pages/AnalysisBuilderPage'
 import DashboardListPage from './pages/DashboardListPage'
 import DashboardViewPage from './pages/DashboardViewPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import HomePage from './pages/HomePage'
+import PendingSetupPage from './pages/PendingSetupPage'
 import LoginPage from './pages/LoginPage'
 import NotebookViewPage from './pages/NotebookViewPage'
 import NotebooksListPage from './pages/NotebooksListPage'
 import RegisterPage from './pages/RegisterPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import SchemaEditorPage from './pages/SchemaEditorPage'
 import SetupPage from './pages/SetupPage'
 import SettingsPage from './pages/settings/SettingsPage'
@@ -57,7 +60,10 @@ function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/setup" element={<SetupPage />} />
+      <Route path="/pending-setup" element={<PendingSetupPage />} />
       <Route
         path="/*"
         element={
