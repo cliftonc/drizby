@@ -15,6 +15,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "setup": "npm run db:generate && npm run db:migrate && npm run db:seed",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "lint:fix": "biome check . --write"
@@ -32,6 +33,7 @@
     "d3": "^7.9.0",
     "dotenv": "^17.2.1",
     "drizzle-cube": "^0.4.25",
+    "drizzle-kit": "^0.31.4",
     "drizzle-orm": "^0.45.0",
     "hono": "^4.0.0",
     "openai": "^6.25.0",
@@ -40,7 +42,6 @@
     "react-is": "^19.2.4",
     "react-resizable": "^3.0.0",
     "react-router-dom": "^6.8.0",
-    "drizzle-kit": "^0.31.4",
     "recharts": "^3.5.1",
     "typescript": "^5.9.3"
   },
@@ -60,7 +61,8 @@
     "react-dom": "^18.0.0",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.20.4",
-    "vite": "^5.0.0"
+    "vite": "^5.0.0",
+    "vitest": "^4.0.18"
   },
   "keywords": [
     "bi",

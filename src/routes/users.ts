@@ -3,7 +3,6 @@ import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { passwordResetTokens, users } from '../../schema'
-import { hashPassword } from '../auth/password'
 import { guardPermission } from '../permissions/guard'
 import {
   createAccountStatusEmailTemplate,

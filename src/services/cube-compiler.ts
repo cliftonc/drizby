@@ -6,10 +6,14 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
+import vm from 'node:vm'
 import ts from 'typescript'
 
 const esmRequire = createRequire(import.meta.url)
 const PROJECT_ROOT = process.cwd()
+
+/** VM execution timeout in ms. Override via SANDBOX_TIMEOUT_MS env var for tests. */
+const SANDBOX_TIMEOUT_MS = Number(process.env.SANDBOX_TIMEOUT_MS) || 30000
 
 interface CompileResult {
   exports: Record<string, any>
@@ -223,7 +227,20 @@ function typeCheckAndCompile(
     return { exports: {}, errors }
   }
 
-  // Type-check passed — now transpile (fast, no checking) and execute
+  return transpileAndExecute(sourceCode, resolveModule)
+}
+
+/**
+ * Transpile TypeScript and execute in a sandboxed V8 context.
+ * Skips type-checking — use typeCheckAndCompile() for full validation.
+ * Exported for testing the sandbox in isolation.
+ */
+export function transpileAndExecute(
+  sourceCode: string,
+  resolveModule: (specifier: string) => any
+): CompileResult {
+  const errors: CompileError[] = []
+
   let jsCode: string
   try {
     const transpiled = ts.transpileModule(sourceCode, {
@@ -235,7 +252,7 @@ function typeCheckAndCompile(
     return { exports: {}, errors }
   }
 
-  // Execute with sandboxed require
+  // Execute in isolated V8 context with sandboxed require
   const moduleObj = { exports: {} as Record<string, any> }
   const sandboxedRequire = (specifier: string) => {
     try {
@@ -246,8 +263,27 @@ function typeCheckAndCompile(
   }
 
   try {
-    const fn = new Function('require', 'exports', 'module', jsCode)
-    fn(sandboxedRequire, moduleObj.exports, moduleObj)
+    // Object.create(null) prevents prototype chain escapes (e.g. this.constructor.constructor)
+    const contextObj = Object.create(null)
+    contextObj.require = sandboxedRequire
+    contextObj.exports = moduleObj.exports
+    contextObj.module = moduleObj
+
+    const context = vm.createContext(contextObj, {
+      name: 'cube-compiler-sandbox',
+      codeGeneration: {
+        strings: false, // Blocks eval() and new Function() inside sandbox
+        wasm: false,
+      },
+    })
+
+    const script = new vm.Script(jsCode, {
+      filename: 'compiled-cube.js',
+    })
+
+    script.runInContext(context, {
+      timeout: SANDBOX_TIMEOUT_MS,
+    })
   } catch (err: any) {
     errors.push({ message: `Runtime error: ${err.message}` })
     return { exports: {}, errors }
