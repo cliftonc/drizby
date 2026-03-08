@@ -67,7 +67,10 @@ export default function ResetPasswordPage() {
           <p style={{ color: 'var(--dc-error)', fontSize: 14, marginBottom: 16 }}>
             Invalid reset link. No token provided.
           </p>
-          <Link to="/login" style={{ color: 'var(--dc-primary)', textDecoration: 'none', fontSize: 13 }}>
+          <Link
+            to="/login"
+            style={{ color: 'var(--dc-primary)', textDecoration: 'none', fontSize: 13 }}
+          >
             Back to sign in
           </Link>
         </div>

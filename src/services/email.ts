@@ -19,7 +19,9 @@ export function getAppName(): string {
 export function logEmailConfig(): void {
   if (process.env.RESEND_API_KEY) {
     const from = process.env.RESEND_FROM_EMAIL || `${getAppName()} <noreply@example.com>`
-    console.log(`Resend email configured — from: ${from}, appName: ${getAppName()}, appUrl: ${getAppUrl()}`)
+    console.log(
+      `Resend email configured — from: ${from}, appName: ${getAppName()}, appUrl: ${getAppUrl()}`
+    )
   } else {
     console.log('Resend email not configured (RESEND_API_KEY not set) — emails will be skipped')
   }
@@ -97,14 +99,21 @@ function button(text: string, url: string): string {
 // Templates
 // ---------------------------------------------------------------------------
 
-export function createWelcomeEmailTemplate(userName: string, appName: string, loginUrl: string): string {
-  return emailLayout(`
+export function createWelcomeEmailTemplate(
+  userName: string,
+  appName: string,
+  loginUrl: string
+): string {
+  return emailLayout(
+    `
 <h2 style="margin:0 0 16px;font-size:18px;color:#f1f5f9;">Welcome to ${appName}!</h2>
 <p style="margin:0 0 8px;">Hi ${userName},</p>
 <p style="margin:0 0 16px;">Your account has been created. You can sign in to start exploring your data.</p>
 ${button('Sign In', loginUrl)}
 <p style="margin:0;color:#94a3b8;font-size:13px;">If you didn't create this account, you can ignore this email.</p>
-`, appName)
+`,
+    appName
+  )
 }
 
 export function createNewUserNotificationTemplate(
@@ -113,7 +122,8 @@ export function createNewUserNotificationTemplate(
   appName: string,
   usersUrl: string
 ): string {
-  return emailLayout(`
+  return emailLayout(
+    `
 <h2 style="margin:0 0 16px;font-size:18px;color:#f1f5f9;">New User Registered</h2>
 <p style="margin:0 0 8px;">A new user has registered on ${appName}:</p>
 <table style="margin:16px 0;width:100%;" cellpadding="0" cellspacing="0">
@@ -121,49 +131,71 @@ export function createNewUserNotificationTemplate(
 <tr><td style="padding:8px 12px;background-color:#2d3a4f;border-radius:0 0 6px 6px;color:#94a3b8;font-size:13px;">Email</td><td style="padding:8px 12px;background-color:#2d3a4f;border-radius:0 0 6px 6px;color:#f1f5f9;font-size:13px;">${userEmail}</td></tr>
 </table>
 ${button('Manage Users', usersUrl)}
-`, appName)
+`,
+    appName
+  )
 }
 
 export function createPasswordChangedEmailTemplate(userName: string, appName: string): string {
-  return emailLayout(`
+  return emailLayout(
+    `
 <h2 style="margin:0 0 16px;font-size:18px;color:#f1f5f9;">Password Changed</h2>
 <p style="margin:0 0 8px;">Hi ${userName},</p>
 <p style="margin:0 0 16px;">Your password on ${appName} has been changed successfully.</p>
 <p style="margin:0;color:#94a3b8;font-size:13px;">If you didn't make this change, please contact your administrator immediately.</p>
-`, appName)
+`,
+    appName
+  )
 }
 
-export function createPasswordResetEmailTemplate(userName: string, resetUrl: string, appName: string): string {
-  return emailLayout(`
+export function createPasswordResetEmailTemplate(
+  userName: string,
+  resetUrl: string,
+  appName: string
+): string {
+  return emailLayout(
+    `
 <h2 style="margin:0 0 16px;font-size:18px;color:#f1f5f9;">Password Reset Request</h2>
 <p style="margin:0 0 8px;">Hi ${userName},</p>
 <p style="margin:0 0 16px;">We received a request to reset your password on ${appName}. Click the button below to set a new password. This link expires in 1 hour.</p>
 ${button('Reset Password', resetUrl)}
 <p style="margin:0;color:#94a3b8;font-size:13px;">If you didn't request this, you can safely ignore this email.</p>
-`, appName)
+`,
+    appName
+  )
 }
 
 export function createPasswordResetConfirmEmailTemplate(userName: string, appName: string): string {
-  return emailLayout(`
+  return emailLayout(
+    `
 <h2 style="margin:0 0 16px;font-size:18px;color:#f1f5f9;">Password Reset Complete</h2>
 <p style="margin:0 0 8px;">Hi ${userName},</p>
 <p style="margin:0 0 16px;">Your password on ${appName} has been reset successfully. You can now sign in with your new password.</p>
 <p style="margin:0;color:#94a3b8;font-size:13px;">If you didn't reset your password, please contact your administrator immediately.</p>
-`, appName)
+`,
+    appName
+  )
 }
 
-export function createAccountStatusEmailTemplate(userName: string, appName: string, isBlocked: boolean): string {
+export function createAccountStatusEmailTemplate(
+  userName: string,
+  appName: string,
+  isBlocked: boolean
+): string {
   const status = isBlocked ? 'Blocked' : 'Unblocked'
   const message = isBlocked
     ? 'Your account has been blocked by an administrator. You will not be able to sign in until your account is unblocked.'
     : 'Your account has been unblocked by an administrator. You can now sign in again.'
 
-  return emailLayout(`
+  return emailLayout(
+    `
 <h2 style="margin:0 0 16px;font-size:18px;color:#f1f5f9;">Account ${status}</h2>
 <p style="margin:0 0 8px;">Hi ${userName},</p>
 <p style="margin:0 0 16px;">${message}</p>
 <p style="margin:0;color:#94a3b8;font-size:13px;">If you have questions, please contact your administrator.</p>
-`, appName)
+`,
+    appName
+  )
 }
 
 export function createAccountCreatedEmailTemplate(
@@ -176,13 +208,16 @@ export function createAccountCreatedEmailTemplate(
     ? 'You can sign in using the password that was set for you.'
     : 'No password has been set for your account. Please use the "Forgot password?" link on the login page to set one.'
 
-  return emailLayout(`
+  return emailLayout(
+    `
 <h2 style="margin:0 0 16px;font-size:18px;color:#f1f5f9;">Your Account Has Been Created</h2>
 <p style="margin:0 0 8px;">Hi ${userName},</p>
 <p style="margin:0 0 16px;">An account has been created for you on ${appName}. ${passwordNote}</p>
 ${button('Sign In', loginUrl)}
 <p style="margin:0;color:#94a3b8;font-size:13px;">If you weren't expecting this, please contact your administrator.</p>
-`, appName)
+`,
+    appName
+  )
 }
 
 export function createInviteEmailTemplate(
@@ -191,11 +226,14 @@ export function createInviteEmailTemplate(
   appName: string,
   resetUrl: string
 ): string {
-  return emailLayout(`
+  return emailLayout(
+    `
 <h2 style="margin:0 0 16px;font-size:18px;color:#f1f5f9;">You've been invited to ${appName}</h2>
 <p style="margin:0 0 8px;">Hi ${userName},</p>
 <p style="margin:0 0 16px;">${inviterName} has invited you to join ${appName}. Click the button below to set your password and get started. This link expires in 24 hours.</p>
 ${button('Accept Invite', resetUrl)}
 <p style="margin:0;color:#94a3b8;font-size:13px;">If you weren't expecting this invitation, you can safely ignore this email.</p>
-`, appName)
+`,
+    appName
+  )
 }

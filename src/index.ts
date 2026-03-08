@@ -4,12 +4,12 @@
 
 import 'dotenv/config'
 import { serve } from '@hono/node-server'
+import app, { initializeConnections } from '../app'
 import { db, runMigrations } from './db/index'
 import { runAutoSetup } from './services/auto-setup'
 import { logEmailConfig } from './services/email'
-import app, { initializeConnections } from '../app'
 
-const port = parseInt(process.env.PORT || '3461')
+const port = Number.parseInt(process.env.PORT || '3461')
 
 async function start() {
   // Run migrations
@@ -29,13 +29,13 @@ async function start() {
 
   serve({
     fetch: app.fetch,
-    port
+    port,
   })
 
   console.log(`Server running on port ${port}`)
 }
 
-start().catch((err) => {
+start().catch(err => {
   console.error('Failed to start server:', err)
   process.exit(1)
 })

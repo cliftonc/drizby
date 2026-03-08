@@ -28,7 +28,7 @@ export default function SetupPage() {
       setAutoSeedStarted(true)
       startSeeding()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needsSeed, authenticated, autoSeedStarted])
 
   // During seeding/complete phases, don't redirect — even if auth context updates

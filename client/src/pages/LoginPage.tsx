@@ -112,7 +112,14 @@ export default function LoginPage() {
             />
           </div>
           <div style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 4,
+              }}
+            >
               <label
                 style={{
                   fontSize: 13,

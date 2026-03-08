@@ -260,7 +260,14 @@ export default function TeamPage() {
                 {createMutation.isPending ? 'Sending invite...' : 'Send Invite'}
               </button>
             </div>
-            <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: 12, color: 'var(--dc-text-muted)' }}>
+            <p
+              style={{
+                gridColumn: '1 / -1',
+                margin: 0,
+                fontSize: 12,
+                color: 'var(--dc-text-muted)',
+              }}
+            >
               An email will be sent with a link to set their password.
             </p>
           </form>

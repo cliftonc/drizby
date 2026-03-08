@@ -264,7 +264,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       }}
     >
       {(isMobile || !collapsed) && user && (
-        <span className="text-[11px] whitespace-nowrap overflow-hidden text-ellipsis min-w-0" style={{ color: 'rgba(255,255,255,0.5)' }}>
+        <span
+          className="text-[11px] whitespace-nowrap overflow-hidden text-ellipsis min-w-0"
+          style={{ color: 'rgba(255,255,255,0.5)' }}
+        >
           {user.name}
         </span>
       )}
@@ -297,12 +300,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {icons.hamburger}
         </button>
         <div className="flex items-center gap-1.5">
-          <img
-            src="/logo.png"
-            alt="Drizby"
-            className="w-5 h-5"
-            style={{ opacity: 1 }}
-          />
+          <img src="/logo.png" alt="Drizby" className="w-5 h-5" style={{ opacity: 1 }} />
           <span className="text-base font-bold">Drizby</span>
         </div>
         <ThemeToggle />
@@ -326,9 +324,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           paddingBottom: 12,
         }}
       >
-        <div className="py-2 flex-1 overflow-auto">
-          {renderNavItems(true)}
-        </div>
+        <div className="py-2 flex-1 overflow-auto">{renderNavItems(true)}</div>
         {renderSettingsLink(true)}
         {renderUserRow(true)}
       </nav>
@@ -355,20 +351,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           }}
         >
           <div className="flex items-center gap-1.5">
-            <img
-              src="/logo.png"
-              alt="Drizby"
-              className="w-6 h-6 shrink-0"
-              style={{ opacity: 1 }}
-            />
+            <img src="/logo.png" alt="Drizby" className="w-6 h-6 shrink-0" style={{ opacity: 1 }} />
             {!collapsed && <span className="text-lg font-bold">Drizby</span>}
           </div>
           {!collapsed && <ThemeToggle />}
         </div>
 
-        <div className="py-2 flex-1 overflow-auto">
-          {renderNavItems(false)}
-        </div>
+        <div className="py-2 flex-1 overflow-auto">{renderNavItems(false)}</div>
         {renderSettingsLink(false)}
         {renderUserRow(false)}
       </nav>

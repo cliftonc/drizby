@@ -101,9 +101,16 @@ export default function PendingSetupPage() {
           <p style={{ color: 'var(--dc-text)', fontSize: 15, fontWeight: 500, margin: '0 0 8px' }}>
             Check your inbox
           </p>
-          <p style={{ color: 'var(--dc-text-muted)', fontSize: 13, margin: '0 0 20px', lineHeight: 1.5 }}>
-            A password reset link has been sent to the admin email address.
-            Follow the link to set your password and complete setup.
+          <p
+            style={{
+              color: 'var(--dc-text-muted)',
+              fontSize: 13,
+              margin: '0 0 20px',
+              lineHeight: 1.5,
+            }}
+          >
+            A password reset link has been sent to the admin email address. Follow the link to set
+            your password and complete setup.
           </p>
 
           <button
@@ -125,7 +132,14 @@ export default function PendingSetupPage() {
           </button>
 
           {resent && (
-            <p style={{ color: 'var(--dc-success, #10b981)', fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+            <p
+              style={{
+                color: 'var(--dc-success, #10b981)',
+                fontSize: 12,
+                marginTop: 8,
+                marginBottom: 0,
+              }}
+            >
               Email sent! Check your inbox.
             </p>
           )}

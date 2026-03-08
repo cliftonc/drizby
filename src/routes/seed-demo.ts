@@ -4,9 +4,9 @@
  */
 
 import type { DrizzleDatabase } from 'drizzle-cube/server'
+import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
-import { eq } from 'drizzle-orm'
 import { analyticsPages, connections, cubeDefinitions, schemaFiles, settings } from '../../schema'
 import { guardPermission } from '../permissions/guard'
 import { connectionManager } from '../services/connection-manager'
@@ -206,7 +206,10 @@ app.get('/', async c => {
       const prodData = makeProductivityData(emps)
       const BATCH_SIZE = 100
       for (let i = 0; i < prodData.length; i += BATCH_SIZE) {
-        localDb.insert(productivity).values(prodData.slice(i, i + BATCH_SIZE)).run()
+        localDb
+          .insert(productivity)
+          .values(prodData.slice(i, i + BATCH_SIZE))
+          .run()
       }
 
       sqlite.close()
@@ -266,7 +269,10 @@ app.get('/', async c => {
               }),
               chartType: 'bar',
               chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.count'] },
-              w: 6, h: 4, x: 0, y: 0,
+              w: 6,
+              h: 4,
+              x: 0,
+              y: 0,
             },
             {
               id: 'p2',
@@ -277,7 +283,10 @@ app.get('/', async c => {
               }),
               chartType: 'bar',
               chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.avgSalary'] },
-              w: 6, h: 4, x: 6, y: 0,
+              w: 6,
+              h: 4,
+              x: 6,
+              y: 0,
             },
             {
               id: 'p3',
@@ -287,8 +296,14 @@ app.get('/', async c => {
                 timeDimensions: [{ dimension: 'Productivity.date', granularity: 'week' }],
               }),
               chartType: 'line',
-              chartConfig: { xAxis: ['Productivity.date'], yAxis: ['Productivity.totalLinesOfCode'] },
-              w: 12, h: 4, x: 0, y: 4,
+              chartConfig: {
+                xAxis: ['Productivity.date'],
+                yAxis: ['Productivity.totalLinesOfCode'],
+              },
+              w: 12,
+              h: 4,
+              x: 0,
+              y: 4,
             },
           ],
           filters: [],
@@ -306,10 +321,7 @@ app.get('/', async c => {
       await connectionManager.compileAll(db)
 
       // Mark setup as complete
-      const [statusRow] = await db
-        .select()
-        .from(settings)
-        .where(eq(settings.key, 'setup_status'))
+      const [statusRow] = await db.select().from(settings).where(eq(settings.key, 'setup_status'))
       if (statusRow) {
         await db
           .update(settings)

@@ -6,12 +6,7 @@
 import crypto from 'node:crypto'
 import { count } from 'drizzle-orm'
 import { passwordResetTokens, settings, users } from '../../schema'
-import {
-  createPasswordResetEmailTemplate,
-  getAppName,
-  getAppUrl,
-  sendEmail,
-} from './email'
+import { createPasswordResetEmailTemplate, getAppName, getAppUrl, sendEmail } from './email'
 
 export async function runAutoSetup(db: any): Promise<void> {
   const adminEmail = process.env.ADMIN_EMAIL

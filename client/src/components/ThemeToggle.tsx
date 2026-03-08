@@ -76,5 +76,8 @@ export default function ThemeToggle() {
 }
 
 function applyTheme(theme: Theme) {
-  document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'drizby-dark' : 'drizby-light')
+  document.documentElement.setAttribute(
+    'data-theme',
+    theme === 'dark' ? 'drizby-dark' : 'drizby-light'
+  )
 }

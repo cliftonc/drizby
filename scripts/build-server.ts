@@ -14,11 +14,7 @@ await build({
   outfile: 'dist/server.js',
   sourcemap: true,
   // Native modules + TypeScript (huge, uses dynamic requires for runtime compilation)
-  external: [
-    'better-sqlite3',
-    'typescript',
-    'postgres',
-  ],
+  external: ['better-sqlite3', 'typescript', 'postgres'],
   banner: {
     // createRequire shim for external CJS modules in ESM bundle
     js: `import { createRequire as __createRequire } from 'node:module';const require = __createRequire(import.meta.url);`,

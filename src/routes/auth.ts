@@ -44,10 +44,7 @@ app.get('/status', optionalAuth, async c => {
   let pendingAdminSetup = false
   let needsSeed = false
   if (!needsSetup) {
-    const [statusRow] = await db
-      .select()
-      .from(settings)
-      .where(eq(settings.key, 'setup_status'))
+    const [statusRow] = await db.select().from(settings).where(eq(settings.key, 'setup_status'))
     if (statusRow) {
       pendingAdminSetup = statusRow.value === 'pending_admin_reset'
       needsSeed = statusRow.value === 'needs_seed'
@@ -167,7 +164,12 @@ app.post('/register', async c => {
           sendEmail(
             admin.email,
             `New user registered on ${appName}`,
-            createNewUserNotificationTemplate(user.name, user.email, appName, `${appUrl}/settings/users`)
+            createNewUserNotificationTemplate(
+              user.name,
+              user.email,
+              appName,
+              `${appUrl}/settings/users`
+            )
           ).catch(() => {})
         }
       })
@@ -353,15 +355,10 @@ app.post('/reset-password', async c => {
     .where(eq(users.id, resetToken.userId))
 
   // Delete all tokens for this user
-  await db
-    .delete(passwordResetTokens)
-    .where(eq(passwordResetTokens.userId, resetToken.userId))
+  await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, resetToken.userId))
 
   // If setup_status is pending_admin_reset, transition to needs_seed
-  const [statusRow] = await db
-    .select()
-    .from(settings)
-    .where(eq(settings.key, 'setup_status'))
+  const [statusRow] = await db.select().from(settings).where(eq(settings.key, 'setup_status'))
   if (statusRow?.value === 'pending_admin_reset') {
     await db
       .update(settings)
@@ -391,10 +388,7 @@ app.post('/resend-setup-email', async c => {
   const db = c.get('db') as any
 
   // Only works when setup_status is pending_admin_reset
-  const [statusRow] = await db
-    .select()
-    .from(settings)
-    .where(eq(settings.key, 'setup_status'))
+  const [statusRow] = await db.select().from(settings).where(eq(settings.key, 'setup_status'))
 
   if (statusRow?.value !== 'pending_admin_reset') {
     return c.json({ success: true })

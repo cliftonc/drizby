@@ -64,12 +64,6 @@
     "vite": "^5.0.0",
     "vitest": "^4.0.18"
   },
-  "keywords": [
-    "bi",
-    "analytics",
-    "drizzle-cube",
-    "semantic-layer",
-    "dashboard"
-  ],
+  "keywords": ["bi", "analytics", "drizzle-cube", "semantic-layer", "dashboard"],
   "license": "MIT"
 }
