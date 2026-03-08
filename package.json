@@ -40,6 +40,7 @@
     "react-is": "^19.2.4",
     "react-resizable": "^3.0.0",
     "react-router-dom": "^6.8.0",
+    "drizzle-kit": "^0.31.4",
     "recharts": "^3.5.1",
     "typescript": "^5.9.3"
   },
@@ -54,7 +55,6 @@
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.21",
     "concurrently": "^8.2.0",
-    "drizzle-kit": "^0.31.4",
     "postcss": "^8.4.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
