@@ -11,6 +11,8 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { authMiddleware } from './src/auth/middleware'
 import { getSessionCookie, validateSession } from './src/auth/session'
+import { count, eq } from 'drizzle-orm'
+import { settings, users } from './schema'
 import { db } from './src/db/index'
 import { defineAbilitiesFor } from './src/permissions/abilities'
 import type { AppAbility } from './src/permissions/abilities'
@@ -71,8 +73,16 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Health check
-app.get('/health', c => {
-  return c.json({ status: 'ok', timestamp: new Date().toISOString() })
+app.get('/health', async c => {
+  const [{ value: userCount }] = await db.select({ value: count() }).from(users)
+  let setupStatus = 'ready'
+  if (userCount === 0) {
+    setupStatus = 'needs_setup'
+  } else {
+    const [row] = await db.select().from(settings).where(eq(settings.key, 'setup_status'))
+    if (row) setupStatus = row.value
+  }
+  return c.json({ status: 'ok', setupStatus, timestamp: new Date().toISOString() })
 })
 
 // Inject db into all API routes

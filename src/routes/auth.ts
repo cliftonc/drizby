@@ -369,6 +369,10 @@ app.post('/reset-password', async c => {
       .where(eq(settings.key, 'setup_status'))
   }
 
+  // Auto-login: create session for the user
+  const sessionId = await createSession(db, resetToken.userId)
+  setSessionCookie(c, sessionId)
+
   // Send confirmation email
   const [user] = await db.select().from(users).where(eq(users.id, resetToken.userId))
   if (user) {
