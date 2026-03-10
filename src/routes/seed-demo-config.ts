@@ -1,15 +1,9 @@
 /**
- * Database seeding script for Drizby
- * Creates the demo SQLite database and registers it as a connection in the internal DB.
+ * Shared demo seed configuration — schema source, cube source, and dashboard portlets.
+ * Used by both seed-demo.ts (SSE endpoint) and settings.ts (reseed endpoint).
  */
 
-import 'dotenv/config'
-import { analyticsPages, connections, cubeDefinitions, schemaFiles } from '../schema'
-import { db } from '../src/db/index'
-import { seedDemo } from './seed-demo'
-
-// Demo schema source code (TypeScript) — uses sqliteTable for the demo SQLite DB
-const DEMO_SCHEMA_SOURCE = `import { sqliteTable, integer, text, real } from 'drizzle-orm/sqlite-core'
+export const DEMO_SCHEMA_SOURCE = `import { sqliteTable, integer, text, real } from 'drizzle-orm/sqlite-core'
 
 export const employees = sqliteTable('employees', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -55,8 +49,7 @@ export const prEvents = sqliteTable('pr_events', {
 })
 `
 
-// Demo cube definitions source code (TypeScript)
-const DEMO_CUBES_SOURCE = `import { eq } from 'drizzle-orm'
+export const DEMO_CUBES_SOURCE = `import { eq } from 'drizzle-orm'
 import { defineCube } from 'drizzle-cube/server'
 import type { QueryContext, BaseQueryDefinition, Cube } from 'drizzle-cube/server'
 import { employees, departments, productivity, prEvents } from './demo-schema'
@@ -69,29 +62,14 @@ let prEventsCube: Cube
 employeesCube = defineCube('Employees', {
   title: 'Employee Analytics',
   description: 'Employee data and metrics',
-
   sql: (ctx: QueryContext): BaseQueryDefinition => ({
     from: employees,
     where: eq(employees.organisationId, ctx.securityContext.organisationId as number)
   }),
-
   joins: {
-    Departments: {
-      targetCube: () => departmentsCube,
-      relationship: 'belongsTo',
-      on: [
-        { source: employees.departmentId, target: departments.id }
-      ]
-    },
-    Productivity: {
-      targetCube: () => productivityCube,
-      relationship: 'hasMany',
-      on: [
-        { source: employees.id, target: productivity.employeeId }
-      ]
-    }
+    Departments: { targetCube: () => departmentsCube, relationship: 'belongsTo', on: [{ source: employees.departmentId, target: departments.id }] },
+    Productivity: { targetCube: () => productivityCube, relationship: 'hasMany', on: [{ source: employees.id, target: productivity.employeeId }] }
   },
-
   dimensions: {
     id: { name: 'id', title: 'Employee ID', sql: employees.id, type: 'number', primaryKey: true },
     name: { name: 'name', title: 'Employee Name', sql: employees.name, type: 'string' },
@@ -103,16 +81,9 @@ employeesCube = defineCube('Employees', {
     salary: { name: 'salary', title: 'Salary', sql: employees.salary, type: 'number' },
     createdAt: { name: 'createdAt', title: 'Hire Date', sql: employees.createdAt, type: 'time' }
   },
-
   measures: {
     count: { name: 'count', title: 'Total Employees', type: 'countDistinct', sql: employees.id },
-    activeCount: {
-      name: 'activeCount',
-      title: 'Active Employees',
-      type: 'countDistinct',
-      sql: employees.id,
-      filters: [() => eq(employees.active, true)]
-    },
+    activeCount: { name: 'activeCount', title: 'Active Employees', type: 'countDistinct', sql: employees.id, filters: [() => eq(employees.active, true)] },
     avgSalary: { name: 'avgSalary', title: 'Average Salary', sql: employees.salary, type: 'avg' },
     totalSalary: { name: 'totalSalary', title: 'Total Salary', sql: employees.salary, type: 'sum' },
     maxSalary: { name: 'maxSalary', title: 'Max Salary', sql: employees.salary, type: 'max' },
@@ -123,28 +94,18 @@ employeesCube = defineCube('Employees', {
 departmentsCube = defineCube('Departments', {
   title: 'Department Analytics',
   description: 'Department information and budget analysis',
-
   sql: (ctx: QueryContext): BaseQueryDefinition => ({
     from: departments,
     where: eq(departments.organisationId, ctx.securityContext.organisationId as number)
   }),
-
   joins: {
-    Employees: {
-      targetCube: () => employeesCube,
-      relationship: 'hasMany',
-      on: [
-        { source: departments.id, target: employees.departmentId }
-      ]
-    }
+    Employees: { targetCube: () => employeesCube, relationship: 'hasMany', on: [{ source: departments.id, target: employees.departmentId }] }
   },
-
   dimensions: {
     id: { name: 'id', title: 'Department ID', sql: departments.id, type: 'number', primaryKey: true },
     name: { name: 'name', title: 'Department Name', sql: departments.name, type: 'string' },
     budget: { name: 'budget', title: 'Budget', sql: departments.budget, type: 'number' }
   },
-
   measures: {
     count: { name: 'count', title: 'Department Count', type: 'countDistinct', sql: departments.id },
     totalBudget: { name: 'totalBudget', title: 'Total Budget', sql: departments.budget, type: 'sum' },
@@ -155,29 +116,14 @@ departmentsCube = defineCube('Departments', {
 productivityCube = defineCube('Productivity', {
   title: 'Productivity Metrics',
   description: 'Daily productivity data per employee',
-
   sql: (ctx: QueryContext): BaseQueryDefinition => ({
     from: productivity,
     where: eq(productivity.organisationId, ctx.securityContext.organisationId as number)
   }),
-
   joins: {
-    Employees: {
-      targetCube: () => employeesCube,
-      relationship: 'belongsTo',
-      on: [
-        { source: productivity.employeeId, target: employees.id }
-      ]
-    },
-    Departments: {
-      targetCube: () => departmentsCube,
-      relationship: 'belongsTo',
-      on: [
-        { source: productivity.departmentId, target: departments.id }
-      ]
-    }
+    Employees: { targetCube: () => employeesCube, relationship: 'belongsTo', on: [{ source: productivity.employeeId, target: employees.id }] },
+    Departments: { targetCube: () => departmentsCube, relationship: 'belongsTo', on: [{ source: productivity.departmentId, target: departments.id }] }
   },
-
   dimensions: {
     id: { name: 'id', title: 'Record ID', sql: productivity.id, type: 'number', primaryKey: true },
     date: { name: 'date', title: 'Date', sql: productivity.date, type: 'time' },
@@ -185,7 +131,6 @@ productivityCube = defineCube('Productivity', {
     pullRequests: { name: 'pullRequests', title: 'Pull Requests', sql: productivity.pullRequests, type: 'number' },
     happinessIndex: { name: 'happinessIndex', title: 'Happiness Index', sql: productivity.happinessIndex, type: 'number' }
   },
-
   measures: {
     count: { name: 'count', title: 'Total Records', type: 'count', sql: productivity.id },
     totalLinesOfCode: { name: 'totalLinesOfCode', title: 'Total Lines of Code', sql: productivity.linesOfCode, type: 'sum' },
@@ -226,198 +171,131 @@ prEventsCube = defineCube('PREvents', {
 export const allCubes = [employeesCube, departmentsCube, productivityCube, prEventsCube]
 `
 
-const DEMO_DB_PATH = 'data/demo.sqlite'
-
-async function seedDatabase() {
-  console.log('Seeding Drizby database...')
-
-  // Step 1: Create and populate the demo SQLite database
-  seedDemo(DEMO_DB_PATH)
-
-  // Step 2: Register it as a connection in the internal DB
-  const [demoConnection] = await db
-    .insert(connections)
-    .values({
-      name: 'Demo SQLite',
-      description: 'Built-in demo database with sample employee data',
-      engineType: 'sqlite',
-      connectionString: `file:${DEMO_DB_PATH}`,
-      organisationId: 1,
-    })
-    .returning()
-  console.log('Registered demo connection')
-
-  // Step 3: Seed demo schema file
-  const [demoSchemaFile] = await db
-    .insert(schemaFiles)
-    .values({
-      name: 'demo-schema.ts',
-      sourceCode: DEMO_SCHEMA_SOURCE,
-      connectionId: demoConnection.id,
-      organisationId: 1,
-    })
-    .returning()
-  console.log('Seeded demo schema file')
-
-  // Step 4: Seed demo cube definitions
-  await db.insert(cubeDefinitions).values({
-    name: 'Demo Cubes',
-    title: 'Employee Analytics Cubes',
-    description: 'Employees, Departments, Productivity, and PR Events cubes for the demo dataset',
-    sourceCode: DEMO_CUBES_SOURCE,
-    schemaFileId: demoSchemaFile.id,
-    connectionId: demoConnection.id,
-    organisationId: 1,
-  })
-  console.log('Seeded demo cube definitions')
-
-  // Step 5: Seed an example dashboard
-  await db.insert(analyticsPages).values({
-    name: 'Overview Dashboard',
-    description: 'Employee and productivity overview',
-    connectionId: demoConnection.id,
-    config: {
-      portlets: [
-        {
-          id: 'p1',
-          title: 'Employees by Department',
-          query: JSON.stringify({
-            measures: ['Employees.count'],
-            dimensions: ['Departments.name'],
-          }),
-          chartType: 'bar',
-          chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.count'] },
-          w: 6,
-          h: 4,
-          x: 0,
-          y: 0,
-        },
-        {
-          id: 'p2',
-          title: 'Average Salary',
-          query: JSON.stringify({
-            measures: ['Employees.avgSalary'],
-            dimensions: ['Departments.name'],
-          }),
-          chartType: 'bar',
-          chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.avgSalary'] },
-          w: 6,
-          h: 4,
-          x: 6,
-          y: 0,
-        },
-        {
-          id: 'p3',
-          title: 'Code Output Over Time',
-          query: JSON.stringify({
-            measures: ['Productivity.totalLinesOfCode'],
-            timeDimensions: [
-              {
-                dimension: 'Productivity.date',
-                granularity: 'week',
-              },
-            ],
-          }),
-          chartType: 'line',
-          chartConfig: { xAxis: ['Productivity.date'], yAxis: ['Productivity.totalLinesOfCode'] },
-          w: 12,
-          h: 4,
-          x: 0,
-          y: 4,
-        },
-        {
-          id: 'p4',
-          title: 'PR Lifecycle Funnel',
-          analysisConfig: {
-            version: 1,
-            analysisType: 'funnel',
-            activeView: 'chart',
-            charts: {
-              funnel: {
-                chartType: 'funnel',
-                chartConfig: {},
-                displayConfig: {
-                  funnelOrientation: 'horizontal',
-                  showLegend: true,
-                  showTooltip: true,
-                },
-              },
-            },
-            query: {
-              funnel: {
-                bindingKey: 'PREvents.prNumber',
-                timeDimension: 'PREvents.timestamp',
-                steps: [
-                  { name: 'Created', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['created'] } },
-                  { name: 'Review Requested', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['review_requested'] } },
-                  { name: 'Approved', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['approved'] } },
-                  { name: 'Merged', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['merged'] } },
-                ],
-                includeTimeMetrics: true,
-              },
-            },
-          },
-          chartType: 'funnel',
-          w: 12,
-          h: 6,
-          x: 0,
-          y: 8,
-        },
-        {
-          id: 'p5',
-          title: 'PR Event Flow',
-          analysisConfig: {
-            version: 1,
-            analysisType: 'flow',
-            activeView: 'chart',
-            charts: {
-              flow: {
-                chartType: 'sankey',
-                chartConfig: {},
-                displayConfig: {
-                  showGrid: false,
-                  showLegend: true,
-                  showTooltip: true,
-                },
-              },
-            },
-            query: {
-              flow: {
-                bindingKey: 'PREvents.prNumber',
-                stepsAfter: 3,
-                stepsBefore: 3,
-                joinStrategy: 'auto',
-                startingStep: {
-                  name: 'Starting Step',
-                  filter: {
-                    member: 'PREvents.eventType',
-                    values: ['created'],
-                    operator: 'equals',
-                  },
-                },
-                timeDimension: 'PREvents.timestamp',
-                eventDimension: 'PREvents.eventType',
-              },
-            },
-          },
-          chartType: 'sankey',
-          w: 6,
-          h: 6,
-          x: 0,
-          y: 14,
-        },
-      ],
-      filters: [],
+export const DEMO_PORTLETS = [
+  {
+    id: 'p1',
+    title: 'Employees by Department',
+    query: JSON.stringify({
+      measures: ['Employees.count'],
+      dimensions: ['Departments.name'],
+    }),
+    chartType: 'bar',
+    chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.count'] },
+    w: 6,
+    h: 4,
+    x: 0,
+    y: 0,
+  },
+  {
+    id: 'p2',
+    title: 'Average Salary',
+    query: JSON.stringify({
+      measures: ['Employees.avgSalary'],
+      dimensions: ['Departments.name'],
+    }),
+    chartType: 'bar',
+    chartConfig: { xAxis: ['Departments.name'], yAxis: ['Employees.avgSalary'] },
+    w: 6,
+    h: 4,
+    x: 6,
+    y: 0,
+  },
+  {
+    id: 'p3',
+    title: 'Code Output Over Time',
+    query: JSON.stringify({
+      measures: ['Productivity.totalLinesOfCode'],
+      timeDimensions: [{ dimension: 'Productivity.date', granularity: 'week' }],
+    }),
+    chartType: 'line',
+    chartConfig: {
+      xAxis: ['Productivity.date'],
+      yAxis: ['Productivity.totalLinesOfCode'],
     },
-    organisationId: 1,
-  })
-  console.log('Seeded example dashboard')
-
-  console.log('\nSeeding completed successfully!')
-  process.exit(0)
-}
-
-seedDatabase().catch(err => {
-  console.error('Seeding failed:', err)
-  process.exit(1)
-})
+    w: 12,
+    h: 4,
+    x: 0,
+    y: 4,
+  },
+  {
+    id: 'p4',
+    title: 'PR Lifecycle Funnel',
+    analysisConfig: {
+      version: 1,
+      analysisType: 'funnel',
+      activeView: 'chart',
+      charts: {
+        funnel: {
+          chartType: 'funnel',
+          chartConfig: {},
+          displayConfig: {
+            funnelOrientation: 'horizontal',
+            showLegend: true,
+            showTooltip: true,
+          },
+        },
+      },
+      query: {
+        funnel: {
+          bindingKey: 'PREvents.prNumber',
+          timeDimension: 'PREvents.timestamp',
+          steps: [
+            { name: 'Created', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['created'] } },
+            { name: 'Review Requested', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['review_requested'] } },
+            { name: 'Approved', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['approved'] } },
+            { name: 'Merged', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['merged'] } },
+          ],
+          includeTimeMetrics: true,
+        },
+      },
+    },
+    chartType: 'funnel',
+    w: 12,
+    h: 6,
+    x: 0,
+    y: 8,
+  },
+  {
+    id: 'p5',
+    title: 'PR Event Flow',
+    analysisConfig: {
+      version: 1,
+      analysisType: 'flow',
+      activeView: 'chart',
+      charts: {
+        flow: {
+          chartType: 'sankey',
+          chartConfig: {},
+          displayConfig: {
+            showGrid: false,
+            showLegend: true,
+            showTooltip: true,
+          },
+        },
+      },
+      query: {
+        flow: {
+          bindingKey: 'PREvents.prNumber',
+          stepsAfter: 3,
+          stepsBefore: 3,
+          joinStrategy: 'auto',
+          startingStep: {
+            name: 'Starting Step',
+            filter: {
+              member: 'PREvents.eventType',
+              values: ['created'],
+              operator: 'equals',
+            },
+          },
+          timeDimension: 'PREvents.timestamp',
+          eventDimension: 'PREvents.eventType',
+        },
+      },
+    },
+    chartType: 'sankey',
+    w: 6,
+    h: 6,
+    x: 0,
+    y: 14,
+  },
+]

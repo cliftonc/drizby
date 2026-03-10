@@ -57,12 +57,31 @@ export const productivity = sqliteTable(
   ]
 )
 
+export const prEvents = sqliteTable(
+  'pr_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    prNumber: integer('pr_number').notNull(),
+    eventType: text('event_type').notNull(),
+    employeeId: integer('employee_id').notNull(),
+    organisationId: integer('organisation_id').notNull(),
+    timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  },
+  table => [
+    index('idx_pr_events_org').on(table.organisationId),
+    index('idx_pr_events_flow').on(table.organisationId, table.prNumber, table.timestamp),
+    index('idx_pr_events_type').on(table.organisationId, table.eventType, table.timestamp, table.prNumber),
+  ]
+)
+
 export const employeesRelations = relations(employees, ({ one, many }) => ({
   department: one(departments, {
     fields: [employees.departmentId],
     references: [departments.id],
   }),
   productivityMetrics: many(productivity),
+  prEvents: many(prEvents),
 }))
 
 export const departmentsRelations = relations(departments, ({ many }) => ({
@@ -72,6 +91,13 @@ export const departmentsRelations = relations(departments, ({ many }) => ({
 export const productivityRelations = relations(productivity, ({ one }) => ({
   employee: one(employees, {
     fields: [productivity.employeeId],
+    references: [employees.id],
+  }),
+}))
+
+export const prEventsRelations = relations(prEvents, ({ one }) => ({
+  employee: one(employees, {
+    fields: [prEvents.employeeId],
     references: [employees.id],
   }),
 }))

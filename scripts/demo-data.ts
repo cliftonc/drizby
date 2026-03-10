@@ -41,6 +41,19 @@ CREATE INDEX IF NOT EXISTS idx_employees_org_created ON employees(organisation_i
 CREATE INDEX IF NOT EXISTS idx_departments_org ON departments(organisation_id);
 CREATE INDEX IF NOT EXISTS idx_productivity_org ON productivity(organisation_id);
 CREATE INDEX IF NOT EXISTS idx_productivity_org_date ON productivity(organisation_id, date);
+
+CREATE TABLE IF NOT EXISTS pr_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pr_number INTEGER NOT NULL,
+  event_type TEXT NOT NULL,
+  employee_id INTEGER NOT NULL,
+  organisation_id INTEGER NOT NULL,
+  timestamp INTEGER NOT NULL,
+  created_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_pr_events_org ON pr_events(organisation_id);
+CREATE INDEX IF NOT EXISTS idx_pr_events_flow ON pr_events(organisation_id, pr_number, timestamp);
+CREATE INDEX IF NOT EXISTS idx_pr_events_type ON pr_events(organisation_id, event_type, timestamp, pr_number);
 `
 
 export const deptData = [
@@ -209,4 +222,98 @@ export function makeProductivityData(emps: Array<{ id: number; departmentId: num
   }
 
   return prodData
+}
+
+/**
+ * Generate ~200 PRs with realistic lifecycle event sequences.
+ * Uses seeded pseudo-random for deterministic output.
+ */
+export function makePREventsData(emps: Array<{ id: number }>) {
+  // Simple seeded PRNG (mulberry32)
+  let seed = 42
+  const rand = () => {
+    seed |= 0
+    seed = (seed + 0x6d2b79f5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+
+  const events: Array<{
+    prNumber: number
+    eventType: string
+    employeeId: number
+    organisationId: number
+    timestamp: Date
+  }> = []
+
+  const startDate = new Date('2024-10-01').getTime()
+  const totalPRs = 200
+
+  for (let pr = 1; pr <= totalPRs; pr++) {
+    // Space PRs ~0.5 days apart
+    const prStart = startDate + (pr - 1) * 12 * 60 * 60 * 1000
+    let ts = prStart
+
+    // Pick random author; reviewer must be different
+    const authorIdx = Math.floor(rand() * emps.length)
+    let reviewerIdx = Math.floor(rand() * emps.length)
+    if (reviewerIdx === authorIdx) reviewerIdx = (reviewerIdx + 1) % emps.length
+    const authorId = emps[authorIdx].id
+    const reviewerId = emps[reviewerIdx].id
+
+    const addEvent = (type: string, who: number) => {
+      // 1-12 hours between events
+      ts += (1 + rand() * 11) * 60 * 60 * 1000
+      events.push({
+        prNumber: pr,
+        eventType: type,
+        employeeId: who,
+        organisationId: 1,
+        timestamp: new Date(ts),
+      })
+    }
+
+    // All PRs start with "created"
+    events.push({
+      prNumber: pr,
+      eventType: 'created',
+      employeeId: authorId,
+      organisationId: 1,
+      timestamp: new Date(prStart),
+    })
+
+    const r = rand()
+
+    if (r < 0.05) {
+      // ~10 PRs: stall after creation (no further events)
+      continue
+    }
+
+    addEvent('review_requested', authorId)
+
+    if (r < 0.15) {
+      // ~20 PRs: closed without merge
+      addEvent('reviewed', reviewerId)
+      addEvent('closed', authorId)
+      continue
+    }
+
+    if (r < 0.30) {
+      // ~30 PRs: changes_requested → re-reviewed → approved → merged
+      addEvent('reviewed', reviewerId)
+      addEvent('changes_requested', reviewerId)
+      addEvent('reviewed', reviewerId)
+      addEvent('approved', reviewerId)
+      addEvent('merged', authorId)
+      continue
+    }
+
+    // ~140 PRs: straight path → reviewed → approved → merged
+    addEvent('reviewed', reviewerId)
+    addEvent('approved', reviewerId)
+    addEvent('merged', authorId)
+  }
+
+  return events
 }

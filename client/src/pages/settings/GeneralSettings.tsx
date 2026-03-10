@@ -50,9 +50,40 @@ export default function GeneralSettings() {
     }
   }
 
+  const [reseeding, setReseeding] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [confirm, ConfirmDialog] = useConfirm()
   const [prompt, PromptDialog] = usePrompt()
+
+  const handleReseedDemo = useCallback(async () => {
+    const confirmed = await confirm({
+      title: 'Reseed Demo Data',
+      message:
+        'This will delete and recreate the demo database with fresh sample data. Your other connections and data will not be affected.',
+      confirmText: 'Reseed',
+      variant: 'danger',
+    })
+    if (!confirmed) return
+
+    setReseeding(true)
+    setError('')
+    setMessage('')
+    try {
+      const res = await fetch('/api/settings/reseed-demo', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Reseed failed')
+      }
+      setMessage('Demo data reseeded successfully. Reloading...')
+      setTimeout(() => window.location.reload(), 1500)
+    } catch (err: any) {
+      setError(err.message)
+      setReseeding(false)
+    }
+  }, [confirm])
 
   const handleFactoryReset = useCallback(async () => {
     const confirmed = await confirm({
@@ -302,6 +333,29 @@ export default function GeneralSettings() {
           >
             Danger Zone
           </h3>
+          <p
+            style={{ fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 12, marginTop: 0 }}
+          >
+            Regenerate the demo database with fresh sample data. Other connections are not affected.
+          </p>
+          <button
+            onClick={handleReseedDemo}
+            disabled={reseeding}
+            style={{
+              padding: '6px 16px',
+              backgroundColor: 'transparent',
+              color: 'var(--dc-warning, #f59e0b)',
+              fontWeight: 500,
+              borderRadius: 6,
+              border: '1px solid var(--dc-warning, #f59e0b)',
+              cursor: reseeding ? 'not-allowed' : 'pointer',
+              fontSize: 13,
+              opacity: reseeding ? 0.5 : 1,
+            }}
+          >
+            {reseeding ? 'Reseeding...' : 'Reseed Demo Data'}
+          </button>
+          <div style={{ borderTop: '1px solid var(--dc-border)', margin: '16px 0' }} />
           <p
             style={{ fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 12, marginTop: 0 }}
           >

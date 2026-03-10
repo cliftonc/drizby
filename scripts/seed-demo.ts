@@ -6,8 +6,8 @@
 import { mkdirSync } from 'node:fs'
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
-import { departments, employees, productivity } from '../schema/demo'
-import { DEMO_DDL, deptData, makeEmployeeData, makeProductivityData } from './demo-data'
+import { departments, employees, prEvents, productivity } from '../schema/demo'
+import { DEMO_DDL, deptData, makeEmployeeData, makePREventsData, makeProductivityData } from './demo-data'
 
 export function seedDemo(dbPath: string) {
   console.log(`Creating demo database at ${dbPath}...`)
@@ -42,6 +42,15 @@ export function seedDemo(dbPath: string) {
       .run()
   }
   console.log(`Seeded ${prodData.length} productivity records`)
+
+  // Seed PR events
+  const prEventsData = makePREventsData(emps)
+  for (let i = 0; i < prEventsData.length; i += BATCH_SIZE) {
+    db.insert(prEvents)
+      .values(prEventsData.slice(i, i + BATCH_SIZE))
+      .run()
+  }
+  console.log(`Seeded ${prEventsData.length} PR event records`)
 
   sqlite.close()
   console.log('Demo database created successfully')

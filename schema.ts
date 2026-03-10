@@ -86,10 +86,11 @@ export const analyticsPages = sqliteTable(
       portlets: Array<{
         id: string
         title: string
-        query: string
+        query?: string
         chartType: string
         chartConfig?: Record<string, unknown>
         displayConfig?: Record<string, unknown>
+        analysisConfig?: Record<string, unknown>
         dashboardFilterMapping?: string[]
         w: number
         h: number
