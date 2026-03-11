@@ -427,7 +427,7 @@ function ConnectionForm({
         setStructuredConfig({})
       }
     }
-  }, [form.engineType, providers, initial])
+  }, [form.engineType, form.provider, providers, initial])
 
   const getConnectionStringForSubmit = (): string => {
     if (isStructured) {
