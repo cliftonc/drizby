@@ -299,7 +299,7 @@ export function makePREventsData(emps: Array<{ id: number }>) {
       continue
     }
 
-    if (r < 0.30) {
+    if (r < 0.3) {
       // ~30 PRs: changes_requested → re-reviewed → approved → merged
       addEvent('reviewed', reviewerId)
       addEvent('changes_requested', reviewerId)

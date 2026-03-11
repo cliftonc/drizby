@@ -71,7 +71,12 @@ export const prEvents = sqliteTable(
   table => [
     index('idx_pr_events_org').on(table.organisationId),
     index('idx_pr_events_flow').on(table.organisationId, table.prNumber, table.timestamp),
-    index('idx_pr_events_type').on(table.organisationId, table.eventType, table.timestamp, table.prNumber),
+    index('idx_pr_events_type').on(
+      table.organisationId,
+      table.eventType,
+      table.timestamp,
+      table.prNumber
+    ),
   ]
 )
 

@@ -10,7 +10,7 @@ import { streamSSE } from 'hono/streaming'
 import { analyticsPages, connections, cubeDefinitions, schemaFiles, settings } from '../../schema'
 import { guardPermission } from '../permissions/guard'
 import { connectionManager } from '../services/connection-manager'
-import { DEMO_SCHEMA_SOURCE, DEMO_CUBES_SOURCE, DEMO_PORTLETS } from './seed-demo-config'
+import { DEMO_CUBES_SOURCE, DEMO_PORTLETS, DEMO_SCHEMA_SOURCE } from './seed-demo-config'
 
 interface Variables {
   db: DrizzleDatabase
@@ -53,9 +53,8 @@ app.get('/', async c => {
       const Database = (await import('better-sqlite3')).default
       const { drizzle } = await import('drizzle-orm/better-sqlite3')
       const { departments, employees, productivity, prEvents } = await import('../../schema/demo')
-      const { DEMO_DDL, deptData, makeEmployeeData, makeProductivityData, makePREventsData } = await import(
-        '../../scripts/demo-data'
-      )
+      const { DEMO_DDL, deptData, makeEmployeeData, makeProductivityData, makePREventsData } =
+        await import('../../scripts/demo-data')
 
       mkdirSync('data', { recursive: true })
       const sqlite = new Database(DEMO_DB_PATH)
@@ -127,7 +126,8 @@ app.get('/', async c => {
       await db.insert(cubeDefinitions).values({
         name: 'Demo Cubes',
         title: 'Employee Analytics Cubes',
-        description: 'Employees, Departments, Productivity, and PR Events cubes for the demo dataset',
+        description:
+          'Employees, Departments, Productivity, and PR Events cubes for the demo dataset',
         sourceCode: DEMO_CUBES_SOURCE,
         schemaFileId: demoSchemaFile.id,
         connectionId: demoConnection.id,

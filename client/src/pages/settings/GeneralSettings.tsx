@@ -51,6 +51,8 @@ export default function GeneralSettings() {
   }
 
   const [reseeding, setReseeding] = useState(false)
+  const [reseedMessage, setReseedMessage] = useState('')
+  const [reseedError, setReseedError] = useState('')
   const [resetting, setResetting] = useState(false)
   const [confirm, ConfirmDialog] = useConfirm()
   const [prompt, PromptDialog] = usePrompt()
@@ -66,8 +68,8 @@ export default function GeneralSettings() {
     if (!confirmed) return
 
     setReseeding(true)
-    setError('')
-    setMessage('')
+    setReseedError('')
+    setReseedMessage('')
     try {
       const res = await fetch('/api/settings/reseed-demo', {
         method: 'POST',
@@ -77,10 +79,10 @@ export default function GeneralSettings() {
         const data = await res.json()
         throw new Error(data.error || 'Reseed failed')
       }
-      setMessage('Demo data reseeded successfully. Reloading...')
+      setReseedMessage('Demo data reseeded successfully. Reloading...')
       setTimeout(() => window.location.reload(), 1500)
     } catch (err: any) {
-      setError(err.message)
+      setReseedError(err.message)
       setReseeding(false)
     }
   }, [confirm])
@@ -355,6 +357,36 @@ export default function GeneralSettings() {
           >
             {reseeding ? 'Reseeding...' : 'Reseed Demo Data'}
           </button>
+          {reseedError && (
+            <div
+              style={{
+                backgroundColor: 'var(--dc-error-bg)',
+                border: '1px solid var(--dc-error-border)',
+                color: 'var(--dc-error)',
+                fontSize: 12,
+                padding: '8px 12px',
+                borderRadius: 6,
+                marginTop: 12,
+              }}
+            >
+              {reseedError}
+            </div>
+          )}
+          {reseedMessage && (
+            <div
+              style={{
+                backgroundColor: 'var(--dc-success-bg)',
+                border: '1px solid var(--dc-success-border)',
+                color: 'var(--dc-success)',
+                fontSize: 12,
+                padding: '8px 12px',
+                borderRadius: 6,
+                marginTop: 12,
+              }}
+            >
+              {reseedMessage}
+            </div>
+          )}
           <div style={{ borderTop: '1px solid var(--dc-border)', margin: '16px 0' }} />
           <p
             style={{ fontSize: 12, color: 'var(--dc-text-muted)', marginBottom: 12, marginTop: 0 }}

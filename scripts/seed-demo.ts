@@ -7,7 +7,13 @@ import { mkdirSync } from 'node:fs'
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { departments, employees, prEvents, productivity } from '../schema/demo'
-import { DEMO_DDL, deptData, makeEmployeeData, makePREventsData, makeProductivityData } from './demo-data'
+import {
+  DEMO_DDL,
+  deptData,
+  makeEmployeeData,
+  makePREventsData,
+  makeProductivityData,
+} from './demo-data'
 
 export function seedDemo(dbPath: string) {
   console.log(`Creating demo database at ${dbPath}...`)

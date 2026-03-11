@@ -7,11 +7,12 @@ import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { invalidateCubeAppCache } from '../../app'
-import { connections, schemaFiles } from '../../schema'
+import { connections, cubeDefinitions, schemaFiles } from '../../schema'
 import { guardPermission } from '../permissions/guard'
 import { getAISettings } from '../services/ai-settings'
 import { connectionManager } from '../services/connection-manager'
 import { compileSchema, generateSchemaTypes } from '../services/cube-compiler'
+import { buildDrizzleKitConfig } from '../services/provider-registry'
 
 interface Variables {
   db: DrizzleDatabase
@@ -26,6 +27,28 @@ app.use('*', async (c, next) => {
   await next()
 })
 
+/**
+ * Generate a unique name for a file. Queries existing names for the connection
+ * and appends -2, -3, etc. if the base name is taken.
+ */
+async function autoName(
+  db: any,
+  table: typeof schemaFiles | typeof cubeDefinitions,
+  baseName: string,
+  connectionId: number,
+  orgId = 1
+): Promise<string> {
+  const existing = await db
+    .select({ name: table.name })
+    .from(table)
+    .where(and(eq(table.connectionId, connectionId), eq(table.organisationId, orgId)))
+  const names = new Set(existing.map((r: any) => r.name))
+  if (!names.has(baseName)) return baseName
+  let i = 2
+  while (names.has(`${baseName}-${i}`)) i++
+  return `${baseName}-${i}`
+}
+
 // List all schema files
 app.get('/', async c => {
   const db = c.get('db') as any
@@ -33,9 +56,8 @@ app.get('/', async c => {
   return c.json(result)
 })
 
-// Generate cube definitions from schema files using AI
-// SSE endpoint: plan + generate cubes one by one, streaming progress
-app.post('/generate-cubes', async c => {
+// Plan cubes — AI analyzes schemas and proposes cubes to generate (plain JSON)
+app.post('/plan-cubes', async c => {
   const db = c.get('db') as any
   const body = await c.req.json()
   const { connectionId } = body
@@ -72,7 +94,92 @@ app.post('/generate-cubes', async c => {
     .map((s: any) => `// File: ${s.fileName}.ts\n${s.source}`)
     .join('\n\n')
 
-  // Stream SSE events
+  // Load existing cubes so the AI can skip them — extract cube names from source code
+  const existingCubeDefs = await db
+    .select({ sourceCode: cubeDefinitions.sourceCode, title: cubeDefinitions.title })
+    .from(cubeDefinitions)
+    .where(
+      and(eq(cubeDefinitions.connectionId, connectionId), eq(cubeDefinitions.organisationId, 1))
+    )
+
+  const existingCubeNames: string[] = []
+  for (const cd of existingCubeDefs) {
+    if (!cd.sourceCode) continue
+    // Extract cube name(s) from defineCube('CubeName', ...) calls
+    const matches = cd.sourceCode.matchAll(/defineCube\(\s*['"](\w+)['"]/g)
+    for (const m of matches) existingCubeNames.push(m[1])
+  }
+
+  const fileNameList = schemaContext.map((s: any) => s.fileName).join(', ')
+  const existingSection =
+    existingCubeNames.length > 0
+      ? `\n\nExisting cubes for this connection (do NOT recreate these):\n${existingCubeNames.map(n => `- ${n}`).join('\n')}`
+      : ''
+  const planPrompt = `Here are the Drizzle ORM schema files:\n\n${schemaListing}\n\nAvailable schema file names (use these EXACTLY for schemaFile): ${fileNameList}${existingSection}\n\nAnalyze these schemas and propose cubes to create. The "schemaFile" field must be one of the file names listed above (without .ts extension). The "tables" field must contain only table variable names that are actually exported from that schema file.`
+
+  try {
+    const planRaw = await callAI(ai, CUBE_PLAN_SYSTEM_PROMPT, planPrompt)
+    let cubes: Array<{
+      name: string
+      variableName: string
+      title: string
+      description: string
+      tables: string[]
+      schemaFile: string
+    }>
+    try {
+      cubes = JSON.parse(planRaw)
+    } catch {
+      const match = planRaw.match(/\[[\s\S]*\]/)
+      if (!match) throw new Error('AI did not return valid JSON plan')
+      cubes = JSON.parse(match[0])
+    }
+
+    // Validate schemaFile references
+    const validFileNames = new Set(schemaContext.map((s: any) => s.fileName))
+    for (const cube of cubes) {
+      if (!validFileNames.has(cube.schemaFile)) {
+        cube.schemaFile = schemaContext[0].fileName
+      }
+    }
+
+    return c.json({ cubes })
+  } catch (err: any) {
+    return c.json({ error: `AI planning failed: ${err.message}` }, 500)
+  }
+})
+
+// Generate selected cubes — SSE endpoint, saves each cube individually
+app.post('/generate-selected-cubes', async c => {
+  const db = c.get('db') as any
+  const body = await c.req.json()
+  const { connectionId, selectedCubes } = body
+
+  const conn = await db
+    .select()
+    .from(connections)
+    .where(and(eq(connections.id, connectionId), eq(connections.organisationId, 1)))
+  if (conn.length === 0) return c.json({ error: 'Connection not found' }, 400)
+
+  const schemas = await db
+    .select()
+    .from(schemaFiles)
+    .where(and(eq(schemaFiles.connectionId, connectionId), eq(schemaFiles.organisationId, 1)))
+
+  const ai = await getAISettings(db)
+  if (!ai.apiKey || !ai.provider) {
+    return c.json({ error: 'AI is not configured' }, 400)
+  }
+
+  const schemaContext = schemas.map((sf: any) => ({
+    fileName: sf.name.replace(/\.ts$/, ''),
+    source: sf.sourceCode,
+  }))
+
+  const schemaListing = schemaContext
+    .map((s: any) => `// File: ${s.fileName}.ts\n${s.source}`)
+    .join('\n\n')
+
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: any) => {
@@ -82,105 +189,70 @@ app.post('/generate-cubes', async c => {
       }
 
       try {
-        // Phase 1: Plan
-        send('status', { phase: 'planning', message: 'Analyzing schema and planning cubes...' })
-        const fileNameList = schemaContext.map((s: any) => s.fileName).join(', ')
-        const planPrompt = `Here are the Drizzle ORM schema files:\n\n${schemaListing}\n\nAvailable schema file names (use these EXACTLY for schemaFile): ${fileNameList}\n\nAnalyze these schemas and propose cubes to create. The "schemaFile" field must be one of the file names listed above (without .ts extension). The "tables" field must contain only table variable names that are actually exported from that schema file.`
-        const planRaw = await callAI(ai, CUBE_PLAN_SYSTEM_PROMPT, planPrompt)
-        let cubes: Array<{
-          name: string
-          variableName: string
-          title: string
-          description: string
-          tables: string[]
-          schemaFile: string
-        }>
-        try {
-          cubes = JSON.parse(planRaw)
-        } catch {
-          // Try to extract JSON array from response
-          const match = planRaw.match(/\[[\s\S]*\]/)
-          if (!match) throw new Error('AI did not return valid JSON plan')
-          cubes = JSON.parse(match[0])
-        }
-
-        // Validate schemaFile references — fix any that don't match actual files
-        const validFileNames = new Set(schemaContext.map((s: any) => s.fileName))
-        for (const cube of cubes) {
-          if (!validFileNames.has(cube.schemaFile)) {
-            // Default to first schema file if AI invented a file name
-            cube.schemaFile = schemaContext[0].fileName
-          }
-        }
-
-        send('plan', { cubes })
-
-        // Phase 2: Generate each cube
-        const generatedParts: string[] = []
-        for (let i = 0; i < cubes.length; i++) {
-          const cube = cubes[i]
+        for (let i = 0; i < selectedCubes.length; i++) {
+          const cube = selectedCubes[i]
           send('status', {
-            phase: 'generating',
             message: `Generating ${cube.title}...`,
             current: i + 1,
-            total: cubes.length,
+            total: selectedCubes.length,
           })
 
-          const otherCubes = cubes
-            .filter(c => c.name !== cube.name)
-            .map(c => `- ${c.name} (variable: ${c.variableName}, tables: ${c.tables.join(', ')})`)
-            .join('\n')
-
-          const cubePrompt = `## Schema Files\n\n${schemaListing}\n\n## Available Schema Files\n${schemaContext.map((s: any) => `- ${s.fileName}.ts`).join('\n')}\n\n## Cube to Generate\n\nName: ${cube.name}\nVariable name: ${cube.variableName}\nTitle: ${cube.title}\nDescription: ${cube.description}\nTables: ${cube.tables.join(', ')}\nSchema file: ${cube.schemaFile}\n\n## Other Cubes in This File (for joins)\n\n${otherCubes || 'None'}\n\nGenerate ONLY a bare assignment — no \`let\`, \`const\`, or \`var\` keyword. Start with:\n${cube.variableName} = defineCube('${cube.name}', {\n...and end with:\n}) as Cube`
+          const cubePrompt = `## Schema Files\n\n${schemaListing}\n\n## Available Schema Files\n${schemaContext.map((s: any) => `- ${s.fileName}.ts`).join('\n')}\n\n## Cube to Generate\n\nName: ${cube.name}\nVariable name: ${cube.variableName}\nTitle: ${cube.title}\nDescription: ${cube.description}\nTables: ${cube.tables.join(', ')}\nSchema file: ${cube.schemaFile}\n\nGenerate ONLY a bare assignment — no \`let\`, \`const\`, or \`var\` keyword. Start with:\n${cube.variableName} = defineCube('${cube.name}', {\n...and end with:\n}) as Cube\n\nDo NOT include any joins — joins will be added in a separate step.`
 
           try {
             let source = await callAI(ai, CUBE_GENERATE_ONE_SYSTEM_PROMPT, cubePrompt)
             // Strip any accidental let/const/var prefix
             source = source.replace(/^(export\s+)?(let|const|var)\s+/, '')
-            generatedParts.push(source)
-            send('cube_done', { index: i, name: cube.name })
+
+            // Build self-contained source file
+            const tableImports = new Set(cube.tables)
+            const importLines = [
+              `import { eq } from 'drizzle-orm'`,
+              `import { defineCube } from 'drizzle-cube/server'`,
+              `import type { QueryContext, BaseQueryDefinition, Cube } from 'drizzle-cube/server'`,
+              `import { ${[...tableImports].join(', ')} } from './${cube.schemaFile}'`,
+            ]
+            const fullSource = [
+              importLines.join('\n'),
+              '',
+              `let ${cube.variableName}: Cube`,
+              '',
+              source,
+              '',
+              `export { ${cube.variableName} }`,
+            ].join('\n')
+
+            // Auto-name and save (with .ts suffix for consistency)
+            const fileName = await autoName(
+              db,
+              cubeDefinitions,
+              `${cube.variableName}.ts`,
+              connectionId
+            )
+            const result = await db
+              .insert(cubeDefinitions)
+              .values({
+                name: fileName,
+                title: cube.title,
+                description: cube.description,
+                sourceCode: fullSource,
+                connectionId,
+                organisationId: 1,
+              })
+              .returning()
+
+            send('cube_saved', {
+              index: i,
+              name: cube.name,
+              fileId: result[0].id,
+              fileName,
+            })
           } catch (err: any) {
             send('cube_error', { index: i, name: cube.name, error: err.message })
           }
         }
 
-        // Phase 3: Assemble final file
-        send('status', { phase: 'assembling', message: 'Assembling final cube definitions...' })
-
-        // Build imports from schema context — collect all table names used by cubes
-        const tableImports = new Map<string, Set<string>>()
-        for (const cube of cubes) {
-          const file = cube.schemaFile
-          if (!tableImports.has(file)) tableImports.set(file, new Set())
-          for (const t of cube.tables) tableImports.get(file)?.add(t)
-        }
-
-        const importLines = [
-          `import { eq } from 'drizzle-orm'`,
-          `import { defineCube } from 'drizzle-cube/server'`,
-          `import type { QueryContext, BaseQueryDefinition, Cube } from 'drizzle-cube/server'`,
-        ]
-        for (const [file, tables] of tableImports) {
-          importLines.push(`import { ${[...tables].join(', ')} } from './${file}'`)
-        }
-
-        // Forward declarations for lazy references
-        const declarations = cubes.map(c => `let ${c.variableName}: Cube`).join('\n')
-
-        // Export all cubes so they get registered by the compiler
-        const exportLine = `export const allCubes = [${cubes.map(c => c.variableName).join(', ')}]`
-
-        const finalSource = [
-          importLines.join('\n'),
-          '',
-          declarations,
-          '',
-          generatedParts.join('\n\n'),
-          '',
-          exportLine,
-        ].join('\n')
-
-        send('complete', { source: finalSource })
+        send('complete', {})
       } catch (err: any) {
         send('error', { message: err.message })
       } finally {
@@ -196,6 +268,142 @@ app.post('/generate-cubes', async c => {
       Connection: 'keep-alive',
     },
   })
+})
+
+// Plan joins — AI proposes joins between all cubes for a connection
+app.post('/plan-joins', async c => {
+  const db = c.get('db') as any
+  const body = await c.req.json()
+  const { connectionId } = body
+
+  const ai = await getAISettings(db)
+  if (!ai.apiKey || !ai.provider) {
+    return c.json({ error: 'AI is not configured' }, 400)
+  }
+
+  // Gather all cube definitions for this connection
+  const allCubes = await db
+    .select()
+    .from(cubeDefinitions)
+    .where(
+      and(eq(cubeDefinitions.connectionId, connectionId), eq(cubeDefinitions.organisationId, 1))
+    )
+
+  if (allCubes.length < 2) {
+    return c.json({ proposals: [] })
+  }
+
+  // Gather schemas for context
+  const schemas = await db
+    .select()
+    .from(schemaFiles)
+    .where(and(eq(schemaFiles.connectionId, connectionId), eq(schemaFiles.organisationId, 1)))
+
+  const schemaListing = schemas
+    .map((sf: any) => `// File: ${sf.name.replace(/\.ts$/, '')}.ts\n${sf.sourceCode}`)
+    .join('\n\n')
+
+  const cubeListing = allCubes
+    .map((cd: any) => `// Cube file: ${cd.name}\n${cd.sourceCode}`)
+    .join('\n\n')
+
+  const joinPrompt = `## Schema Files\n\n${schemaListing}\n\n## Existing Cube Definitions\n\n${cubeListing}\n\nAnalyze these cubes and schemas. Identify valid joins between cubes using string-based targetCube (e.g. targetCube: 'CubeName'). Do NOT modify existing joins that are already correct. Return ONLY cubes that need NEW joins added.\n\nThe cube variable names and cube names (from defineCube('Name', ...)) are listed above.`
+
+  try {
+    const raw = await callAI(ai, CUBE_JOINS_SYSTEM_PROMPT, joinPrompt)
+    let proposals: Array<{
+      variableName: string
+      joins: Record<string, { targetCube: string; relationship: string; on: any }>
+    }>
+    try {
+      proposals = JSON.parse(raw)
+    } catch {
+      const match = raw.match(/\[[\s\S]*\]/)
+      if (!match) throw new Error('AI did not return valid JSON')
+      proposals = JSON.parse(match[0])
+    }
+
+    // Map variableName to cubeDefId
+    const result = proposals
+      .map(p => {
+        const cubeDef = allCubes.find((cd: any) => {
+          // Match by variable name in source or by cube name
+          return (
+            cd.sourceCode?.includes(`${p.variableName} = defineCube`) || cd.name === p.variableName
+          )
+        })
+        if (!cubeDef) return null
+        return {
+          cubeDefId: cubeDef.id,
+          cubeName: cubeDef.name,
+          joins: p.joins,
+        }
+      })
+      .filter(Boolean)
+
+    return c.json({ proposals: result })
+  } catch (err: any) {
+    return c.json({ error: `AI join planning failed: ${err.message}` }, 500)
+  }
+})
+
+// Apply selected joins — use LLM to safely add joins + imports to cube source code
+app.post('/apply-joins', async c => {
+  const db = c.get('db') as any
+  const body = await c.req.json()
+  const { connectionId, selectedJoins } = body
+  // selectedJoins: Array<{ cubeDefId, cubeName, joins: Record<string, JoinDef> }>
+
+  const ai = await getAISettings(db)
+  if (!ai.apiKey || !ai.provider) {
+    return c.json({ error: 'AI is not configured' }, 400)
+  }
+
+  // Load schemas for context (needed so AI knows which imports to add)
+  const schemas = await db
+    .select()
+    .from(schemaFiles)
+    .where(and(eq(schemaFiles.connectionId, connectionId), eq(schemaFiles.organisationId, 1)))
+
+  const schemaListing = schemas
+    .map((sf: any) => `// File: ${sf.name.replace(/\.ts$/, '')}.ts\n${sf.sourceCode}`)
+    .join('\n\n')
+
+  const updated: Array<{ cubeDefId: number; cubeName: string }> = []
+
+  for (const proposal of selectedJoins) {
+    const rows = await db
+      .select()
+      .from(cubeDefinitions)
+      .where(and(eq(cubeDefinitions.id, proposal.cubeDefId), eq(cubeDefinitions.organisationId, 1)))
+
+    if (rows.length === 0) continue
+    const cubeDef = rows[0]
+    if (!cubeDef.sourceCode) continue
+
+    // Build a description of joins to add
+    const joinsDesc = Object.entries(proposal.joins)
+      .map(([name, join]: [string, any]) => {
+        const onStr = typeof join.on === 'string' ? join.on : JSON.stringify(join.on)
+        return `- ${name}: targetCube: '${join.targetCube}', relationship: '${join.relationship}', on: ${onStr}`
+      })
+      .join('\n')
+
+    const editPrompt = `## Schema Files (for reference — shows which tables are exported from which files)\n\n${schemaListing}\n\n## Current Cube Source Code\n\n\`\`\`typescript\n${cubeDef.sourceCode}\n\`\`\`\n\n## Joins to Add\n\n${joinsDesc}\n\nReturn the COMPLETE updated cube source code with:\n1. The joins block added (or merged with existing joins)\n2. Any new schema file imports added for tables referenced in the join \`on\` clauses (e.g. if the join references \`users.id\`, ensure the file imports \`users\` from the correct schema file)\n3. All existing code preserved exactly as-is otherwise`
+
+    try {
+      const newSource = await callAI(ai, CUBE_APPLY_JOINS_SYSTEM_PROMPT, editPrompt)
+      await db
+        .update(cubeDefinitions)
+        .set({ sourceCode: newSource, updatedAt: new Date() })
+        .where(eq(cubeDefinitions.id, proposal.cubeDefId))
+      updated.push({ cubeDefId: proposal.cubeDefId, cubeName: proposal.cubeName })
+    } catch {
+      // Skip this cube if AI edit fails — don't block others
+    }
+  }
+
+  return c.json({ updated })
 })
 
 // Get single schema file
@@ -328,7 +536,7 @@ app.get('/:id/types', async c => {
   return c.text(dts, 200, { 'Content-Type': 'application/typescript' })
 })
 
-// Introspect a database connection using drizzle-kit pull
+// Introspect a database connection using drizzle-kit pull — returns source + tables for review
 app.post('/introspect', async c => {
   const db = c.get('db') as any
   const body = await c.req.json()
@@ -355,11 +563,57 @@ app.post('/introspect', async c => {
   }
 
   try {
-    const { source, tables } = await runDrizzleKitPull(conn[0].connectionString, conn[0].engineType)
+    const { source, tables } = await runDrizzleKitPull(
+      conn[0].connectionString,
+      conn[0].engineType,
+      conn[0].provider
+    )
     return c.json({ source, tables })
   } catch (err: any) {
     return c.json({ error: `Introspection failed: ${err.message}` }, 500)
   }
+})
+
+// Save introspected schema after user review
+app.post('/introspect/save', async c => {
+  const db = c.get('db') as any
+  const body = await c.req.json()
+  const { connectionId, sourceCode, selectedTables } = body
+
+  const conn = await db
+    .select()
+    .from(connections)
+    .where(and(eq(connections.id, connectionId), eq(connections.organisationId, 1)))
+  if (conn.length === 0) return c.json({ error: 'Connection not found' }, 400)
+
+  // If user deselected some tables, use LLM to produce a clean filtered schema
+  let finalSource = sourceCode
+  if (selectedTables && Array.isArray(selectedTables)) {
+    const ai = await getAISettings(db)
+    if (!ai.apiKey) return c.json({ error: 'AI not configured — cannot filter tables' }, 400)
+
+    finalSource = await callAI(
+      ai,
+      SCHEMA_FILTER_SYSTEM_PROMPT,
+      `Here is the full introspected Drizzle schema:\n\n\`\`\`typescript\n${sourceCode}\n\`\`\`\n\nKeep ONLY these tables: ${selectedTables.join(', ')}\n\nRemove all other table definitions. Keep all enum declarations, type definitions, and imports that are still used. Remove \`.references(...)\` calls that point to removed tables. Clean up unused imports. Return the complete valid TypeScript source.`
+    )
+
+    if (!finalSource.trim())
+      return c.json({ error: 'AI returned empty result when filtering schema' }, 500)
+  }
+
+  const name = await autoName(db, schemaFiles, 'schema.ts', connectionId)
+  const result = await db
+    .insert(schemaFiles)
+    .values({
+      name,
+      sourceCode: finalSource,
+      connectionId,
+      organisationId: 1,
+    })
+    .returning()
+
+  return c.json({ file: result[0] })
 })
 
 /**
@@ -368,7 +622,8 @@ app.post('/introspect', async c => {
  */
 async function runDrizzleKitPull(
   connectionString: string,
-  engineType = 'postgresql'
+  engineType = 'postgresql',
+  provider?: string | null
 ): Promise<{ source: string; tables: string[] }> {
   const { mkdtemp, readFile, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
@@ -380,29 +635,53 @@ async function runDrizzleKitPull(
   const tempDir = await mkdtemp(join(tmpdir(), 'dk-pull-'))
 
   try {
-    // Write a temporary drizzle config
-    const dialect = engineType === 'sqlite' ? 'sqlite' : 'postgresql'
-    const dbCreds =
-      engineType === 'sqlite'
-        ? `{ url: ${JSON.stringify(connectionString.replace(/^file:/, ''))} }`
-        : `{ url: ${JSON.stringify(connectionString)} }`
+    const dkConfig = await buildDrizzleKitConfig(
+      connectionString,
+      engineType,
+      provider,
+      `${tempDir}/out`
+    )
     const configPath = join(tempDir, 'drizzle.config.js')
-    const configContent = `module.exports = {
-  dialect: '${dialect}',
-  out: '${tempDir}/out',
-  dbCredentials: ${dbCreds},
-${dialect === 'postgresql' ? "  schemaFilter: ['public'],\n" : ''}}\n`
+    const configContent = `module.exports = ${JSON.stringify(dkConfig, null, 2)};\n`
     await import('node:fs').then(fs => fs.writeFileSync(configPath, configContent))
 
-    // Run drizzle-kit pull
+    // Run drizzle-kit pull (large maxBuffer for big schemas with spinner output)
     const drizzleKitBin = join(process.cwd(), 'node_modules', '.bin', 'drizzle-kit')
-    await execFileAsync(drizzleKitBin, ['pull', `--config=${configPath}`], {
-      cwd: process.cwd(),
-      timeout: 30000,
-    })
+    try {
+      await execFileAsync(drizzleKitBin, ['pull', `--config=${configPath}`], {
+        cwd: process.cwd(),
+        timeout: 120000,
+        maxBuffer: 10 * 1024 * 1024, // 10MB — drizzle-kit spinner produces lots of output
+      })
+    } catch (execErr: any) {
+      // Filter out non-fatal warnings (SSL, deprecation) from the error message
+      const stderrMsg = (execErr.stderr || '').replace(/\(node:\d+\) Warning:.*\n?/g, '').trim()
+      const msg = stderrMsg || execErr.message
+      throw new Error(`drizzle-kit pull failed: ${msg}`)
+    }
 
-    // Read the generated schema file and clean it up
-    const schemaPath = join(tempDir, 'out', 'schema.ts')
+    // Read the generated schema file — drizzle-kit may output schema.ts or relations.ts etc.
+    const { readdir } = await import('node:fs/promises')
+    const outDir = join(tempDir, 'out')
+    let schemaPath: string
+    try {
+      const files = await readdir(outDir)
+      console.log('[drizzle-kit pull] output files:', files)
+      const tsFile =
+        files.find(f => f.endsWith('.ts') && !f.startsWith('relations')) ||
+        files.find(f => f.endsWith('.ts'))
+      if (!tsFile)
+        throw new Error(
+          `No .ts files generated by drizzle-kit pull (found: ${files.join(', ') || 'nothing'})`
+        )
+      schemaPath = join(outDir, tsFile)
+    } catch (err: any) {
+      if (err.code === 'ENOENT')
+        throw new Error(
+          'drizzle-kit pull produced no output — check your connection string and database access'
+        )
+      throw err
+    }
     const rawSource = await readFile(schemaPath, 'utf-8')
     const source = stripTableExtras(rawSource)
 
@@ -557,13 +836,23 @@ async function callAI(
  * Extract code from markdown code blocks if present, otherwise return as-is.
  */
 function extractCodeBlock(text: string): string {
-  const match = text.match(/```(?:typescript|ts)?\s*\n([\s\S]*?)```/)
+  const match = text.match(/```(?:typescript|ts|json)?\s*\n([\s\S]*?)```/)
   return match ? match[1].trim() : text.trim()
 }
 
 const CUBE_PLAN_SYSTEM_PROMPT = `You are an expert at analyzing database schemas and planning analytical cube definitions for a semantic layer.
 
-Given Drizzle ORM schema files, analyze the tables and propose cubes to create. Focus on analytically useful tables — skip junction tables, migration tables, system/config tables, and audit logs unless they contain valuable metrics.
+Given Drizzle ORM schema files, analyze the tables and propose cubes to create.
+
+Include:
+- Fact tables with metrics (orders, transactions, events, productivity records, etc.)
+- Dimension/lookup tables that other tables reference via foreign keys (departments, categories, users, products, regions, etc.) — these are essential for grouping and filtering across cubes via joins
+- Any table with analytically useful data
+
+Skip:
+- Pure junction/bridge tables that exist solely to link two other tables (e.g. order_products with only two FK columns)
+- Migration tracking tables, system/config tables, session tables, and password/token tables
+- Tables that already have cubes (listed as "Existing cubes" in the prompt) — do NOT propose cubes for tables that are already covered
 
 Respond with ONLY a JSON array (no markdown, no explanation). Each element must have:
 - "name": The cube name (PascalCase, e.g. "Users", "Orders")
@@ -581,43 +870,178 @@ Example response:
 
 const CUBE_GENERATE_ONE_SYSTEM_PROMPT = `You are an expert at creating Drizzle Cube semantic layer definitions. Generate a SINGLE cube definition.
 
-## Rules
+## How to read Drizzle ORM schemas
+
+Drizzle schemas define tables using \`pgTable()\`, \`sqliteTable()\`, or \`mysqlTable()\`. Each column has a type function and optional modifiers:
+
+### Column types → Dimension types
+- \`text()\`, \`varchar()\`, \`char()\` → dimension type \`'string'\`
+- \`integer()\`, \`bigint()\`, \`smallint()\`, \`real()\`, \`doublePrecision()\`, \`numeric()\`, \`decimal()\`, \`serial()\` → dimension type \`'number'\`
+- \`timestamp()\`, \`date()\`, \`integer('...', { mode: 'timestamp' })\` → dimension type \`'time'\`
+- \`boolean()\`, \`integer('...', { mode: 'boolean' })\` → dimension type \`'boolean'\`
+
+### Column modifiers to watch for
+- \`.primaryKey()\` — mark this dimension with \`primaryKey: true\`
+- \`.notNull()\` — column is required (good for measures since it won't have nulls)
+- \`.default()\` / \`.$defaultFn()\` — has a default value
+- \`.references(() => otherTable.column)\` — foreign key (skip as dimension, used for joins in a later step)
+
+### Column naming → Dimension/Measure keys
+Use the Drizzle JS property name (camelCase) as the dimension/measure key, NOT the SQL column name in quotes. Example:
+\`\`\`
+createdAt: integer('created_at', { mode: 'timestamp' })  // key is "createdAt", not "created_at"
+departmentId: integer('department_id')                     // key is "departmentId"
+\`\`\`
+
+### Which columns to include
+- **Include as dimensions**: All columns that are useful for grouping, filtering, or display. This means most string, number, time, and boolean columns.
+- **Skip as dimensions**: Internal FK columns (like \`userId\`, \`departmentId\`) — these are used for joins, not for direct querying. Also skip internal columns like \`organisationId\`, \`tenantId\`, \`passwordHash\`, etc.
+- **Include as measures**: Create aggregate measures from numeric columns (sum, avg, min, max) and always include a \`count\` measure on the primary key. For boolean columns, consider a filtered count measure.
+
+## Output rules
 - Output ONLY the cube assignment code — NO imports, NO markdown fences, NO explanation, NO \`let\`/\`const\`/\`var\` keyword
 - Start directly with: \`variableName = defineCube('CubeName', {\`
-- Cast as \`Cube\` at the end: \`}) as Cube\`
+- Cast as \`Cube\` at the end: \`) as Cube\`
 - Every dimension MUST have a \`name\` property matching its key
 - Every measure MUST have a \`name\` property matching its key
 - Measures have ONLY these properties: \`name\`, \`title\`, \`type\`, \`sql\`, and optionally \`filters\` — do NOT add \`format\` or other properties
 - Set \`primaryKey: true\` on the ID column dimension
-- Use camelCase for dimension/measure keys matching the Drizzle column property names
-- For joins, use lazy \`() => otherCube\` references to the variable names of other cubes listed in the prompt
-- If cube A belongsTo B, the reverse join (B hasMany A) should also exist — but you only generate this cube, so just define this cube's joins
-- If the table has organisationId/orgId/tenantId, add security filtering with a cast: \`where: eq(table.orgColumn, ctx.securityContext.organisationId as number)\`
-- If the table has no multi-tenant column, omit the where clause
+- Do NOT include any joins — joins will be added in a separate step
+- Do NOT add a \`where\` clause to the \`sql\` block — security context filtering is not currently supported
 - Only reference table variables that exist in the schema files provided
+- Reference columns using the Drizzle table variable: \`tableName.columnProperty\` (e.g. \`orders.createdAt\`, NOT \`orders.created_at\`)
 
 ## Dimension types: 'string' | 'number' | 'time' | 'boolean'
 ## Measure types: 'count' | 'countDistinct' | 'sum' | 'avg' | 'min' | 'max' | 'runningTotal'
-## Relationship types: 'belongsTo' | 'hasOne' | 'hasMany' | 'belongsToMany'
 
-Example output (note: NO let/const, just bare assignment):
-usersCube = defineCube('Users', {
-  title: 'User Analytics',
-  description: 'User accounts and profiles',
-  sql: (ctx: QueryContext): BaseQueryDefinition => ({
-    from: users,
-    where: eq(users.organisationId, ctx.securityContext.organisationId as number)
+Example — given this schema:
+\`\`\`
+export const employees = sqliteTable('employees', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  salary: real('salary'),
+  active: integer('active', { mode: 'boolean' }).default(true),
+  departmentId: integer('department_id'),
+  createdAt: integer('created_at', { mode: 'timestamp' })
+})
+\`\`\`
+
+Output (note: NO let/const, just bare assignment):
+employeesCube = defineCube('Employees', {
+  title: 'Employee Analytics',
+  description: 'Employee data and metrics',
+  sql: (): BaseQueryDefinition => ({
+    from: employees
   }),
-  joins: {
-    Orders: { targetCube: () => ordersCube, relationship: 'hasMany', on: [{ source: users.id, target: orders.userId }] }
-  },
   dimensions: {
-    id: { name: 'id', title: 'User ID', type: 'number', sql: users.id, primaryKey: true },
-    name: { name: 'name', title: 'Name', type: 'string', sql: users.name },
+    id: { name: 'id', title: 'Employee ID', type: 'number', sql: employees.id, primaryKey: true },
+    name: { name: 'name', title: 'Name', type: 'string', sql: employees.name },
+    salary: { name: 'salary', title: 'Salary', type: 'number', sql: employees.salary },
+    active: { name: 'active', title: 'Active', type: 'boolean', sql: employees.active },
+    createdAt: { name: 'createdAt', title: 'Hire Date', type: 'time', sql: employees.createdAt }
   },
   measures: {
-    count: { name: 'count', title: 'Total Users', type: 'count', sql: users.id },
+    count: { name: 'count', title: 'Total Employees', type: 'countDistinct', sql: employees.id },
+    activeCount: { name: 'activeCount', title: 'Active Employees', type: 'countDistinct', sql: employees.id, filters: [() => eq(employees.active, true)] },
+    avgSalary: { name: 'avgSalary', title: 'Average Salary', type: 'avg', sql: employees.salary },
+    totalSalary: { name: 'totalSalary', title: 'Total Salary', type: 'sum', sql: employees.salary },
+    maxSalary: { name: 'maxSalary', title: 'Max Salary', type: 'max', sql: employees.salary },
+    minSalary: { name: 'minSalary', title: 'Min Salary', type: 'min', sql: employees.salary }
   }
 }) as Cube`
+
+const CUBE_JOINS_SYSTEM_PROMPT = `You are an expert at defining joins between Drizzle Cube semantic layer cubes.
+
+Given cube definitions and their underlying Drizzle ORM schema files, identify valid joins between cubes.
+
+## How to read Drizzle schemas for relationships
+
+Drizzle ORM schemas define tables with \`pgTable()\` or \`sqliteTable()\`. Relationships between tables are expressed in two ways — you must check BOTH:
+
+### 1. Explicit foreign keys via \`.references()\`
+Columns may have \`.references(() => otherTable.column)\` which defines a direct FK relationship:
+\`\`\`
+export const orders = pgTable('orders', {
+  id: integer('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id),  // FK: orders.userId → users.id
+  productId: integer('product_id').references(() => products.id),
+})
+\`\`\`
+Here \`orders.userId\` references \`users.id\`, meaning Orders belongsTo Users, and Users hasMany Orders.
+
+### 2. Implicit foreign keys via naming convention
+Even without \`.references()\`, columns named \`fooId\` or \`foo_id\` typically reference the \`id\` column of a table named \`foo\` / \`foos\`:
+\`\`\`
+export const employees = sqliteTable('employees', {
+  id: integer('id').primaryKey(),
+  departmentId: integer('department_id'),  // implicit FK → departments.id
+})
+\`\`\`
+Match these by comparing column names against table variable names in the schema. The Drizzle variable name (e.g. \`departments\`) is what you use in the \`on\` clause, NOT the SQL table name.
+
+### 3. Junction / many-to-many tables
+Tables with two FK columns and few other columns are typically junction tables for many-to-many relationships:
+\`\`\`
+export const orderProducts = pgTable('order_products', {
+  orderId: integer('order_id').references(() => orders.id),
+  productId: integer('product_id').references(() => products.id),
+})
+\`\`\`
+If a cube exists for the junction table, it belongsTo both sides. The parent cubes each hasMany the junction cube.
+
+## Determining relationship direction
+- If table A has a column referencing table B's primary key → Cube A \`belongsTo\` Cube B, and Cube B \`hasMany\` Cube A
+- If table A has a unique constraint on the FK column → use \`hasOne\` instead of \`hasMany\`
+- Always create BOTH directions of a join (the belongsTo on one side AND the hasMany on the other)
+
+## Join output rules
+- Use string-based targetCube: \`targetCube: 'CubeName'\` (the cube name from \`defineCube('CubeName', ...)\`, NOT the variable name)
+- Do NOT modify or repeat existing joins that are already correct
+- Only propose joins for cubes that need NEW joins
+- The "on" field references Drizzle column expressions using the table VARIABLE names from the schema (e.g. \`orders.userId\`, \`users.id\`)
+- The join key name should be the target cube's PascalCase name (e.g. "Users", "Departments")
+
+## Relationship types: 'belongsTo' | 'hasOne' | 'hasMany' | 'belongsToMany'
+
+Respond with ONLY a JSON array (no markdown, no explanation). Each element must have:
+- "variableName": The JS variable name of the cube that needs joins added (e.g. "ordersCube")
+- "joins": Object of joins to add, where each key is the join name and value has { targetCube, relationship, on }
+
+The "on" field should be a string containing the actual source code for the on array, e.g.:
+"on": "[{ source: orders.userId, target: users.id }]"
+
+Example — given schemas with \`orders.userId → users.id\` and cubes named "Orders" and "Users":
+[
+  { "variableName": "ordersCube", "joins": { "Users": { "targetCube": "Users", "relationship": "belongsTo", "on": "[{ source: orders.userId, target: users.id }]" } } },
+  { "variableName": "usersCube", "joins": { "Orders": { "targetCube": "Orders", "relationship": "hasMany", "on": "[{ source: users.id, target: orders.userId }]" } } }
+]
+
+If no joins are needed, return an empty array: []`
+
+const CUBE_APPLY_JOINS_SYSTEM_PROMPT = `You are an expert at editing Drizzle Cube source files. Your job is to add joins to an existing cube definition file.
+
+## Rules
+- Return ONLY the complete updated TypeScript source code — NO markdown fences, NO explanation
+- Preserve ALL existing code exactly as-is (imports, dimensions, measures, etc.)
+- Add or merge the requested joins into the cube's \`joins\` property
+- Use string-based targetCube: \`targetCube: 'CubeName'\`
+- If the cube already has a \`joins\` block, add the new joins to it without removing existing ones
+- If the cube has no \`joins\` block, add one between the \`sql\` and \`dimensions\` blocks
+- IMPORTANT: Add any missing imports for tables referenced in join \`on\` clauses. Check the schema files to find which file exports each table variable, and add/extend the import line accordingly
+- Do not add duplicate imports — if a table is already imported, leave it as-is
+- Do not change any other code besides adding joins and their required imports`
+
+const SCHEMA_FILTER_SYSTEM_PROMPT = `You are an expert at editing Drizzle ORM schema files. Your job is to filter an introspected schema to only include specific tables while keeping the code valid.
+
+## Rules
+- Return ONLY the complete valid TypeScript source code
+- Keep ALL enum declarations (pgEnum, sqliteEnum, etc.) that are referenced by remaining tables
+- Keep ALL type declarations and other non-table exports that are still used
+- Remove table definitions (pgTable/sqliteTable calls) for tables NOT in the keep list
+- Remove \`.references(...)\` calls that point to removed tables — replace the column definition with the same column type but without the \`.references()\` chain
+- Clean up imports: remove unused imports that were only needed by removed tables
+- Keep the same code style, formatting, and comments
+- Do NOT add any new code, comments, or modifications beyond the removals
+- If an enum is only used by removed tables, remove it too`
 
 export default app

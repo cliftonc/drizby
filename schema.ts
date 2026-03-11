@@ -17,8 +17,9 @@ export const connections = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     name: text('name').notNull(),
     description: text('description'),
-    engineType: text('engine_type').notNull(), // 'postgres', 'mysql', 'sqlite', 'duckdb'
-    connectionString: text('connection_string').notNull(),
+    engineType: text('engine_type').notNull(), // 'postgres', 'mysql', 'sqlite', 'singlestore', 'duckdb'
+    provider: text('provider'), // e.g. 'postgres-js', 'neon', 'mysql2', 'better-sqlite3', etc. Null = default for engineType
+    connectionString: text('connection_string').notNull(), // URL string or JSON for structured providers
     isActive: integer('is_active', { mode: 'boolean' }).default(true),
     organisationId: integer('organisation_id').notNull(),
     createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),

@@ -138,7 +138,9 @@ app.post('/reseed-demo', async c => {
   seedDemo(DEMO_DB_PATH)
 
   // Re-register connection and rebuild cubes (inline same logic as seed.ts)
-  const { DEMO_SCHEMA_SOURCE, DEMO_CUBES_SOURCE, DEMO_PORTLETS } = await import('./seed-demo-config')
+  const { DEMO_SCHEMA_SOURCE, DEMO_CUBES_SOURCE, DEMO_PORTLETS } = await import(
+    './seed-demo-config'
+  )
 
   const [newConn] = await db
     .insert(connections)

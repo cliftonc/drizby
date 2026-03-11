@@ -9,15 +9,18 @@ import type { Cube, DrizzleDatabase } from 'drizzle-cube/server'
 import { eq } from 'drizzle-orm'
 import { connections, cubeDefinitions, schemaFiles } from '../../schema'
 import { compileCube, compileSchema } from './cube-compiler'
+import { createDriver } from './driver-factory'
 
 interface ManagedConnection {
   connectionId: number
-  client: any // postgres.Sql or better-sqlite3 Database
+  client: any
   drizzle: DrizzleDatabase
   semanticLayer: SemanticLayerCompiler
-  schemaExports: Record<string, Record<string, any>> // schemaName -> exports
-  schemaSources: Record<string, string> // schemaName -> source code
+  schemaExports: Record<string, Record<string, any>>
+  schemaSources: Record<string, string>
   engineType: string
+  provider: string
+  cleanup: () => Promise<void>
 }
 
 class ConnectionManager {
@@ -35,7 +38,7 @@ class ConnectionManager {
 
     for (const conn of activeConnections) {
       try {
-        await this.createConnection(conn.id, conn.connectionString, conn.engineType)
+        await this.createConnection(conn.id, conn.connectionString, conn.engineType, conn.provider)
       } catch (err) {
         console.error(`Failed to initialize connection ${conn.id} (${conn.name}):`, err)
       }
@@ -51,45 +54,31 @@ class ConnectionManager {
   async createConnection(
     connectionId: number,
     connectionString: string,
-    engineType: string
+    engineType: string,
+    provider?: string | null
   ): Promise<ManagedConnection> {
     // Clean up existing if re-creating
     if (this.connections.has(connectionId)) {
       await this.remove(connectionId)
     }
 
-    let client: any
-    let db: DrizzleDatabase
-
-    if (engineType === 'sqlite') {
-      const Database = (await import('better-sqlite3')).default
-      const { drizzle } = await import('drizzle-orm/better-sqlite3')
-      const filePath = connectionString.replace(/^file:/, '')
-      const sqlite = new Database(filePath)
-      sqlite.pragma('journal_mode = WAL')
-      sqlite.pragma('foreign_keys = ON')
-      client = sqlite
-      db = drizzle(sqlite) as unknown as DrizzleDatabase
-    } else {
-      const postgres = (await import('postgres')).default
-      const { drizzle } = await import('drizzle-orm/postgres-js')
-      client = postgres(connectionString)
-      db = drizzle(client) as unknown as DrizzleDatabase
-    }
+    const driver = await createDriver(engineType, connectionString, provider)
 
     const semanticLayer = new SemanticLayerCompiler({
-      drizzle: db,
-      engineType: engineType as any,
+      drizzle: driver.db,
+      engineType: driver.engineType as any,
     })
 
     const managed: ManagedConnection = {
       connectionId,
-      client,
-      drizzle: db,
+      client: driver.client,
+      drizzle: driver.db,
       semanticLayer,
       schemaExports: {},
       schemaSources: {},
-      engineType,
+      engineType: driver.engineType,
+      provider: provider || engineType,
+      cleanup: driver.cleanup,
     }
 
     this.connections.set(connectionId, managed)
@@ -104,11 +93,7 @@ class ConnectionManager {
     if (!managed) return
 
     try {
-      if (managed.engineType === 'sqlite') {
-        managed.client.close()
-      } else {
-        await managed.client.end()
-      }
+      await managed.cleanup()
     } catch {}
 
     this.connections.delete(connectionId)

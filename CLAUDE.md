@@ -53,6 +53,11 @@ npm run setup        # Generate migrations, run them, seed demo data
 npm run build:client # TypeScript check + Vite production build
 ```
 
+## Database Migrations
+
+- **Never use `drizzle-kit push`** — it applies changes directly to the DB without creating migration files, causing the migration runner to fail on duplicate changes. Always use `drizzle-kit generate` to create migration files, then let the app's `migrate()` call apply them on startup.
+- Migration files live in `drizzle/` and are tracked in `drizzle/meta/_journal.json`.
+
 ## UI Rules
 
 - **Never use browser `alert()`, `confirm()`, or `prompt()` dialogs.** Use the generic `Modal`, `ConfirmModal`, and `PromptModal` components from `client/src/components/Modal.tsx`, or the `useConfirm` / `usePrompt` hooks from `client/src/hooks/` for imperative flows.

@@ -65,14 +65,15 @@ export interface BaseQueryDefinition { from: any; where?: any; }
 export interface Cube { name: string; title?: string; description?: string; sql: any; dimensions: any; measures: any; joins?: any; }
 export interface DimensionDef { name: string; title?: string; sql: any; type: 'string' | 'number' | 'boolean' | 'time'; primaryKey?: boolean; }
 export interface MeasureDef { name: string; title?: string; sql: any; type: 'count' | 'countDistinct' | 'sum' | 'avg' | 'min' | 'max'; filters?: any[]; }
-export interface JoinDef { targetCube: () => Cube; relationship: 'belongsTo' | 'hasMany' | 'hasOne'; on: Array<{ source: any; target: any }>; }
+export interface JoinDef { targetCube: (() => Cube) | string; relationship: 'belongsTo' | 'hasMany' | 'hasOne' | 'belongsToMany'; on: Array<{ source: any; target: any }>; }
 export declare function defineCube(name: string, config: {
   title?: string;
   description?: string;
-  sql: (ctx: QueryContext) => BaseQueryDefinition;
+  sql: (ctx?: QueryContext) => BaseQueryDefinition;
   joins?: Record<string, JoinDef>;
   dimensions: Record<string, DimensionDef>;
   measures: Record<string, MeasureDef>;
+  meta?: Record<string, any>;
 }): Cube;
 `
 

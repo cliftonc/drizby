@@ -9,6 +9,8 @@ import { Hono } from 'hono'
 import { connections, cubeDefinitions, schemaFiles } from '../../schema'
 import { guardPermission } from '../permissions/guard'
 import { connectionManager } from '../services/connection-manager'
+import { testDriver } from '../services/driver-factory'
+import { PROVIDERS } from '../services/provider-registry'
 
 interface Variables {
   db: DrizzleDatabase
@@ -32,6 +34,7 @@ app.get('/', async c => {
       name: connections.name,
       description: connections.description,
       engineType: connections.engineType,
+      provider: connections.provider,
       isActive: connections.isActive,
       createdAt: connections.createdAt,
       updatedAt: connections.updatedAt,
@@ -93,6 +96,11 @@ app.get('/status', async c => {
   return c.json(result)
 })
 
+// GET /api/connections/providers — return provider registry for the UI
+app.get('/providers', c => {
+  return c.json(PROVIDERS)
+})
+
 // Get single connection
 app.get('/:id', async c => {
   const db = c.get('db') as any
@@ -103,6 +111,7 @@ app.get('/:id', async c => {
       name: connections.name,
       description: connections.description,
       engineType: connections.engineType,
+      provider: connections.provider,
       connectionString: connections.connectionString,
       isActive: connections.isActive,
       createdAt: connections.createdAt,
@@ -129,6 +138,7 @@ app.post('/', adminGuard, async c => {
       name: body.name,
       description: body.description,
       engineType: body.engineType,
+      provider: body.provider || null,
       connectionString: body.connectionString,
       organisationId: 1,
     })
@@ -140,7 +150,8 @@ app.post('/', adminGuard, async c => {
     await connectionManager.createConnection(
       created.id,
       created.connectionString,
-      created.engineType
+      created.engineType,
+      created.provider
     )
   } catch (err) {
     console.error(`Failed to initialize new connection ${created.id}:`, err)
@@ -152,41 +163,18 @@ app.post('/', adminGuard, async c => {
 // Test arbitrary connection (admin only)
 app.post('/test', adminGuard, async c => {
   const body = await c.req.json()
-  const { engineType, connectionString } = body as {
+  const { engineType, connectionString, provider } = body as {
     engineType?: string
     connectionString?: string
+    provider?: string
   }
 
   if (!engineType || !connectionString) {
     return c.json({ success: false, message: 'engineType and connectionString are required' })
   }
 
-  const start = Date.now()
-
-  try {
-    if (engineType === 'sqlite') {
-      const Database = (await import('better-sqlite3')).default
-      const filePath = connectionString.replace(/^file:/, '')
-      const sqlite = new Database(filePath, { readonly: true })
-      sqlite.prepare('SELECT 1').get()
-      sqlite.close()
-    } else {
-      const postgres = (await import('postgres')).default
-      const sql = postgres(connectionString, { max: 1, connect_timeout: 10 })
-      await sql`SELECT 1`
-      await sql.end()
-    }
-
-    return c.json({
-      success: true,
-      message: `Connected successfully (${Date.now() - start}ms)`,
-    })
-  } catch (err: any) {
-    return c.json({
-      success: false,
-      message: err.message || 'Connection failed',
-    })
-  }
+  const result = await testDriver(engineType, connectionString, provider)
+  return c.json(result)
 })
 
 // Update connection (admin only)
@@ -201,6 +189,7 @@ app.put('/:id', adminGuard, async c => {
       name: body.name,
       description: body.description,
       engineType: body.engineType,
+      provider: body.provider || null,
       connectionString: body.connectionString,
       isActive: body.isActive,
       updatedAt: new Date(),
@@ -249,32 +238,8 @@ app.post('/:id/test', adminGuard, async c => {
   }
 
   const conn = result[0]
-  const start = Date.now()
-
-  try {
-    if (conn.engineType === 'sqlite') {
-      const Database = (await import('better-sqlite3')).default
-      const filePath = conn.connectionString.replace(/^file:/, '')
-      const sqlite = new Database(filePath, { readonly: true })
-      sqlite.prepare('SELECT 1').get()
-      sqlite.close()
-    } else {
-      const postgres = (await import('postgres')).default
-      const sql = postgres(conn.connectionString, { max: 1, connect_timeout: 10 })
-      await sql`SELECT 1`
-      await sql.end()
-    }
-
-    return c.json({
-      success: true,
-      message: `Connected successfully (${Date.now() - start}ms)`,
-    })
-  } catch (err: any) {
-    return c.json({
-      success: false,
-      message: err.message || 'Connection failed',
-    })
-  }
+  const testResult = await testDriver(conn.engineType, conn.connectionString, conn.provider)
+  return c.json(testResult)
 })
 
 export default app

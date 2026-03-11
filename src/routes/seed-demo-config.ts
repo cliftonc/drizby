@@ -240,10 +240,26 @@ export const DEMO_PORTLETS = [
           bindingKey: 'PREvents.prNumber',
           timeDimension: 'PREvents.timestamp',
           steps: [
-            { name: 'Created', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['created'] } },
-            { name: 'Review Requested', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['review_requested'] } },
-            { name: 'Approved', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['approved'] } },
-            { name: 'Merged', filter: { member: 'PREvents.eventType', operator: 'equals', values: ['merged'] } },
+            {
+              name: 'Created',
+              filter: { member: 'PREvents.eventType', operator: 'equals', values: ['created'] },
+            },
+            {
+              name: 'Review Requested',
+              filter: {
+                member: 'PREvents.eventType',
+                operator: 'equals',
+                values: ['review_requested'],
+              },
+            },
+            {
+              name: 'Approved',
+              filter: { member: 'PREvents.eventType', operator: 'equals', values: ['approved'] },
+            },
+            {
+              name: 'Merged',
+              filter: { member: 'PREvents.eventType', operator: 'equals', values: ['merged'] },
+            },
           ],
           includeTimeMetrics: true,
         },
@@ -254,48 +270,5 @@ export const DEMO_PORTLETS = [
     h: 6,
     x: 0,
     y: 8,
-  },
-  {
-    id: 'p5',
-    title: 'PR Event Flow',
-    analysisConfig: {
-      version: 1,
-      analysisType: 'flow',
-      activeView: 'chart',
-      charts: {
-        flow: {
-          chartType: 'sankey',
-          chartConfig: {},
-          displayConfig: {
-            showGrid: false,
-            showLegend: true,
-            showTooltip: true,
-          },
-        },
-      },
-      query: {
-        flow: {
-          bindingKey: 'PREvents.prNumber',
-          stepsAfter: 3,
-          stepsBefore: 3,
-          joinStrategy: 'auto',
-          startingStep: {
-            name: 'Starting Step',
-            filter: {
-              member: 'PREvents.eventType',
-              values: ['created'],
-              operator: 'equals',
-            },
-          },
-          timeDimension: 'PREvents.timestamp',
-          eventDimension: 'PREvents.eventType',
-        },
-      },
-    },
-    chartType: 'sankey',
-    w: 6,
-    h: 6,
-    x: 0,
-    y: 14,
   },
 ]
