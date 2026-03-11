@@ -74,6 +74,18 @@ This works on both `/api/*` and `/cubejs-api/*` routes. The key defaults to `dc-
 
 Example: `curl -H 'Authorization: Bearer dc-bi-dev-key' http://localhost:3461/cubejs-api/v1/meta`
 
+## Pre-commit Checks
+
+**Always run these before committing:**
+
+```bash
+npm run lint          # Biome lint + format check
+npx tsc --noEmit      # TypeScript type check
+npm test              # Vitest tests
+```
+
+All three must pass — CI will reject the push otherwise.
+
 ## Key Architecture Notes
 
 - **Multi-connection:** Each database connection gets its own Drizzle instance and SemanticLayerCompiler. Cubes are registered per connection.

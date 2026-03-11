@@ -154,6 +154,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const collapsed = sidebarWidth < COLLAPSE_THRESHOLD
 
   // Close mobile menu on route change
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally triggers on pathname change
   useEffect(() => {
     setMobileMenuOpen(false)
   }, [location.pathname])
