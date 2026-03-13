@@ -12,6 +12,13 @@ export default function LoginPage() {
 
   if (needsSetup) return <Navigate to="/setup" replace />
   if (pendingAdminSetup) return <Navigate to="/pending-setup" replace />
+
+  // Support returnTo for OAuth consent flow redirect through login
+  const returnTo = searchParams.get('returnTo')
+  if (authenticated && returnTo?.startsWith('/oauth/')) {
+    window.location.href = returnTo
+    return null
+  }
   if (authenticated) return <Navigate to="/" replace />
 
   const handleSubmit = async (e: React.FormEvent) => {

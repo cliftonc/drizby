@@ -42,6 +42,46 @@ app.use('*', async (c, next) => {
   await next()
 })
 
+// GET /api/settings/features — return server feature flags
+app.get('/features', async c => {
+  const db = c.get('db') as any
+  const [row] = await db
+    .select()
+    .from(settings)
+    .where(and(eq(settings.key, 'mcp_enabled'), eq(settings.organisationId, 1)))
+  return c.json({
+    mcpEnabled: row?.value === 'true',
+    appUrl: process.env.APP_URL || '',
+  })
+})
+
+// PUT /api/settings/features — update server feature flags
+app.put('/features', async c => {
+  const db = c.get('db') as any
+  const body = await c.req.json()
+  const { mcpEnabled } = body as { mcpEnabled?: boolean }
+
+  if (mcpEnabled !== undefined) {
+    const key = 'mcp_enabled'
+    const value = String(mcpEnabled)
+    const existing = await db
+      .select()
+      .from(settings)
+      .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
+    if (existing.length > 0) {
+      await db
+        .update(settings)
+        .set({ value, updatedAt: new Date() })
+        .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
+    } else {
+      await db.insert(settings).values({ key, value, organisationId: 1 })
+    }
+  }
+
+  invalidateCubeAppCache()
+  return c.json({ success: true })
+})
+
 // GET /api/settings/ai — return AI config with masked API key
 app.get('/ai', async c => {
   const db = c.get('db') as any

@@ -279,6 +279,98 @@ export const passwordResetTokensRelations = relations(passwordResetTokens, ({ on
 }))
 
 // ============================================================================
+// OAuth 2.1 Tables (MCP authentication)
+// ============================================================================
+
+// Dynamically registered OAuth/MCP clients
+export const oauthClients = sqliteTable('oauth_clients', {
+  id: text('id').primaryKey(), // client_id
+  name: text('name').notNull(),
+  secret: text('secret'), // hashed, nullable for public clients
+  redirectUris: text('redirect_uris', { mode: 'json' }).notNull().$type<string[]>(),
+  allowedGrants: text('allowed_grants', { mode: 'json' })
+    .notNull()
+    .$type<string[]>()
+    .$defaultFn(() => ['authorization_code', 'refresh_token']),
+  scopes: text('scopes', { mode: 'json' })
+    .notNull()
+    .$type<string[]>()
+    .$defaultFn(() => ['mcp:read']),
+  organisationId: integer('organisation_id').notNull().default(1),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+// Access + refresh tokens
+export const oauthTokens = sqliteTable(
+  'oauth_tokens',
+  {
+    accessToken: text('access_token').primaryKey(),
+    accessTokenExpiresAt: integer('access_token_expires_at', { mode: 'timestamp' }).notNull(),
+    refreshToken: text('refresh_token'),
+    refreshTokenExpiresAt: integer('refresh_token_expires_at', { mode: 'timestamp' }),
+    clientId: text('client_id')
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    scopes: text('scopes', { mode: 'json' }).notNull().$type<string[]>(),
+    isRevoked: integer('is_revoked', { mode: 'boolean' }).notNull().default(false),
+    createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  },
+  table => [
+    index('idx_oauth_tokens_refresh').on(table.refreshToken),
+    index('idx_oauth_tokens_user').on(table.userId),
+  ]
+)
+
+// Short-lived authorization codes
+export const oauthAuthCodes = sqliteTable('oauth_auth_codes', {
+  code: text('code').primaryKey(),
+  redirectUri: text('redirect_uri'),
+  codeChallenge: text('code_challenge'),
+  codeChallengeMethod: text('code_challenge_method').default('S256'),
+  clientId: text('client_id')
+    .notNull()
+    .references(() => oauthClients.id, { onDelete: 'cascade' }),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  scopes: text('scopes', { mode: 'json' }).notNull().$type<string[]>(),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  isRevoked: integer('is_revoked', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+// OAuth relations
+export const oauthClientsRelations = relations(oauthClients, ({ many }) => ({
+  tokens: many(oauthTokens),
+  authCodes: many(oauthAuthCodes),
+}))
+
+export const oauthTokensRelations = relations(oauthTokens, ({ one }) => ({
+  client: one(oauthClients, {
+    fields: [oauthTokens.clientId],
+    references: [oauthClients.id],
+  }),
+  user: one(users, {
+    fields: [oauthTokens.userId],
+    references: [users.id],
+  }),
+}))
+
+export const oauthAuthCodesRelations = relations(oauthAuthCodes, ({ one }) => ({
+  client: one(oauthClients, {
+    fields: [oauthAuthCodes.clientId],
+    references: [oauthClients.id],
+  }),
+  user: one(users, {
+    fields: [oauthAuthCodes.userId],
+    references: [users.id],
+  }),
+}))
+
+// ============================================================================
 // Groups System Tables
 // ============================================================================
 
@@ -412,6 +504,9 @@ export const schema = {
   groups,
   userGroups,
   contentGroupVisibility,
+  oauthClients,
+  oauthTokens,
+  oauthAuthCodes,
   connectionsRelations,
   schemaFilesRelations,
   cubeDefinitionsRelations,
@@ -423,6 +518,9 @@ export const schema = {
   groupsRelations,
   userGroupsRelations,
   contentGroupVisibilityRelations,
+  oauthClientsRelations,
+  oauthTokensRelations,
+  oauthAuthCodesRelations,
 }
 
 export type Schema = typeof schema

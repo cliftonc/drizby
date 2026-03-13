@@ -12,7 +12,7 @@ function onProxyError(_err: Error, _req: IncomingMessage, res: ServerResponse) {
 
 const proxyOpts = {
   target: 'http://localhost:3461',
-  changeOrigin: true,
+  changeOrigin: false,
   secure: false,
   configure: (proxy: any) => {
     proxy.on('error', onProxyError)
@@ -25,9 +25,14 @@ export default defineConfig({
   publicDir: './public',
   server: {
     port: 3460,
+    allowedHosts: true,
     proxy: {
       '/cubejs-api': proxyOpts,
       '/api': proxyOpts,
+      '/.well-known': proxyOpts,
+      '/oauth': proxyOpts,
+      '/mcp': proxyOpts,
+      '/health': proxyOpts,
     },
   },
   build: {

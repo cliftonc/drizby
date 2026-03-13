@@ -1,4 +1,6 @@
+import { and, eq, gt } from 'drizzle-orm'
 import type { Context, Next } from 'hono'
+import { oauthTokens, users } from '../../schema'
 import { defineAbilitiesFor } from '../permissions/abilities'
 import { getSessionCookie, validateSession } from './session'
 
@@ -16,6 +18,34 @@ export async function authMiddleware(c: Context, next: Next) {
       })
       c.set('ability', defineAbilitiesFor('admin'))
       return next()
+    }
+  }
+
+  // OAuth Bearer token (may be a JWT wrapping an opaque token ID)
+  const authHeader = c.req.header('Authorization')
+  if (authHeader?.startsWith('Bearer ')) {
+    const db = c.get('db') as any
+    let tokenId = authHeader.slice(7)
+    // Extract opaque token ID from JWT if needed
+    if (tokenId.includes('.')) {
+      try {
+        const payload = JSON.parse(Buffer.from(tokenId.split('.')[1], 'base64url').toString())
+        if (payload.jti) tokenId = payload.jti
+      } catch {}
+    }
+    const [row] = await db
+      .select({ userId: oauthTokens.userId, isRevoked: oauthTokens.isRevoked })
+      .from(oauthTokens)
+      .where(
+        and(eq(oauthTokens.accessToken, tokenId), gt(oauthTokens.accessTokenExpiresAt, new Date()))
+      )
+    if (row && !row.isRevoked) {
+      const [user] = await db.select().from(users).where(eq(users.id, row.userId))
+      if (user && !user.isBlocked) {
+        c.set('auth', { userId: user.id, user })
+        c.set('ability', defineAbilitiesFor(user.role))
+        return next()
+      }
     }
   }
 

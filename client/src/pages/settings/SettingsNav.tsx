@@ -15,18 +15,20 @@ interface NavSection {
 const sections: NavSection[] = [
   {
     label: 'Account',
-    items: [
-      { path: '/settings', label: 'Your Profile' },
-      { path: '/settings/team', label: 'Team', adminOnly: true },
-      { path: '/settings/groups', label: 'Groups', adminOnly: true },
-    ],
+    items: [{ path: '/settings', label: 'Your Profile' }],
   },
   {
     label: 'Configuration',
-    items: [{ path: '/settings/ai', label: 'AI', adminOnly: true }],
+    items: [
+      { path: '/settings/ai', label: 'AI', adminOnly: true },
+      { path: '/settings/data', label: 'Data', adminOnly: true },
+      { path: '/settings/features', label: 'Features', adminOnly: true },
+      { path: '/settings/groups', label: 'Groups', adminOnly: true },
+      { path: '/settings/team', label: 'Team', adminOnly: true },
+    ],
   },
   {
-    label: 'Data',
+    label: 'Connections',
     items: [{ path: '/settings/connections', label: 'Connections', adminOnly: true }],
   },
 ]

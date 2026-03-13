@@ -28,6 +28,7 @@
     "@casl/ability": "^6.8.0",
     "@electric-sql/pglite": "^0.3.16",
     "@hono/node-server": "^1.8.0",
+    "@jmondi/oauth2-server": "^4.2.2",
     "@libsql/client": "^0.17.0",
     "@monaco-editor/react": "^4.7.0",
     "@neondatabase/serverless": "^1.0.2",
