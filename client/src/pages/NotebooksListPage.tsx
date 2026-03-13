@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import ConnectionSelector from '../components/ConnectionSelector'
-import GroupPicker from '../components/GroupPicker'
 import { useAuth } from '../contexts/AuthContext'
 import { useConfirm } from '../hooks/useConfirm'
 import { useConnections } from '../hooks/useConnections'
-import { useGroups } from '../hooks/useGroups'
 import { useCreateNotebook, useDeleteNotebook, useNotebooks } from '../hooks/useNotebooks'
 
 export default function NotebooksListPage() {
@@ -21,8 +19,6 @@ export default function NotebooksListPage() {
   const [newDescription, setNewDescription] = useState('')
   const [newConnectionId, setNewConnectionId] = useState<number | undefined>()
   const { data: connections = [] } = useConnections()
-  const { data: allGroups = [] } = useGroups()
-  const [visibilityNotebookId, setVisibilityNotebookId] = useState<number | null>(null)
 
   const connectionMap = new Map(connections.map(c => [c.id, c.name]))
 
@@ -278,23 +274,16 @@ export default function NotebooksListPage() {
                   )}
                 </div>
 
-                {allGroups.length > 0 && (isAdmin || notebook.createdBy === user?.id) && (
-                  <div className="px-5 pb-2">
-                    <button
-                      onClick={() =>
-                        setVisibilityNotebookId(
-                          visibilityNotebookId === notebook.id ? null : notebook.id
-                        )
-                      }
-                      className="text-xs text-dc-text-muted hover:text-dc-primary transition-colors"
-                    >
-                      {visibilityNotebookId === notebook.id ? 'Hide visibility' : 'Set visibility'}
-                    </button>
-                    {visibilityNotebookId === notebook.id && (
-                      <div className="mt-2">
-                        <GroupPicker contentType="notebook" contentId={notebook.id} />
-                      </div>
-                    )}
+                {(notebook.visibilityGroups?.length ?? 0) > 0 && (
+                  <div className="flex flex-wrap gap-1 px-5 pb-2">
+                    {notebook.visibilityGroups!.map((g: any) => (
+                      <span
+                        key={g.groupId}
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-dc-accent-bg text-dc-accent border border-dc-accent-border"
+                      >
+                        {g.groupName}
+                      </span>
+                    ))}
                   </div>
                 )}
 

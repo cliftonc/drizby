@@ -4,9 +4,9 @@
  */
 
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { notebooks, userGroups, users } from '../../schema'
+import { contentGroupVisibility, groups, notebooks, userGroups, users } from '../../schema'
 
 interface Variables {
   db: DrizzleDatabase
@@ -77,7 +77,39 @@ notebooksApp.get('/', async c => {
       .orderBy(asc(notebooks.order), asc(notebooks.name))
 
     const items = rows.map((r: any) => ({ ...r.notebook, createdByName: r.createdByName }))
-    return c.json({ data: items, meta: { total: items.length } })
+
+    // Batch-fetch visibility groups for all returned notebooks
+    const notebookIds = items.map((n: any) => n.id)
+    const visibilityMap: Record<number, { groupId: number; groupName: string }[]> = {}
+    if (notebookIds.length > 0) {
+      const visRows = await db
+        .select({
+          contentId: contentGroupVisibility.contentId,
+          groupId: contentGroupVisibility.groupId,
+          groupName: groups.name,
+        })
+        .from(contentGroupVisibility)
+        .innerJoin(groups, eq(contentGroupVisibility.groupId, groups.id))
+        .where(
+          and(
+            eq(contentGroupVisibility.contentType, 'notebook'),
+            inArray(contentGroupVisibility.contentId, notebookIds)
+          )
+        )
+      for (const row of visRows) {
+        if (!visibilityMap[row.contentId]) visibilityMap[row.contentId] = []
+        visibilityMap[row.contentId].push({
+          groupId: row.groupId,
+          groupName: row.groupName,
+        })
+      }
+    }
+    const itemsWithGroups = items.map((n: any) => ({
+      ...n,
+      visibilityGroups: visibilityMap[n.id] || [],
+    }))
+
+    return c.json({ data: itemsWithGroups, meta: { total: itemsWithGroups.length } })
   } catch (error) {
     console.error('Error fetching notebooks:', error)
     return c.json({ error: 'Failed to fetch notebooks' }, 500)
@@ -149,6 +181,20 @@ notebooksApp.post('/', async c => {
         createdBy: auth?.userId || null,
       })
       .returning()
+
+    // Auto-assign creator's groups for default visibility
+    if (auth?.userId) {
+      const creatorGroupIds = await getUserGroupIds(db, auth.userId)
+      if (creatorGroupIds.length > 0) {
+        await db.insert(contentGroupVisibility).values(
+          creatorGroupIds.map(groupId => ({
+            contentType: 'notebook' as const,
+            contentId: newItem[0].id,
+            groupId,
+          }))
+        )
+      }
+    }
 
     return c.json({ data: newItem[0] }, 201)
   } catch (error) {

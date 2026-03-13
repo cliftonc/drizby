@@ -2,7 +2,6 @@ import { DashboardThumbnailPlaceholder } from 'drizzle-cube/client'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import ConnectionSelector from '../components/ConnectionSelector'
-import GroupPicker from '../components/GroupPicker'
 import { useAuth } from '../contexts/AuthContext'
 import {
   useAnalyticsPages,
@@ -12,7 +11,6 @@ import {
 } from '../hooks/useAnalyticsPages'
 import { useConfirm } from '../hooks/useConfirm'
 import { useConnections } from '../hooks/useConnections'
-import { useGroups } from '../hooks/useGroups'
 
 export default function DashboardListPage() {
   const { data: pages = [], isLoading, error } = useAnalyticsPages()
@@ -28,8 +26,6 @@ export default function DashboardListPage() {
   const isAdmin = user?.role === 'admin'
   const thumbnailEnabled = true
   const { data: connections = [] } = useConnections()
-  const { data: allGroups = [] } = useGroups()
-  const [visibilityPageId, setVisibilityPageId] = useState<number | null>(null)
 
   const connectionMap = new Map(connections.map(c => [c.id, c.name]))
 
@@ -241,21 +237,16 @@ export default function DashboardListPage() {
                   )}
                 </div>
 
-                {allGroups.length > 0 && (isAdmin || page.createdBy === user?.id) && (
-                  <div className="mb-3">
-                    <button
-                      onClick={() =>
-                        setVisibilityPageId(visibilityPageId === page.id ? null : page.id)
-                      }
-                      className="text-xs text-dc-text-muted hover:text-dc-primary transition-colors"
-                    >
-                      {visibilityPageId === page.id ? 'Hide visibility' : 'Set visibility'}
-                    </button>
-                    {visibilityPageId === page.id && (
-                      <div className="mt-2">
-                        <GroupPicker contentType="dashboard" contentId={page.id} />
-                      </div>
-                    )}
+                {(page.visibilityGroups?.length ?? 0) > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {page.visibilityGroups!.map((g: any) => (
+                      <span
+                        key={g.groupId}
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-dc-accent-bg text-dc-accent border border-dc-accent-border"
+                      >
+                        {g.groupName}
+                      </span>
+                    ))}
                   </div>
                 )}
 

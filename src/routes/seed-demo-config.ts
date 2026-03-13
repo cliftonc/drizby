@@ -134,7 +134,6 @@ export async function seedDemoInternalData(db: any, userId?: number) {
   sqlite.close()
 
   // 2. Register connection
-  console.log('[seed] Inserting connection...')
   const [conn] = await db
     .insert(connections)
     .values({
@@ -147,7 +146,6 @@ export async function seedDemoInternalData(db: any, userId?: number) {
     .returning()
 
   // 3. Schema + cubes + dashboard
-  console.log('[seed] Inserting schema file...')
   const [schema] = await db
     .insert(schemaFiles)
     .values({
@@ -158,7 +156,6 @@ export async function seedDemoInternalData(db: any, userId?: number) {
     })
     .returning()
 
-  console.log('[seed] Inserting cube definitions...')
   await db.insert(cubeDefinitions).values({
     name: 'Demo Cubes',
     title: 'Employee Analytics Cubes',
@@ -169,7 +166,6 @@ export async function seedDemoInternalData(db: any, userId?: number) {
     organisationId: 1,
   })
 
-  console.log('[seed] Inserting analytics page...')
   await db.insert(analyticsPages).values({
     name: 'Overview Dashboard',
     description: 'Employee and productivity overview',
@@ -180,7 +176,6 @@ export async function seedDemoInternalData(db: any, userId?: number) {
 
   // 4. Groups: ensure Department type with Engineering, Marketing, Sales, HR
   //    Idempotent — reuses existing type/groups if they already exist.
-  console.log('[seed] Ensuring group type...')
   const [existingType] = await db
     .select()
     .from(groupTypes)
@@ -200,7 +195,6 @@ export async function seedDemoInternalData(db: any, userId?: number) {
           .returning()
       )[0]
 
-  console.log('[seed] Ensuring groups...')
   const deptNames = ['Engineering', 'Marketing', 'Sales', 'HR']
   const deptGroups: any[] = []
   for (const name of deptNames) {
@@ -221,7 +215,6 @@ export async function seedDemoInternalData(db: any, userId?: number) {
   }
 
   // Add the current user (or first admin) to Engineering, Marketing, Sales
-  console.log('[seed] Ensuring user-group memberships...')
   let seedUserId = userId
   if (!seedUserId) {
     const [admin] = await db
@@ -249,7 +242,6 @@ export async function seedDemoInternalData(db: any, userId?: number) {
   }
 
   // 5. Initialize connection and compile
-  console.log('[seed] Initializing connection and compiling cubes...')
   await connectionManager.createConnection(conn.id, conn.connectionString, conn.engineType)
   await connectionManager.compileAll(db)
 

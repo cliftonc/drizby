@@ -21,6 +21,11 @@ export interface Connection {
   updatedAt: string
 }
 
+export interface VisibilityGroup {
+  groupId: number
+  groupName: string
+}
+
 export interface AnalyticsPage {
   id: number
   name: string
@@ -30,6 +35,7 @@ export interface AnalyticsPage {
   config: DashboardConfig
   createdBy?: number | null
   createdByName?: string | null
+  visibilityGroups?: VisibilityGroup[]
   order: number
   isActive: boolean
   createdAt: string
@@ -60,6 +66,7 @@ export interface Notebook {
   config: NotebookConfig | null
   createdBy?: number | null
   createdByName?: string | null
+  visibilityGroups?: VisibilityGroup[]
   order: number
   isActive: boolean
   createdAt: string

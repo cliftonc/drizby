@@ -4,9 +4,9 @@
  */
 
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { analyticsPages, userGroups, users } from '../../schema'
+import { analyticsPages, contentGroupVisibility, groups, userGroups, users } from '../../schema'
 import { productivityDashboardConfig } from '../dashboard-config'
 
 interface Variables {
@@ -85,7 +85,43 @@ analyticsApp.get('/', async c => {
       .orderBy(asc(analyticsPages.order), asc(analyticsPages.name))
 
     const pages = rows.map((r: any) => ({ ...r.page, createdByName: r.createdByName }))
-    return c.json({ data: pages, meta: { total: pages.length } })
+
+    // Batch-fetch visibility groups for all returned pages
+    const pageIds = pages.map((p: any) => p.id)
+    const visibilityMap: Record<
+      number,
+      { groupId: number; groupName: string; typeName: string }[]
+    > = {}
+    if (pageIds.length > 0) {
+      const visRows = await db
+        .select({
+          contentId: contentGroupVisibility.contentId,
+          groupId: contentGroupVisibility.groupId,
+          groupName: groups.name,
+        })
+        .from(contentGroupVisibility)
+        .innerJoin(groups, eq(contentGroupVisibility.groupId, groups.id))
+        .where(
+          and(
+            eq(contentGroupVisibility.contentType, 'dashboard'),
+            inArray(contentGroupVisibility.contentId, pageIds)
+          )
+        )
+      for (const row of visRows) {
+        if (!visibilityMap[row.contentId]) visibilityMap[row.contentId] = []
+        visibilityMap[row.contentId].push({
+          groupId: row.groupId,
+          groupName: row.groupName,
+          typeName: '',
+        })
+      }
+    }
+    const pagesWithGroups = pages.map((p: any) => ({
+      ...p,
+      visibilityGroups: visibilityMap[p.id] || [],
+    }))
+
+    return c.json({ data: pagesWithGroups, meta: { total: pagesWithGroups.length } })
   } catch (error) {
     console.error('Error fetching analytics pages:', error)
     return c.json({ error: 'Failed to fetch analytics pages' }, 500)
@@ -164,6 +200,20 @@ analyticsApp.post('/', async c => {
         createdBy: auth?.userId || null,
       })
       .returning()
+
+    // Auto-assign creator's groups for default visibility
+    if (auth?.userId) {
+      const creatorGroupIds = await getUserGroupIds(db, auth.userId)
+      if (creatorGroupIds.length > 0) {
+        await db.insert(contentGroupVisibility).values(
+          creatorGroupIds.map(groupId => ({
+            contentType: 'dashboard' as const,
+            contentId: newPage[0].id,
+            groupId,
+          }))
+        )
+      }
+    }
 
     return c.json({ data: newPage[0] }, 201)
   } catch (error) {
