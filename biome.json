@@ -71,7 +71,9 @@
       "**/build/**",
       "**/coverage/**",
       "**/templates/**",
-      "**/drizzle/**"
+      "**/drizzle/**",
+      "package.json",
+      "package-lock.json"
     ]
   },
   "overrides": [
