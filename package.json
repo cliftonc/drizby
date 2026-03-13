@@ -1,6 +1,6 @@
 {
   "name": "drizby",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Configurable BI platform powered by drizzle-cube",
   "type": "module",
   "scripts": {
@@ -76,6 +76,12 @@
     "vite": "^5.0.0",
     "vitest": "^4.0.18"
   },
-  "keywords": ["bi", "analytics", "drizzle-cube", "semantic-layer", "dashboard"],
+  "keywords": [
+    "bi",
+    "analytics",
+    "drizzle-cube",
+    "semantic-layer",
+    "dashboard"
+  ],
   "license": "MIT"
 }
