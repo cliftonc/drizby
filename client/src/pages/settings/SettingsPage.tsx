@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 import ConnectionsPage from '../ConnectionsPage'
 import AISettingsPage from './AISettingsPage'
 import GeneralSettings from './GeneralSettings'
+import GroupsPage from './GroupsPage'
 import SettingsNav from './SettingsNav'
 import TeamPage from './TeamPage'
 
@@ -13,6 +14,7 @@ export default function SettingsPage() {
         <Routes>
           <Route index element={<GeneralSettings />} />
           <Route path="team" element={<TeamPage />} />
+          <Route path="groups" element={<GroupsPage />} />
           <Route path="ai" element={<AISettingsPage />} />
           <Route path="connections" element={<ConnectionsPage />} />
         </Routes>

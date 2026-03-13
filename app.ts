@@ -10,7 +10,7 @@ import { count, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
-import { settings, users } from './schema'
+import { groupTypes, groups, settings, userGroups, users } from './schema'
 import { authMiddleware } from './src/auth/middleware'
 import { getSessionCookie, validateSession } from './src/auth/session'
 import { db } from './src/db/index'
@@ -21,6 +21,7 @@ import authApp from './src/routes/auth'
 import connectionsApp from './src/routes/connections'
 import cubeDefsApp from './src/routes/cube-definitions'
 import editorTypesApp from './src/routes/editor-types'
+import groupsApp from './src/routes/groups'
 import notebooksApp from './src/routes/notebooks'
 import schemaFilesApp from './src/routes/schema-files'
 import seedDemoApp from './src/routes/seed-demo'
@@ -37,12 +38,51 @@ interface Variables {
 
 async function extractSecurityContext(c: any): Promise<SecurityContext> {
   try {
-    const auth = c.get('auth')
-    if (auth) {
-      return { organisationId: 1, userId: auth.userId }
+    // Resolve userId directly from the request (headers/cookies),
+    // since the cube app is a separate Hono instance without shared context.
+    let userId: number | null = null
+
+    // Dev mode: check Bearer token
+    const isDev = process.env.NODE_ENV !== 'production'
+    const devApiKey = process.env.DEV_API_KEY || 'dc-bi-dev-key'
+    const authHeader = c.req.header('Authorization')
+    if (isDev && authHeader === `Bearer ${devApiKey}`) {
+      userId = 1
+    }
+
+    // Session cookie
+    if (!userId) {
+      const sessionId = getSessionCookie(c)
+      if (sessionId) {
+        const result = await validateSession(db as any, sessionId)
+        if (result) userId = result.user.id
+      }
+    }
+
+    if (userId) {
+      const groupRows = await db
+        .select({
+          groupId: userGroups.groupId,
+          groupName: groups.name,
+          typeName: groupTypes.name,
+        })
+        .from(userGroups)
+        .innerJoin(groups, eq(userGroups.groupId, groups.id))
+        .innerJoin(groupTypes, eq(groups.groupTypeId, groupTypes.id))
+        .where(eq(userGroups.userId, userId))
+
+      const groupsByType: Record<string, string[]> = {}
+      const groupIds: number[] = []
+      for (const row of groupRows) {
+        groupIds.push(row.groupId)
+        if (!groupsByType[row.typeName]) groupsByType[row.typeName] = []
+        groupsByType[row.typeName].push(row.groupName)
+      }
+
+      return { organisationId: 1, userId, groups: groupsByType, groupIds }
     }
   } catch {}
-  return { organisationId: 1, userId: 1 }
+  return { organisationId: 1, userId: 1, groups: {}, groupIds: [] }
 }
 
 const app = new Hono<{ Variables: Variables }>()
@@ -243,6 +283,7 @@ app.route('/api/schema-files', schemaFilesApp)
 app.route('/api/editor/types', editorTypesApp)
 app.route('/api/analytics-pages', analyticsApp)
 app.route('/api/notebooks', notebooksApp)
+app.route('/api/groups', groupsApp)
 app.route('/api/users', usersApp)
 app.route('/api/settings', settingsApp)
 

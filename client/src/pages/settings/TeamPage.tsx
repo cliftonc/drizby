@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useConfirm } from '../../hooks/useConfirm'
+import { useGroups } from '../../hooks/useGroups'
 
 interface UserRow {
   id: number
@@ -17,6 +18,31 @@ export default function TeamPage() {
   const queryClient = useQueryClient()
   const isAdmin = currentUser?.role === 'admin'
   const [confirmDelete, ConfirmDialog] = useConfirm()
+
+  const { data: allGroups = [] } = useGroups()
+
+  // Build user→groups mapping from group member counts
+  // We'll fetch each group's members to build a full picture
+  const { data: userGroupMap = {} } = useQuery<
+    Record<number, { id: number; name: string; typeName: string }[]>
+  >({
+    queryKey: ['userGroupMap'],
+    queryFn: async () => {
+      // Fetch all groups with members
+      const map: Record<number, { id: number; name: string; typeName: string }[]> = {}
+      for (const g of allGroups) {
+        const res = await fetch(`/api/groups/${g.id}/members`, { credentials: 'include' })
+        if (!res.ok) continue
+        const { data: members } = await res.json()
+        for (const m of members) {
+          if (!map[m.userId]) map[m.userId] = []
+          map[m.userId].push({ id: g.id, name: g.name, typeName: g.typeName })
+        }
+      }
+      return map
+    },
+    enabled: allGroups.length > 0,
+  })
 
   const [showCreate, setShowCreate] = useState(false)
   const [newUser, setNewUser] = useState({ name: '', email: '', role: 'member' })
@@ -366,6 +392,9 @@ export default function TeamPage() {
               <th style={{ padding: '8px 16px', fontWeight: 500 }}>Name</th>
               <th style={{ padding: '8px 16px', fontWeight: 500 }}>Email</th>
               <th style={{ padding: '8px 16px', fontWeight: 500 }}>Role</th>
+              {allGroups.length > 0 && (
+                <th style={{ padding: '8px 16px', fontWeight: 500 }}>Groups</th>
+              )}
               <th style={{ padding: '8px 16px', fontWeight: 500 }}>Status</th>
               {isAdmin && <th style={{ padding: '8px 16px', fontWeight: 500 }}>Actions</th>}
             </tr>
@@ -389,6 +418,30 @@ export default function TeamPage() {
                 </td>
                 <td style={{ padding: '8px 16px', color: 'var(--dc-text-muted)' }}>{u.email}</td>
                 <td style={{ padding: '8px 16px' }}>{roleBadge(u.role)}</td>
+                {allGroups.length > 0 && (
+                  <td style={{ padding: '8px 16px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {(userGroupMap[u.id] || []).map(g => (
+                        <span
+                          key={g.id}
+                          style={{
+                            display: 'inline-block',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            backgroundColor: 'var(--dc-muted-bg)',
+                            color: 'var(--dc-text-muted)',
+                          }}
+                        >
+                          {g.name}
+                        </span>
+                      ))}
+                      {(!userGroupMap[u.id] || userGroupMap[u.id].length === 0) && (
+                        <span style={{ fontSize: 11, color: 'var(--dc-text-disabled)' }}>--</span>
+                      )}
+                    </div>
+                  </td>
+                )}
                 <td style={{ padding: '8px 16px' }}>
                   <span
                     style={{

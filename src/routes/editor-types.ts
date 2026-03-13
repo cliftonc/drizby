@@ -9,7 +9,7 @@ import { dirname, join, relative } from 'node:path'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { schemaFiles } from '../../schema'
+import { groupTypes, schemaFiles } from '../../schema'
 import { generateSchemaTypes } from '../services/cube-compiler'
 
 const esmRequire = createRequire(import.meta.url)
@@ -91,8 +91,45 @@ app.get('/drizzle-orm', c => {
   return c.json(getDrizzleOrmTypes())
 })
 
-app.get('/drizzle-cube', c => {
-  return c.json(getDrizzleCubeTypes())
+app.get('/drizzle-cube', async c => {
+  const db = c.get('db') as any
+  const types = getDrizzleCubeTypes()
+
+  // Build dynamic SecurityContext with actual group type names
+  const gtRows = await db
+    .select({ name: groupTypes.name })
+    .from(groupTypes)
+    .where(eq(groupTypes.organisationId, 1))
+  const typeNames = gtRows.map((r: any) => r.name as string)
+
+  let groupsType: string
+  if (typeNames.length > 0) {
+    const fields = typeNames.map((n: string) => `'${n}'?: string[]`).join('; ')
+    groupsType = `{ ${fields}; [key: string]: string[] | undefined }`
+  } else {
+    groupsType = 'Record<string, string[]>'
+  }
+
+  const patchedSecurityContext = `export declare interface SecurityContext {
+    organisationId?: number | string;
+    userId?: number | string;
+    groups?: ${groupsType};
+    groupIds?: number[];
+    [key: string]: any;
+}`
+
+  // Patch the index.d.ts to replace the generic SecurityContext
+  const result = { ...types }
+  for (const [path, content] of Object.entries(result)) {
+    if (path.endsWith('index.d.ts') && content.includes('interface SecurityContext')) {
+      result[path] = content.replace(
+        /export declare interface SecurityContext\s*\{[^}]*\}/,
+        patchedSecurityContext
+      )
+    }
+  }
+
+  return c.json(result)
 })
 
 // Serve generated schema .d.ts for a specific schema file

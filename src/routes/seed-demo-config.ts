@@ -1,7 +1,260 @@
 /**
- * Shared demo seed configuration — schema source, cube source, and dashboard portlets.
+ * Shared demo seed configuration — schema source, cube source, dashboard portlets,
+ * and internal DB seeding function.
  * Used by both seed-demo.ts (SSE endpoint) and settings.ts (reseed endpoint).
  */
+
+import { and, eq } from 'drizzle-orm'
+import { invalidateCubeAppCache } from '../../app'
+import {
+  analyticsPages,
+  connections,
+  contentGroupVisibility,
+  cubeDefinitions,
+  groupTypes,
+  groups,
+  notebooks,
+  schemaFiles,
+  userGroups,
+  users,
+} from '../../schema'
+import { connectionManager } from '../services/connection-manager'
+
+const DEMO_DB_PATH = 'data/demo.sqlite'
+
+/**
+ * Removes all demo data: connection, cubes, schemas, pages, notebooks,
+ * demo groups, and the demo.sqlite file.
+ * Safe — only deletes demo-specific data, not user-created content.
+ */
+export async function clearDemoData(db: any) {
+  const [existingConn] = await db
+    .select()
+    .from(connections)
+    .where(and(eq(connections.name, 'Demo SQLite'), eq(connections.organisationId, 1)))
+    .limit(1)
+
+  if (existingConn) {
+    await connectionManager.remove(existingConn.id)
+    invalidateCubeAppCache()
+
+    await db.delete(cubeDefinitions).where(eq(cubeDefinitions.connectionId, existingConn.id))
+    await db.delete(schemaFiles).where(eq(schemaFiles.connectionId, existingConn.id))
+    await db.delete(analyticsPages).where(eq(analyticsPages.connectionId, existingConn.id))
+    await db.delete(notebooks).where(eq(notebooks.connectionId, existingConn.id))
+    await db.delete(connections).where(eq(connections.id, existingConn.id))
+  }
+
+  // Delete demo groups (only the "Department" type created by seeding)
+  const [demoType] = await db
+    .select()
+    .from(groupTypes)
+    .where(and(eq(groupTypes.name, 'Department'), eq(groupTypes.organisationId, 1)))
+    .limit(1)
+
+  if (demoType) {
+    // Get group IDs for this type to clean up visibility + memberships
+    const demoGroups = await db
+      .select({ id: groups.id })
+      .from(groups)
+      .where(eq(groups.groupTypeId, demoType.id))
+    const demoGroupIds = demoGroups.map((g: any) => g.id)
+
+    if (demoGroupIds.length > 0) {
+      const { inArray } = await import('drizzle-orm')
+      await db
+        .delete(contentGroupVisibility)
+        .where(inArray(contentGroupVisibility.groupId, demoGroupIds))
+      await db.delete(userGroups).where(inArray(userGroups.groupId, demoGroupIds))
+      await db.delete(groups).where(inArray(groups.id, demoGroupIds))
+    }
+    await db.delete(groupTypes).where(eq(groupTypes.id, demoType.id))
+  }
+
+  // Delete demo.sqlite file
+  const { unlinkSync } = await import('node:fs')
+  try {
+    unlinkSync(DEMO_DB_PATH)
+    unlinkSync(`${DEMO_DB_PATH}-wal`)
+    unlinkSync(`${DEMO_DB_PATH}-shm`)
+  } catch {}
+}
+
+/**
+ * Seeds the demo SQLite file, then registers the connection, schema, cubes,
+ * dashboard, and groups in the internal (drizby) database.
+ * Cleans up any existing demo data first.
+ * Single source of truth — called from both SSE seed and reseed endpoints.
+ */
+export async function seedDemoInternalData(db: any, userId?: number) {
+  await clearDemoData(db)
+
+  // 1. Create and populate demo SQLite database
+  const { mkdirSync } = await import('node:fs')
+  const Database = (await import('better-sqlite3')).default
+  const { drizzle } = await import('drizzle-orm/better-sqlite3')
+  const {
+    departments: demoDepts,
+    employees: demoEmps,
+    productivity: demoProd,
+    prEvents: demoPR,
+  } = await import('../../schema/demo')
+  const { DEMO_DDL, deptData, makeEmployeeData, makeProductivityData, makePREventsData } =
+    await import('../../scripts/demo-data')
+
+  mkdirSync('data', { recursive: true })
+  const sqlite = new Database(DEMO_DB_PATH)
+  sqlite.pragma('journal_mode = WAL')
+  sqlite.pragma('foreign_keys = ON')
+  sqlite.exec(DEMO_DDL)
+  const localDb = drizzle(sqlite)
+
+  const depts = localDb.insert(demoDepts).values(deptData).returning().all()
+  const emps = localDb
+    .insert(demoEmps)
+    .values(makeEmployeeData(depts.map(d => d.id)))
+    .returning()
+    .all()
+
+  const prodData = makeProductivityData(emps)
+  const BATCH = 100
+  for (let i = 0; i < prodData.length; i += BATCH) {
+    localDb
+      .insert(demoProd)
+      .values(prodData.slice(i, i + BATCH))
+      .run()
+  }
+  const prData = makePREventsData(emps)
+  for (let i = 0; i < prData.length; i += BATCH) {
+    localDb
+      .insert(demoPR)
+      .values(prData.slice(i, i + BATCH))
+      .run()
+  }
+  sqlite.close()
+
+  // 2. Register connection
+  console.log('[seed] Inserting connection...')
+  const [conn] = await db
+    .insert(connections)
+    .values({
+      name: 'Demo SQLite',
+      description: 'Built-in demo database with sample employee data',
+      engineType: 'sqlite',
+      connectionString: `file:${DEMO_DB_PATH}`,
+      organisationId: 1,
+    })
+    .returning()
+
+  // 3. Schema + cubes + dashboard
+  console.log('[seed] Inserting schema file...')
+  const [schema] = await db
+    .insert(schemaFiles)
+    .values({
+      name: 'demo-schema.ts',
+      sourceCode: DEMO_SCHEMA_SOURCE,
+      connectionId: conn.id,
+      organisationId: 1,
+    })
+    .returning()
+
+  console.log('[seed] Inserting cube definitions...')
+  await db.insert(cubeDefinitions).values({
+    name: 'Demo Cubes',
+    title: 'Employee Analytics Cubes',
+    description: 'Employees, Departments, Productivity, and PR Events cubes for the demo dataset',
+    sourceCode: DEMO_CUBES_SOURCE,
+    schemaFileId: schema.id,
+    connectionId: conn.id,
+    organisationId: 1,
+  })
+
+  console.log('[seed] Inserting analytics page...')
+  await db.insert(analyticsPages).values({
+    name: 'Overview Dashboard',
+    description: 'Employee and productivity overview',
+    connectionId: conn.id,
+    config: { portlets: DEMO_PORTLETS, filters: [] },
+    organisationId: 1,
+  })
+
+  // 4. Groups: ensure Department type with Engineering, Marketing, Sales, HR
+  //    Idempotent — reuses existing type/groups if they already exist.
+  console.log('[seed] Ensuring group type...')
+  const [existingType] = await db
+    .select()
+    .from(groupTypes)
+    .where(and(eq(groupTypes.name, 'Department'), eq(groupTypes.organisationId, 1)))
+    .limit(1)
+
+  const deptType = existingType
+    ? existingType
+    : (
+        await db
+          .insert(groupTypes)
+          .values({
+            name: 'Department',
+            description: 'Organizational departments',
+            organisationId: 1,
+          })
+          .returning()
+      )[0]
+
+  console.log('[seed] Ensuring groups...')
+  const deptNames = ['Engineering', 'Marketing', 'Sales', 'HR']
+  const deptGroups: any[] = []
+  for (const name of deptNames) {
+    const [existing] = await db
+      .select()
+      .from(groups)
+      .where(and(eq(groups.name, name), eq(groups.groupTypeId, deptType.id)))
+      .limit(1)
+    if (existing) {
+      deptGroups.push(existing)
+    } else {
+      const [created] = await db
+        .insert(groups)
+        .values({ name, groupTypeId: deptType.id, organisationId: 1 })
+        .returning()
+      deptGroups.push(created)
+    }
+  }
+
+  // Add the current user (or first admin) to Engineering, Marketing, Sales
+  console.log('[seed] Ensuring user-group memberships...')
+  let seedUserId = userId
+  if (!seedUserId) {
+    const [admin] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.role, 'admin'))
+      .limit(1)
+    seedUserId = admin?.id
+  }
+
+  if (seedUserId) {
+    const adminDepts = deptGroups.filter((g: any) =>
+      ['Engineering', 'Marketing', 'Sales'].includes(g.name)
+    )
+    for (const g of adminDepts) {
+      const [existing] = await db
+        .select()
+        .from(userGroups)
+        .where(and(eq(userGroups.userId, seedUserId), eq(userGroups.groupId, g.id)))
+        .limit(1)
+      if (!existing) {
+        await db.insert(userGroups).values({ userId: seedUserId, groupId: g.id })
+      }
+    }
+  }
+
+  // 5. Initialize connection and compile
+  console.log('[seed] Initializing connection and compiling cubes...')
+  await connectionManager.createConnection(conn.id, conn.connectionString, conn.engineType)
+  await connectionManager.compileAll(db)
+
+  return conn
+}
 
 export const DEMO_SCHEMA_SOURCE = `import { sqliteTable, integer, text, real } from 'drizzle-orm/sqlite-core'
 
@@ -49,10 +302,18 @@ export const prEvents = sqliteTable('pr_events', {
 })
 `
 
-export const DEMO_CUBES_SOURCE = `import { eq } from 'drizzle-orm'
+export const DEMO_CUBES_SOURCE = `import { eq, and, inArray, sql } from 'drizzle-orm'
 import { defineCube } from 'drizzle-cube/server'
 import type { QueryContext, BaseQueryDefinition, Cube } from 'drizzle-cube/server'
 import { employees, departments, productivity, prEvents } from './demo-schema'
+
+// Helper: build a department filter based on the user's Department groups.
+// Admins see all data. Members only see departments they belong to.
+function deptFilter(col: any, ctx: QueryContext) {
+  const depts = ctx.securityContext.groups?.Department
+  if (!depts || depts.length === 0) return undefined
+  return inArray(col, sql\`(SELECT id FROM departments WHERE name IN (\${sql.join(depts.map(d => sql\`\${d}\`), sql\`,\`)}))\`)
+}
 
 let employeesCube: Cube
 let departmentsCube: Cube
@@ -64,7 +325,7 @@ employeesCube = defineCube('Employees', {
   description: 'Employee data and metrics',
   sql: (ctx: QueryContext): BaseQueryDefinition => ({
     from: employees,
-    where: eq(employees.organisationId, ctx.securityContext.organisationId as number)
+    where: deptFilter(employees.departmentId, ctx)
   }),
   joins: {
     Departments: { targetCube: () => departmentsCube, relationship: 'belongsTo', on: [{ source: employees.departmentId, target: departments.id }] },
@@ -96,7 +357,7 @@ departmentsCube = defineCube('Departments', {
   description: 'Department information and budget analysis',
   sql: (ctx: QueryContext): BaseQueryDefinition => ({
     from: departments,
-    where: eq(departments.organisationId, ctx.securityContext.organisationId as number)
+    where: deptFilter(departments.id, ctx)
   }),
   joins: {
     Employees: { targetCube: () => employeesCube, relationship: 'hasMany', on: [{ source: departments.id, target: employees.departmentId }] }
@@ -118,7 +379,7 @@ productivityCube = defineCube('Productivity', {
   description: 'Daily productivity data per employee',
   sql: (ctx: QueryContext): BaseQueryDefinition => ({
     from: productivity,
-    where: eq(productivity.organisationId, ctx.securityContext.organisationId as number)
+    where: deptFilter(productivity.departmentId, ctx)
   }),
   joins: {
     Employees: { targetCube: () => employeesCube, relationship: 'belongsTo', on: [{ source: productivity.employeeId, target: employees.id }] },
@@ -144,8 +405,7 @@ prEventsCube = defineCube('PREvents', {
   title: 'PR Events',
   description: 'Pull request lifecycle events for funnel analysis',
   sql: (ctx: QueryContext): BaseQueryDefinition => ({
-    from: prEvents,
-    where: eq(prEvents.organisationId, ctx.securityContext.organisationId as number)
+    from: prEvents
   }),
   joins: {
     Employees: { targetCube: () => employeesCube, relationship: 'belongsTo', on: [{ source: prEvents.employeeId, target: employees.id }] }

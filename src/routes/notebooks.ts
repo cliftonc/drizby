@@ -4,9 +4,9 @@
  */
 
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { notebooks, users } from '../../schema'
+import { notebooks, userGroups, users } from '../../schema'
 
 interface Variables {
   db: DrizzleDatabase
@@ -21,12 +21,51 @@ notebooksApp.use('*', async (c, next) => {
   await next()
 })
 
+// Build group-based visibility filter for non-admin users
+function buildVisibilityFilter(
+  contentType: string,
+  contentIdCol: any,
+  userId: number,
+  userGroupIds: number[]
+) {
+  const noGroupsAssigned = sql`NOT EXISTS (SELECT 1 FROM content_group_visibility WHERE content_type = ${contentType} AND content_id = ${contentIdCol})`
+  const isCreator = sql`${contentIdCol} IN (SELECT id FROM ${sql.raw(contentType === 'dashboard' ? 'analytics_pages' : 'notebooks')} WHERE created_by = ${userId})`
+
+  if (userGroupIds.length > 0) {
+    const placeholders = userGroupIds.map(id => sql`${id}`).reduce((a, b) => sql`${a}, ${b}`)
+    const userInGroup = sql`EXISTS (SELECT 1 FROM content_group_visibility WHERE content_type = ${contentType} AND content_id = ${contentIdCol} AND group_id IN (${placeholders}))`
+    return sql`(${noGroupsAssigned} OR ${userInGroup} OR ${isCreator})`
+  }
+  return sql`(${noGroupsAssigned} OR ${isCreator})`
+}
+
+async function getUserGroupIds(db: any, userId: number): Promise<number[]> {
+  const rows = await db
+    .select({ groupId: userGroups.groupId })
+    .from(userGroups)
+    .where(eq(userGroups.userId, userId))
+  return rows.map((r: any) => r.groupId)
+}
+
 // Get all notebooks
 notebooksApp.get('/', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
+  const auth = c.get('auth') as any
 
   try {
+    const baseConditions = and(
+      eq(notebooks.organisationId, organisationId),
+      eq(notebooks.isActive, true)
+    )
+
+    let whereClause = baseConditions
+    if (auth?.user?.role !== 'admin') {
+      const userGroupIds = await getUserGroupIds(db, auth.userId)
+      const visFilter = buildVisibilityFilter('notebook', notebooks.id, auth.userId, userGroupIds)
+      whereClause = and(baseConditions, visFilter)
+    }
+
     const rows = await db
       .select({
         notebook: notebooks,
@@ -34,7 +73,7 @@ notebooksApp.get('/', async c => {
       })
       .from(notebooks)
       .leftJoin(users, eq(notebooks.createdBy, users.id))
-      .where(and(eq(notebooks.organisationId, organisationId), eq(notebooks.isActive, true)))
+      .where(whereClause)
       .orderBy(asc(notebooks.order), asc(notebooks.name))
 
     const items = rows.map((r: any) => ({ ...r.notebook, createdByName: r.createdByName }))
@@ -49,11 +88,25 @@ notebooksApp.get('/', async c => {
 notebooksApp.get('/:id', async c => {
   const db = c.get('db') as any
   const organisationId = c.get('organisationId')
+  const auth = c.get('auth') as any
   const id = Number.parseInt(c.req.param('id'), 10)
 
   if (Number.isNaN(id)) return c.json({ error: 'Invalid notebook ID' }, 400)
 
   try {
+    const baseConditions = and(
+      eq(notebooks.id, id),
+      eq(notebooks.organisationId, organisationId),
+      eq(notebooks.isActive, true)
+    )
+
+    let whereClause = baseConditions
+    if (auth?.user?.role !== 'admin') {
+      const userGroupIds = await getUserGroupIds(db, auth.userId)
+      const visFilter = buildVisibilityFilter('notebook', notebooks.id, auth.userId, userGroupIds)
+      whereClause = and(baseConditions, visFilter)
+    }
+
     const rows = await db
       .select({
         notebook: notebooks,
@@ -61,13 +114,7 @@ notebooksApp.get('/:id', async c => {
       })
       .from(notebooks)
       .leftJoin(users, eq(notebooks.createdBy, users.id))
-      .where(
-        and(
-          eq(notebooks.id, id),
-          eq(notebooks.organisationId, organisationId),
-          eq(notebooks.isActive, true)
-        )
-      )
+      .where(whereClause)
       .limit(1)
 
     if (rows.length === 0) return c.json({ error: 'Notebook not found' }, 404)

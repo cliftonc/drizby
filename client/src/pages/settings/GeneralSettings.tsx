@@ -53,6 +53,7 @@ export default function GeneralSettings() {
   const [reseeding, setReseeding] = useState(false)
   const [reseedMessage, setReseedMessage] = useState('')
   const [reseedError, setReseedError] = useState('')
+  const [clearing, setClearing] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [confirm, ConfirmDialog] = useConfirm()
   const [prompt, PromptDialog] = usePrompt()
@@ -84,6 +85,36 @@ export default function GeneralSettings() {
     } catch (err: any) {
       setReseedError(err.message)
       setReseeding(false)
+    }
+  }, [confirm])
+
+  const handleClearDemo = useCallback(async () => {
+    const confirmed = await confirm({
+      title: 'Clear Demo Data',
+      message:
+        'This will remove the demo connection, its dashboards, cubes, schemas, and the demo Department groups. Your other connections and user-created groups will not be affected.',
+      confirmText: 'Clear Demo',
+      variant: 'danger',
+    })
+    if (!confirmed) return
+
+    setClearing(true)
+    setReseedError('')
+    setReseedMessage('')
+    try {
+      const res = await fetch('/api/settings/clear-demo', {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Clear failed')
+      }
+      setReseedMessage('Demo data cleared. Reloading...')
+      setTimeout(() => window.location.reload(), 1500)
+    } catch (err: any) {
+      setReseedError(err.message)
+      setClearing(false)
     }
   }, [confirm])
 
@@ -340,23 +371,42 @@ export default function GeneralSettings() {
           >
             Regenerate the demo database with fresh sample data. Other connections are not affected.
           </p>
-          <button
-            onClick={handleReseedDemo}
-            disabled={reseeding}
-            style={{
-              padding: '6px 16px',
-              backgroundColor: 'transparent',
-              color: 'var(--dc-warning, #f59e0b)',
-              fontWeight: 500,
-              borderRadius: 6,
-              border: '1px solid var(--dc-warning, #f59e0b)',
-              cursor: reseeding ? 'not-allowed' : 'pointer',
-              fontSize: 13,
-              opacity: reseeding ? 0.5 : 1,
-            }}
-          >
-            {reseeding ? 'Reseeding...' : 'Reseed Demo Data'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={handleReseedDemo}
+              disabled={reseeding}
+              style={{
+                padding: '6px 16px',
+                backgroundColor: 'transparent',
+                color: 'var(--dc-warning, #f59e0b)',
+                fontWeight: 500,
+                borderRadius: 6,
+                border: '1px solid var(--dc-warning, #f59e0b)',
+                cursor: reseeding ? 'not-allowed' : 'pointer',
+                fontSize: 13,
+                opacity: reseeding ? 0.5 : 1,
+              }}
+            >
+              {reseeding ? 'Reseeding...' : 'Reseed Demo Data'}
+            </button>
+            <button
+              onClick={handleClearDemo}
+              disabled={clearing}
+              style={{
+                padding: '6px 16px',
+                backgroundColor: 'transparent',
+                color: 'var(--dc-warning, #f59e0b)',
+                fontWeight: 500,
+                borderRadius: 6,
+                border: '1px solid var(--dc-warning, #f59e0b)',
+                cursor: clearing ? 'not-allowed' : 'pointer',
+                fontSize: 13,
+                opacity: clearing ? 0.5 : 1,
+              }}
+            >
+              {clearing ? 'Clearing...' : 'Clear Demo Data'}
+            </button>
+          </div>
           {reseedError && (
             <div
               style={{

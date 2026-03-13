@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { eq } from 'drizzle-orm'
+import { and, eq, like, or } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { passwordResetTokens, users } from '../../schema'
 import { guardPermission } from '../permissions/guard'
@@ -26,10 +26,19 @@ app.use('*', async (c, next) => {
   await next()
 })
 
-// List all users
+// List all users (supports ?search=X&limit=N)
 app.get('/', async c => {
   const db = c.get('db') as any
-  const result = await db
+  const search = c.req.query('search')
+  const limitParam = c.req.query('limit')
+
+  const conditions = [eq(users.organisationId, 1)]
+  if (search) {
+    const pattern = `%${search}%`
+    conditions.push(or(like(users.name, pattern), like(users.email, pattern))!)
+  }
+
+  let query = db
     .select({
       id: users.id,
       email: users.email,
@@ -40,8 +49,13 @@ app.get('/', async c => {
       createdAt: users.createdAt,
     })
     .from(users)
-    .where(eq(users.organisationId, 1))
+    .where(and(...conditions))
 
+  if (limitParam) {
+    query = query.limit(Number(limitParam))
+  }
+
+  const result = await query
   return c.json(result)
 })
 

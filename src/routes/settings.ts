@@ -10,17 +10,23 @@ import { invalidateCubeAppCache } from '../../app'
 import {
   analyticsPages,
   connections,
+  contentGroupVisibility,
   cubeDefinitions,
+  groupTypes,
+  groups,
   notebooks,
   oauthAccounts,
+  passwordResetTokens,
   schemaFiles,
   settings,
+  userGroups,
   userSessions,
   users,
 } from '../../schema'
 import { guardPermission } from '../permissions/guard'
 import { getAISettings } from '../services/ai-settings'
 import { connectionManager } from '../services/connection-manager'
+import { clearDemoData, seedDemoInternalData } from './seed-demo-config'
 
 interface Variables {
   db: DrizzleDatabase
@@ -103,88 +109,16 @@ app.put('/ai', async c => {
 // POST /api/settings/reseed-demo — delete and recreate demo data only
 app.post('/reseed-demo', async c => {
   const db = c.get('db') as any
-
-  // Find the demo connection
-  const [demoConn] = await db
-    .select()
-    .from(connections)
-    .where(and(eq(connections.name, 'Demo SQLite'), eq(connections.organisationId, 1)))
-    .limit(1)
-
-  if (demoConn) {
-    // Remove from connection manager
-    await connectionManager.remove(demoConn.id)
-    invalidateCubeAppCache()
-
-    // Delete associated rows
-    await db.delete(cubeDefinitions).where(eq(cubeDefinitions.connectionId, demoConn.id))
-    await db.delete(schemaFiles).where(eq(schemaFiles.connectionId, demoConn.id))
-    await db.delete(analyticsPages).where(eq(analyticsPages.connectionId, demoConn.id))
-    await db.delete(notebooks).where(eq(notebooks.connectionId, demoConn.id))
-    await db.delete(connections).where(eq(connections.id, demoConn.id))
-  }
-
-  // Delete demo.sqlite file
-  const { unlinkSync } = await import('node:fs')
-  try {
-    unlinkSync('data/demo.sqlite')
-    unlinkSync('data/demo.sqlite-wal')
-    unlinkSync('data/demo.sqlite-shm')
-  } catch {}
-
-  // Re-run the full demo seed
-  const { seedDemo } = await import('../../scripts/seed-demo')
-  const DEMO_DB_PATH = 'data/demo.sqlite'
-  seedDemo(DEMO_DB_PATH)
-
-  // Re-register connection and rebuild cubes (inline same logic as seed.ts)
-  const { DEMO_SCHEMA_SOURCE, DEMO_CUBES_SOURCE, DEMO_PORTLETS } = await import(
-    './seed-demo-config'
-  )
-
-  const [newConn] = await db
-    .insert(connections)
-    .values({
-      name: 'Demo SQLite',
-      description: 'Built-in demo database with sample employee data',
-      engineType: 'sqlite',
-      connectionString: `file:${DEMO_DB_PATH}`,
-      organisationId: 1,
-    })
-    .returning()
-
-  const [newSchema] = await db
-    .insert(schemaFiles)
-    .values({
-      name: 'demo-schema.ts',
-      sourceCode: DEMO_SCHEMA_SOURCE,
-      connectionId: newConn.id,
-      organisationId: 1,
-    })
-    .returning()
-
-  await db.insert(cubeDefinitions).values({
-    name: 'Demo Cubes',
-    title: 'Employee Analytics Cubes',
-    description: 'Employees, Departments, Productivity, and PR Events cubes for the demo dataset',
-    sourceCode: DEMO_CUBES_SOURCE,
-    schemaFileId: newSchema.id,
-    connectionId: newConn.id,
-    organisationId: 1,
-  })
-
-  await db.insert(analyticsPages).values({
-    name: 'Overview Dashboard',
-    description: 'Employee and productivity overview',
-    connectionId: newConn.id,
-    config: { portlets: DEMO_PORTLETS, filters: [] },
-    organisationId: 1,
-  })
-
-  await connectionManager.createConnection(newConn.id, newConn.connectionString, newConn.engineType)
-  await connectionManager.compileAll(db)
-
+  const auth = c.get('auth') as any
+  await seedDemoInternalData(db, auth?.userId)
   return c.json({ success: true, message: 'Demo data reseeded successfully.' })
+})
+
+// POST /api/settings/clear-demo — remove all demo data without reseeding
+app.post('/clear-demo', async c => {
+  const db = c.get('db') as any
+  await clearDemoData(db)
+  return c.json({ success: true, message: 'Demo data cleared.' })
 })
 
 // POST /api/settings/factory-reset — wipe all data, delete demo.sqlite, restart auto-seed on next boot
@@ -198,8 +132,13 @@ app.post('/factory-reset', async c => {
   invalidateCubeAppCache()
 
   // Delete all rows from every table (order matters for FK constraints)
+  await db.delete(passwordResetTokens)
   await db.delete(userSessions)
   await db.delete(oauthAccounts)
+  await db.delete(contentGroupVisibility)
+  await db.delete(userGroups)
+  await db.delete(groups)
+  await db.delete(groupTypes)
   await db.delete(cubeDefinitions)
   await db.delete(schemaFiles)
   await db.delete(analyticsPages)

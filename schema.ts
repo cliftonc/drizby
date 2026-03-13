@@ -254,6 +254,7 @@ export const cubeDefinitionsRelations = relations(cubeDefinitions, ({ one }) => 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(userSessions),
   oauthAccounts: many(oauthAccounts),
+  userGroups: many(userGroups),
 }))
 
 export const userSessionsRelations = relations(userSessions, ({ one }) => ({
@@ -277,6 +278,124 @@ export const passwordResetTokensRelations = relations(passwordResetTokens, ({ on
   }),
 }))
 
+// ============================================================================
+// Groups System Tables
+// ============================================================================
+
+// Group types — taxonomy categories (e.g., "Department", "Role")
+export const groupTypes = sqliteTable(
+  'group_types',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(),
+    description: text('description'),
+    organisationId: integer('organisation_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  },
+  table => [
+    uniqueIndex('idx_group_types_name_org').on(table.name, table.organisationId),
+    index('idx_group_types_org').on(table.organisationId),
+  ]
+)
+
+// Groups — individual groups within a taxonomy
+export const groups = sqliteTable(
+  'groups',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(),
+    description: text('description'),
+    groupTypeId: integer('group_type_id')
+      .notNull()
+      .references(() => groupTypes.id, { onDelete: 'cascade' }),
+    parentId: integer('parent_id').references((): any => groups.id, { onDelete: 'set null' }),
+    organisationId: integer('organisation_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  },
+  table => [
+    uniqueIndex('idx_groups_name_type').on(table.name, table.groupTypeId),
+    index('idx_groups_org').on(table.organisationId),
+    index('idx_groups_type').on(table.groupTypeId),
+  ]
+)
+
+// User-group membership junction table
+export const userGroups = sqliteTable(
+  'user_groups',
+  {
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    groupId: integer('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  },
+  table => [
+    index('idx_user_groups_user').on(table.userId),
+    index('idx_user_groups_group').on(table.groupId),
+  ]
+)
+
+// Content-group visibility junction table
+export const contentGroupVisibility = sqliteTable(
+  'content_group_visibility',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    contentType: text('content_type').notNull(), // 'dashboard' | 'notebook'
+    contentId: integer('content_id').notNull(),
+    groupId: integer('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  },
+  table => [
+    uniqueIndex('idx_cgv_unique').on(table.contentType, table.contentId, table.groupId),
+    index('idx_cgv_content').on(table.contentType, table.contentId),
+    index('idx_cgv_group').on(table.groupId),
+  ]
+)
+
+// Groups relations
+export const groupTypesRelations = relations(groupTypes, ({ many }) => ({
+  groups: many(groups),
+}))
+
+export const groupsRelations = relations(groups, ({ one, many }) => ({
+  groupType: one(groupTypes, {
+    fields: [groups.groupTypeId],
+    references: [groupTypes.id],
+  }),
+  parent: one(groups, {
+    fields: [groups.parentId],
+    references: [groups.id],
+    relationName: 'parentChild',
+  }),
+  children: many(groups, { relationName: 'parentChild' }),
+  userGroups: many(userGroups),
+  contentVisibility: many(contentGroupVisibility),
+}))
+
+export const userGroupsRelations = relations(userGroups, ({ one }) => ({
+  user: one(users, {
+    fields: [userGroups.userId],
+    references: [users.id],
+  }),
+  group: one(groups, {
+    fields: [userGroups.groupId],
+    references: [groups.id],
+  }),
+}))
+
+export const contentGroupVisibilityRelations = relations(contentGroupVisibility, ({ one }) => ({
+  group: one(groups, {
+    fields: [contentGroupVisibility.groupId],
+    references: [groups.id],
+  }),
+}))
+
 // Export schema for use with Drizzle
 export const schema = {
   connections,
@@ -289,6 +408,10 @@ export const schema = {
   userSessions,
   oauthAccounts,
   passwordResetTokens,
+  groupTypes,
+  groups,
+  userGroups,
+  contentGroupVisibility,
   connectionsRelations,
   schemaFilesRelations,
   cubeDefinitionsRelations,
@@ -296,6 +419,10 @@ export const schema = {
   userSessionsRelations,
   oauthAccountsRelations,
   passwordResetTokensRelations,
+  groupTypesRelations,
+  groupsRelations,
+  userGroupsRelations,
+  contentGroupVisibilityRelations,
 }
 
 export type Schema = typeof schema

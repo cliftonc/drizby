@@ -10,6 +10,7 @@ export type Subjects =
   | 'AnalyticsPage'
   | 'User'
   | 'Settings'
+  | 'Group'
   | 'all'
 export type AppAbility = MongoAbility<[Actions, Subjects]>
 
@@ -28,6 +29,7 @@ const rolePermissions: Record<string, (can: CanFunction) => void> = {
     can('delete', ['Notebook', 'Dashboard', 'AnalyticsPage'])
     // Schema & CubeDefinitions: read-only for members (admin manages)
     can('read', ['Schema', 'CubeDefinition'])
+    can('read', 'Group')
   },
   user: () => {
     // No permissions - pending approval

@@ -18,6 +18,7 @@ const sections: NavSection[] = [
     items: [
       { path: '/settings', label: 'Your Profile' },
       { path: '/settings/team', label: 'Team', adminOnly: true },
+      { path: '/settings/groups', label: 'Groups', adminOnly: true },
     ],
   },
   {

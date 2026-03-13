@@ -29,6 +29,13 @@
       "when": 1773201351778,
       "tag": "0003_elite_manta",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1773377756170,
+      "tag": "0004_lush_rhino",
+      "breakpoints": true
     }
   ]
 }
