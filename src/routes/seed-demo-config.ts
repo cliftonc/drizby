@@ -301,9 +301,15 @@ import { employees, departments, productivity, prEvents } from './demo-schema'
 
 // Helper: build a department filter based on the user's Department groups.
 // Admins see all data. Members only see departments they belong to.
+// Users with no groups see nothing (safe default).
 function deptFilter(col: any, ctx: QueryContext) {
   const depts = ctx.securityContext.groups?.Department
-  if (!depts || depts.length === 0) return undefined
+  if (!depts || depts.length === 0) {
+    // Admins with no groups still see everything
+    if (ctx.securityContext.role === 'admin') return undefined
+    // Non-admins with no groups see nothing
+    return sql\`1 = 0\`
+  }
   return inArray(col, sql\`(SELECT id FROM departments WHERE name IN (\${sql.join(depts.map(d => sql\`\${d}\`), sql\`,\`)}))\`)
 }
 

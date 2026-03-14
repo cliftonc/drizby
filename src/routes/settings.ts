@@ -161,6 +161,100 @@ app.put('/ai', async c => {
   return c.json({ success: true })
 })
 
+// GET /api/settings/oauth — return OAuth provider configs with masked secrets
+app.get('/oauth', async c => {
+  const db = c.get('db') as any
+
+  // Read raw DB values so we can show config even when disabled
+  const rows = await db
+    .select({ key: settings.key, value: settings.value })
+    .from(settings)
+    .where(eq(settings.organisationId, 1))
+  const map: Record<string, string> = {}
+  for (const r of rows) map[r.key] = r.value
+
+  const clientId = map.oauth_google_client_id || process.env.GOOGLE_CLIENT_ID || ''
+  const clientSecret = map.oauth_google_client_secret || process.env.GOOGLE_CLIENT_SECRET || ''
+  const enabled = map.oauth_google_enabled !== 'false' && !!clientId && !!clientSecret
+  const redirectUri =
+    process.env.GOOGLE_REDIRECT_URI ||
+    `${(process.env.APP_URL || 'http://localhost:3461').replace(/\/$/, '')}/api/auth/google/callback`
+
+  return c.json({
+    google: {
+      enabled,
+      clientId,
+      hasClientSecret: !!clientSecret,
+      clientSecretHint: clientSecret ? `****${clientSecret.slice(-4)}` : '',
+      redirectUri,
+    },
+  })
+})
+
+// PUT /api/settings/oauth — upsert OAuth provider config
+app.put('/oauth', async c => {
+  const db = c.get('db') as any
+  const body = await c.req.json()
+  const { google } = body as {
+    google?: { enabled?: boolean; clientId?: string; clientSecret?: string }
+  }
+
+  if (google) {
+    // If enabling, validate that credentials are present
+    if (google.enabled === true) {
+      const existingRows = await db
+        .select({ key: settings.key, value: settings.value })
+        .from(settings)
+        .where(eq(settings.organisationId, 1))
+      const map: Record<string, string> = {}
+      for (const r of existingRows) map[r.key] = r.value
+
+      const finalClientId = google.clientId ?? map.oauth_google_client_id ?? ''
+      const finalClientSecret =
+        google.clientSecret !== undefined
+          ? google.clientSecret
+          : (map.oauth_google_client_secret ?? '')
+
+      if (!finalClientId || !finalClientSecret) {
+        return c.json(
+          { error: 'Client ID and Client Secret are required to enable Google OAuth' },
+          400
+        )
+      }
+    }
+
+    const pairs: [string, string | undefined][] = [
+      ['oauth_google_enabled', google.enabled !== undefined ? String(google.enabled) : undefined],
+      ['oauth_google_client_id', google.clientId],
+      ['oauth_google_client_secret', google.clientSecret],
+    ]
+
+    for (const [key, value] of pairs) {
+      if (value === undefined) continue
+
+      if (value === '') {
+        await db.delete(settings).where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
+      } else {
+        const existing = await db
+          .select()
+          .from(settings)
+          .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
+        if (existing.length > 0) {
+          await db
+            .update(settings)
+            .set({ value, updatedAt: new Date() })
+            .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
+        } else {
+          await db.insert(settings).values({ key, value, organisationId: 1 })
+        }
+      }
+    }
+  }
+
+  invalidateCubeAppCache()
+  return c.json({ success: true })
+})
+
 // POST /api/settings/reseed-demo — delete and recreate demo data only
 app.post('/reseed-demo', async c => {
   const db = c.get('db') as any

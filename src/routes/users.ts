@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { and, eq, like, or } from 'drizzle-orm'
+import { and, count, eq, like, or } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { passwordResetTokens, users } from '../../schema'
 import { guardPermission } from '../permissions/guard'
@@ -57,6 +57,16 @@ app.get('/', async c => {
 
   const result = await query
   return c.json(result)
+})
+
+// Count pending users (role = 'user')
+app.get('/pending-count', async c => {
+  const db = c.get('db') as any
+  const [{ value }] = await db
+    .select({ value: count() })
+    .from(users)
+    .where(and(eq(users.organisationId, 1), eq(users.role, 'user')))
+  return c.json({ count: value })
 })
 
 // Create user — sends invite email with password reset link

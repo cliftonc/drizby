@@ -635,6 +635,9 @@ export default function HomePage() {
             )
           })()}
 
+        {/* Pending Users */}
+        {user?.role === 'admin' && <PendingUsersBanner />}
+
         {/* Recent Notebooks */}
         {recentNotebooks.length > 0 && (
           <>
@@ -877,5 +880,78 @@ export default function HomePage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function PendingUsersBanner() {
+  const { data } = useQuery<{ count: number }>({
+    queryKey: ['users', 'pending-count'],
+    queryFn: async () => {
+      const res = await fetch('/api/users/pending-count', { credentials: 'include' })
+      if (!res.ok) return { count: 0 }
+      return res.json()
+    },
+  })
+
+  if (!data?.count) return null
+
+  return (
+    <>
+      <Divider />
+      <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--dc-text)', margin: '0 0 12px' }}>
+        Team Management
+      </h3>
+      <Link
+        to="/settings/team"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '10px 14px',
+          borderRadius: 8,
+          border: '1px solid var(--dc-border)',
+          backgroundColor: 'var(--dc-surface)',
+          color: 'var(--dc-text-secondary)',
+          fontSize: 13,
+          textDecoration: 'none',
+          transition: 'border-color 0.15s',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.borderColor = 'var(--dc-primary)'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.borderColor = 'var(--dc-border)'
+        }}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+        </svg>
+        <span style={{ flex: 1 }}>
+          {data.count} {data.count === 1 ? 'user is' : 'users are'} pending approval
+        </span>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 500,
+            color: 'var(--dc-primary)',
+            padding: '2px 10px',
+            borderRadius: 6,
+            border: '1px solid var(--dc-primary)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Review
+        </span>
+      </Link>
+    </>
   )
 }

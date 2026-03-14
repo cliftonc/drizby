@@ -1,14 +1,11 @@
 import { Google } from 'arctic'
+import type { DrizzleDatabase } from 'drizzle-cube/server'
+import { getGoogleOAuthConfig } from '../services/oauth-settings'
 
-export function createGoogleClient() {
-  const clientId = process.env.GOOGLE_CLIENT_ID
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET
-  const redirectUri =
-    process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3461/api/auth/google/callback'
-
-  if (!clientId || !clientSecret) return null
-
-  return new Google(clientId, clientSecret, redirectUri)
+export async function createGoogleClient(db: DrizzleDatabase) {
+  const config = await getGoogleOAuthConfig(db)
+  if (!config) return null
+  return new Google(config.clientId, config.clientSecret, config.redirectUri)
 }
 
 export interface GoogleProfile {

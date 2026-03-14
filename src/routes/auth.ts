@@ -4,7 +4,15 @@ import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { count, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
-import { oauthAccounts, passwordResetTokens, settings, users } from '../../schema'
+import {
+  groupTypes,
+  groups,
+  oauthAccounts,
+  passwordResetTokens,
+  settings,
+  userGroups,
+  users,
+} from '../../schema'
 import { authMiddleware, optionalAuth } from '../auth/middleware'
 import { createGoogleClient, fetchGoogleProfile } from '../auth/oauth'
 import { hashPassword, verifyPassword } from '../auth/password'
@@ -65,7 +73,7 @@ app.get('/status', optionalAuth, async c => {
           avatarUrl: auth.user.avatarUrl,
         }
       : null,
-    googleEnabled: !!createGoogleClient(),
+    googleEnabled: !!(await createGoogleClient(db)),
   })
 })
 
@@ -243,6 +251,48 @@ app.get('/me', authMiddleware, async c => {
     role: auth.user.role,
     avatarUrl: auth.user.avatarUrl,
   })
+})
+
+// Get current user's group memberships
+app.get('/me/groups', authMiddleware, async c => {
+  const db = c.get('db') as any
+  const auth = c.get('auth') as any
+
+  const rows = await db
+    .select({
+      groupId: userGroups.groupId,
+      groupName: groups.name,
+      typeName: groupTypes.name,
+    })
+    .from(userGroups)
+    .innerJoin(groups, eq(userGroups.groupId, groups.id))
+    .innerJoin(groupTypes, eq(groups.groupTypeId, groupTypes.id))
+    .where(eq(userGroups.userId, auth.user.id))
+
+  // Group by type
+  const byType: Record<string, string[]> = {}
+  for (const row of rows) {
+    if (!byType[row.typeName]) byType[row.typeName] = []
+    byType[row.typeName].push(row.groupName)
+  }
+
+  return c.json(byType)
+})
+
+// Get current user's login method
+app.get('/me/auth-method', authMiddleware, async c => {
+  const db = c.get('db') as any
+  const auth = c.get('auth') as any
+
+  const oauthRows = await db
+    .select({ provider: oauthAccounts.provider })
+    .from(oauthAccounts)
+    .where(eq(oauthAccounts.userId, auth.user.id))
+
+  const hasPassword = !!auth.user.passwordHash
+  const providers = oauthRows.map((r: any) => r.provider as string)
+
+  return c.json({ hasPassword, oauthProviders: providers })
 })
 
 // Change password
@@ -427,7 +477,8 @@ app.post('/resend-setup-email', async c => {
 
 // Google OAuth - initiate
 app.get('/google', async c => {
-  const google = createGoogleClient()
+  const db = c.get('db') as any
+  const google = await createGoogleClient(db)
   if (!google) {
     return c.json({ error: 'Google OAuth not configured' }, 400)
   }
@@ -449,7 +500,8 @@ app.get('/google', async c => {
 
 // Google OAuth - callback
 app.get('/google/callback', async c => {
-  const google = createGoogleClient()
+  const db = c.get('db') as any
+  const google = await createGoogleClient(db)
   if (!google) {
     return c.redirect('/login?error=oauth_not_configured')
   }
@@ -471,8 +523,6 @@ app.get('/google/callback', async c => {
     const tokens = await google.validateAuthorizationCode(code, codeVerifier)
     const accessToken = tokens.accessToken()
     const profile = await fetchGoogleProfile(accessToken)
-
-    const db = c.get('db') as any
 
     // Check if oauth account exists
     const [existingOauth] = await db

@@ -113,6 +113,7 @@ app.get('/drizzle-cube', async c => {
   const patchedSecurityContext = `export declare interface SecurityContext {
     organisationId?: number | string;
     userId?: number | string;
+    role?: string;
     groups?: ${groupsType};
     groupIds?: number[];
     [key: string]: any;

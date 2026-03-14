@@ -59,7 +59,7 @@ function buildVirtualFiles(
 
 // Stub for drizzle-cube/server — the real .d.ts pulls in too many transitive deps
 const DRIZZLE_CUBE_SERVER_DTS = `
-export interface SecurityContext { organisationId?: number | string; userId?: number | string; groups?: Record<string, string[]>; groupIds?: number[]; [key: string]: any; }
+export interface SecurityContext { organisationId?: number | string; userId?: number | string; role?: string; groups?: Record<string, string[]>; groupIds?: number[]; [key: string]: any; }
 export interface QueryContext { securityContext: SecurityContext; }
 export interface BaseQueryDefinition { from: any; where?: any; }
 export interface Cube { name: string; title?: string; description?: string; sql: any; dimensions: any; measures: any; joins?: any; }

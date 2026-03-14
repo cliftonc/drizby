@@ -115,6 +115,10 @@ async function extractSecurityContext(c: any): Promise<SecurityContext> {
     return { organisationId: 1, userId: 0, groups: {}, groupIds: [] }
   }
 
+  // Look up the user's role
+  const [user] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId))
+  const role = user?.role || 'user'
+
   // Resolve group memberships for the authenticated user
   const groupRows = await db
     .select({
@@ -135,7 +139,7 @@ async function extractSecurityContext(c: any): Promise<SecurityContext> {
     groupsByType[row.typeName].push(row.groupName)
   }
 
-  return { organisationId: 1, userId, groups: groupsByType, groupIds }
+  return { organisationId: 1, userId, role, groups: groupsByType, groupIds }
 }
 
 const app = new Hono<{ Variables: Variables }>()

@@ -1,8 +1,28 @@
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 
 export default function GeneralSettings() {
   const { user } = useAuth()
+
+  const { data: myGroups } = useQuery<Record<string, string[]>>({
+    queryKey: ['auth', 'me', 'groups'],
+    queryFn: async () => {
+      const res = await fetch('/api/auth/me/groups', { credentials: 'include' })
+      if (!res.ok) return {}
+      return res.json()
+    },
+  })
+
+  const { data: authMethod } = useQuery<{ hasPassword: boolean; oauthProviders: string[] }>({
+    queryKey: ['auth', 'me', 'auth-method'],
+    queryFn: async () => {
+      const res = await fetch('/api/auth/me/auth-method', { credentials: 'include' })
+      if (!res.ok) return { hasPassword: true, oauthProviders: [] }
+      return res.json()
+    },
+  })
+
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -109,11 +129,24 @@ export default function GeneralSettings() {
               {user?.role}
             </span>
           </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--dc-text-muted)' }}>Login method</span>
+            <span style={{ color: 'var(--dc-text)' }}>
+              {authMethod?.oauthProviders?.length
+                ? authMethod.oauthProviders
+                    .map(p => p.charAt(0).toUpperCase() + p.slice(1))
+                    .join(', ')
+                : 'Password'}
+              {authMethod?.oauthProviders?.length && authMethod.hasPassword ? ' + Password' : ''}
+            </span>
+          </div>
         </div>
       </div>
 
+      {/* Groups */}
       <div
         style={{
+          marginBottom: 32,
           padding: 16,
           backgroundColor: 'var(--dc-surface)',
           borderRadius: 8,
@@ -129,116 +162,170 @@ export default function GeneralSettings() {
             marginTop: 0,
           }}
         >
-          Change Password
+          Your Groups
         </h3>
-
-        {error && (
-          <div
-            style={{
-              backgroundColor: 'var(--dc-error-bg)',
-              border: '1px solid var(--dc-error-border)',
-              color: 'var(--dc-error)',
-              fontSize: 12,
-              padding: '8px 12px',
-              borderRadius: 6,
-              marginBottom: 12,
-            }}
-          >
-            {error}
+        {myGroups && Object.keys(myGroups).length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+            {Object.entries(myGroups).map(([typeName, groupNames]) => (
+              <div key={typeName} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--dc-text-muted)' }}>{typeName}</span>
+                <span style={{ color: 'var(--dc-text)', textAlign: 'right' }}>
+                  {groupNames.join(', ')}
+                </span>
+              </div>
+            ))}
           </div>
+        ) : (
+          <p style={{ fontSize: 13, color: 'var(--dc-text-muted)', margin: 0 }}>
+            You are not a member of any groups. Contact an admin to be added.
+          </p>
         )}
-        {message && (
-          <div
-            style={{
-              backgroundColor: 'var(--dc-success-bg)',
-              border: '1px solid var(--dc-success-border)',
-              color: 'var(--dc-success)',
-              fontSize: 12,
-              padding: '8px 12px',
-              borderRadius: 6,
-              marginBottom: 12,
-            }}
-          >
-            {message}
-          </div>
-        )}
-
-        <form onSubmit={handlePasswordChange}>
-          <div style={{ marginBottom: 12 }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 12,
-                color: 'var(--dc-text-muted)',
-                marginBottom: 4,
-              }}
-            >
-              Current Password
-            </label>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={e => setCurrentPassword(e.target.value)}
-              style={inputStyle}
-            />
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 12,
-                color: 'var(--dc-text-muted)',
-                marginBottom: 4,
-              }}
-            >
-              New Password
-            </label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              required
-              style={inputStyle}
-            />
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 12,
-                color: 'var(--dc-text-muted)',
-                marginBottom: 4,
-              }}
-            >
-              Confirm New Password
-            </label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-              required
-              style={inputStyle}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              padding: '6px 16px',
-              backgroundColor: 'var(--dc-primary)',
-              color: 'var(--dc-primary-content)',
-              fontWeight: 500,
-              borderRadius: 6,
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: 13,
-              opacity: loading ? 0.5 : 1,
-            }}
-          >
-            {loading ? 'Updating...' : 'Update Password'}
-          </button>
-        </form>
       </div>
+
+      {authMethod?.oauthProviders?.length && !authMethod.hasPassword ? (
+        <div
+          style={{
+            padding: 16,
+            backgroundColor: 'var(--dc-surface)',
+            borderRadius: 8,
+            border: '1px solid var(--dc-border)',
+            fontSize: 13,
+            color: 'var(--dc-text-muted)',
+          }}
+        >
+          You sign in with{' '}
+          {authMethod.oauthProviders.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ')}.
+          Password management is not available.
+        </div>
+      ) : (
+        <div
+          style={{
+            padding: 16,
+            backgroundColor: 'var(--dc-surface)',
+            borderRadius: 8,
+            border: '1px solid var(--dc-border)',
+          }}
+        >
+          <h3
+            style={{
+              fontSize: 13,
+              fontWeight: 500,
+              color: 'var(--dc-text-secondary)',
+              marginBottom: 12,
+              marginTop: 0,
+            }}
+          >
+            Change Password
+          </h3>
+
+          {error && (
+            <div
+              style={{
+                backgroundColor: 'var(--dc-error-bg)',
+                border: '1px solid var(--dc-error-border)',
+                color: 'var(--dc-error)',
+                fontSize: 12,
+                padding: '8px 12px',
+                borderRadius: 6,
+                marginBottom: 12,
+              }}
+            >
+              {error}
+            </div>
+          )}
+          {message && (
+            <div
+              style={{
+                backgroundColor: 'var(--dc-success-bg)',
+                border: '1px solid var(--dc-success-border)',
+                color: 'var(--dc-success)',
+                fontSize: 12,
+                padding: '8px 12px',
+                borderRadius: 6,
+                marginBottom: 12,
+              }}
+            >
+              {message}
+            </div>
+          )}
+
+          <form onSubmit={handlePasswordChange}>
+            <div style={{ marginBottom: 12 }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 12,
+                  color: 'var(--dc-text-muted)',
+                  marginBottom: 4,
+                }}
+              >
+                Current Password
+              </label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 12,
+                  color: 'var(--dc-text-muted)',
+                  marginBottom: 4,
+                }}
+              >
+                New Password
+              </label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                required
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 12,
+                  color: 'var(--dc-text-muted)',
+                  marginBottom: 4,
+                }}
+              >
+                Confirm New Password
+              </label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                required
+                style={inputStyle}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                padding: '6px 16px',
+                backgroundColor: 'var(--dc-primary)',
+                color: 'var(--dc-primary-content)',
+                fontWeight: 500,
+                borderRadius: 6,
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 13,
+                opacity: loading ? 0.5 : 1,
+              }}
+            >
+              {loading ? 'Updating...' : 'Update Password'}
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   )
 }
