@@ -232,6 +232,17 @@ app.use('/api/*', async (c, next) => {
   await next()
 })
 
+// Public branding endpoint (no auth required — used on login/setup pages)
+app.get('/api/branding', async c => {
+  const rows = await db.select().from(settings).where(eq(settings.organisationId, 1))
+  const map: Record<string, string> = {}
+  for (const r of rows) map[r.key] = r.value
+  return c.json({
+    name: map.brand_name || 'Drizby',
+    logoUrl: map.brand_logo_url || '/logo.png',
+  })
+})
+
 // Mount auth routes BEFORE auth middleware (these handle their own auth)
 app.route('/api/auth', authApp)
 

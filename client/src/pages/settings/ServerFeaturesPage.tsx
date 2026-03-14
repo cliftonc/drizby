@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
+import { Modal } from '../../components/Modal'
 
 interface FeaturesConfig {
   mcpEnabled: boolean
   appUrl: string
+  brandName: string
+  brandLogoUrl: string
 }
 
 export default function ServerFeaturesPage() {
@@ -19,12 +22,19 @@ export default function ServerFeaturesPage() {
   })
 
   const [mcpEnabled, setMcpEnabled] = useState(false)
+  const [showMcpSetup, setShowMcpSetup] = useState(false)
+  const [brandName, setBrandName] = useState('')
+  const [brandLogoUrl, setBrandLogoUrl] = useState('')
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null
   )
 
   useEffect(() => {
-    if (data) setMcpEnabled(data.mcpEnabled)
+    if (data) {
+      setMcpEnabled(data.mcpEnabled)
+      setBrandName(data.brandName)
+      setBrandLogoUrl(data.brandLogoUrl)
+    }
   }, [data])
 
   const saveMutation = useMutation({
@@ -42,6 +52,7 @@ export default function ServerFeaturesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'features'] })
+      queryClient.invalidateQueries({ queryKey: ['branding'] })
       setFeedback({ type: 'success', message: 'Settings saved.' })
       setTimeout(() => setFeedback(null), 3000)
     },
@@ -51,7 +62,7 @@ export default function ServerFeaturesPage() {
   })
 
   const handleSave = () => {
-    saveMutation.mutate({ mcpEnabled })
+    saveMutation.mutate({ mcpEnabled, brandName, brandLogoUrl })
   }
 
   if (isLoading) return <div style={{ color: 'var(--dc-text-muted)' }}>Loading...</div>
@@ -87,6 +98,80 @@ export default function ServerFeaturesPage() {
       )}
 
       <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 24 }}>
+        {/* Branding */}
+        <div
+          style={{
+            border: '1px solid var(--dc-border)',
+            borderRadius: 8,
+            padding: 20,
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--dc-text)', marginBottom: 12 }}>
+            Branding
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 12,
+                  color: 'var(--dc-text-muted)',
+                  marginBottom: 4,
+                }}
+              >
+                Application Name
+              </label>
+              <input
+                type="text"
+                value={brandName}
+                onChange={e => setBrandName(e.target.value)}
+                placeholder="Drizby"
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  fontSize: 13,
+                  borderRadius: 6,
+                  border: '1px solid var(--dc-input-border)',
+                  backgroundColor: 'var(--dc-input-bg)',
+                  color: 'var(--dc-text)',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 12,
+                  color: 'var(--dc-text-muted)',
+                  marginBottom: 4,
+                }}
+              >
+                Logo URL
+              </label>
+              <input
+                type="text"
+                value={brandLogoUrl}
+                onChange={e => setBrandLogoUrl(e.target.value)}
+                placeholder="/logo.png"
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  fontSize: 13,
+                  borderRadius: 6,
+                  border: '1px solid var(--dc-input-border)',
+                  backgroundColor: 'var(--dc-input-bg)',
+                  color: 'var(--dc-text)',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <div style={{ fontSize: 11, color: 'var(--dc-text-muted)', marginTop: 4 }}>
+                URL for the logo shown in the sidebar and login pages. Leave blank for the default.
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* MCP Toggle */}
         <div
           style={{
@@ -149,119 +234,24 @@ export default function ServerFeaturesPage() {
             </label>
           </div>
 
-          {/* Setup instructions shown when enabled */}
           {mcpEnabled && (
-            <div
-              style={{
-                marginTop: 16,
-                padding: 16,
-                backgroundColor: 'var(--dc-surface)',
-                borderRadius: 6,
-                border: '1px solid var(--dc-border)',
-              }}
-            >
-              <div
-                style={{ fontSize: 13, fontWeight: 500, color: 'var(--dc-text)', marginBottom: 8 }}
-              >
-                Connect an MCP client
-              </div>
-
-              {!hasAppUrl && (
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 6,
-                    fontSize: 12,
-                    marginBottom: 12,
-                    backgroundColor: 'var(--dc-warning-bg, #fef3c7)',
-                    border: '1px solid var(--dc-warning-border, #f59e0b)',
-                    color: 'var(--dc-warning, #b45309)',
-                  }}
-                >
-                  Set the <code style={{ fontSize: 11 }}>APP_URL</code> environment variable to your
-                  server's public HTTPS URL to see ready-to-use config snippets below.
-                </div>
-              )}
-
-              <p style={{ fontSize: 12, color: 'var(--dc-text-muted)', margin: '0 0 12px' }}>
-                MCP clients connect via HTTPS with OAuth authentication. Your MCP endpoint is{' '}
-                {hasAppUrl ? (
-                  <code style={{ fontSize: 11 }}>{mcpUrl}</code>
-                ) : (
-                  <code style={{ fontSize: 11 }}>{'<APP_URL>/mcp'}</code>
-                )}
-              </p>
-
-              <div
-                style={{ fontSize: 12, fontWeight: 500, color: 'var(--dc-text)', marginBottom: 4 }}
-              >
-                Claude Desktop
-              </div>
-              <p style={{ fontSize: 12, color: 'var(--dc-text-muted)', margin: '0 0 8px' }}>
-                Add to <code style={{ fontSize: 11 }}>claude_desktop_config.json</code>:
-              </p>
-              <pre
+            <div style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                onClick={() => setShowMcpSetup(true)}
                 style={{
-                  backgroundColor: 'var(--dc-input-bg)',
-                  border: '1px solid var(--dc-input-border)',
+                  padding: '6px 14px',
+                  fontSize: 12,
+                  fontWeight: 500,
                   borderRadius: 6,
-                  padding: 12,
-                  fontSize: 11,
+                  border: '1px solid var(--dc-border)',
+                  backgroundColor: 'var(--dc-surface)',
                   color: 'var(--dc-text)',
-                  overflow: 'auto',
-                  margin: '0 0 12px',
-                  lineHeight: 1.5,
+                  cursor: 'pointer',
                 }}
               >
-                {JSON.stringify(
-                  {
-                    mcpServers: {
-                      drizby: {
-                        type: 'http',
-                        url: mcpUrl || 'https://your-drizby-server.com/mcp',
-                        oauth: { callbackPort: 8080 },
-                      },
-                    },
-                  },
-                  null,
-                  2
-                )}
-              </pre>
-
-              <div
-                style={{ fontSize: 12, fontWeight: 500, color: 'var(--dc-text)', marginBottom: 4 }}
-              >
-                VS Code / Cursor
-              </div>
-              <p style={{ fontSize: 12, color: 'var(--dc-text-muted)', margin: '0 0 8px' }}>
-                Add to <code style={{ fontSize: 11 }}>.vscode/mcp.json</code>:
-              </p>
-              <pre
-                style={{
-                  backgroundColor: 'var(--dc-input-bg)',
-                  border: '1px solid var(--dc-input-border)',
-                  borderRadius: 6,
-                  padding: 12,
-                  fontSize: 11,
-                  color: 'var(--dc-text)',
-                  overflow: 'auto',
-                  margin: 0,
-                  lineHeight: 1.5,
-                }}
-              >
-                {JSON.stringify(
-                  {
-                    servers: {
-                      drizby: {
-                        type: 'http',
-                        url: mcpUrl || 'https://your-drizby-server.com/mcp',
-                      },
-                    },
-                  },
-                  null,
-                  2
-                )}
-              </pre>
+                Connect an MCP client...
+              </button>
             </div>
           )}
         </div>
@@ -286,6 +276,113 @@ export default function ServerFeaturesPage() {
           </button>
         </div>
       </div>
+
+      <Modal isOpen={showMcpSetup} onClose={() => setShowMcpSetup(false)} maxWidth="max-w-lg">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--dc-text)', margin: 0 }}>
+            Connect an MCP Client
+          </h3>
+          {!hasAppUrl && (
+            <div
+              style={{
+                padding: '8px 12px',
+                borderRadius: 6,
+                fontSize: 12,
+                backgroundColor: 'var(--dc-warning-bg, #fef3c7)',
+                border: '1px solid var(--dc-warning-border, #f59e0b)',
+                color: 'var(--dc-warning, #b45309)',
+              }}
+            >
+              Set the <code style={{ fontSize: 11 }}>APP_URL</code> environment variable to your
+              server's public HTTPS URL to see ready-to-use config snippets below.
+            </div>
+          )}
+
+          <p style={{ fontSize: 13, color: 'var(--dc-text-muted)', margin: 0 }}>
+            MCP clients connect via HTTPS with OAuth authentication. Your MCP endpoint is{' '}
+            {hasAppUrl ? (
+              <code style={{ fontSize: 11 }}>{mcpUrl}</code>
+            ) : (
+              <code style={{ fontSize: 11 }}>{'<APP_URL>/mcp'}</code>
+            )}
+          </p>
+
+          <div>
+            <div
+              style={{ fontSize: 13, fontWeight: 500, color: 'var(--dc-text)', marginBottom: 4 }}
+            >
+              Claude Desktop
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--dc-text-muted)', margin: '0 0 8px' }}>
+              Add to <code style={{ fontSize: 11 }}>claude_desktop_config.json</code>:
+            </p>
+            <pre
+              style={{
+                backgroundColor: 'var(--dc-input-bg)',
+                border: '1px solid var(--dc-input-border)',
+                borderRadius: 6,
+                padding: 12,
+                fontSize: 11,
+                color: 'var(--dc-text)',
+                overflow: 'auto',
+                margin: 0,
+                lineHeight: 1.5,
+              }}
+            >
+              {JSON.stringify(
+                {
+                  mcpServers: {
+                    drizby: {
+                      type: 'http',
+                      url: mcpUrl || 'https://your-drizby-server.com/mcp',
+                      oauth: { callbackPort: 8080 },
+                    },
+                  },
+                },
+                null,
+                2
+              )}
+            </pre>
+          </div>
+
+          <div>
+            <div
+              style={{ fontSize: 13, fontWeight: 500, color: 'var(--dc-text)', marginBottom: 4 }}
+            >
+              VS Code / Cursor
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--dc-text-muted)', margin: '0 0 8px' }}>
+              Add to <code style={{ fontSize: 11 }}>.vscode/mcp.json</code>:
+            </p>
+            <pre
+              style={{
+                backgroundColor: 'var(--dc-input-bg)',
+                border: '1px solid var(--dc-input-border)',
+                borderRadius: 6,
+                padding: 12,
+                fontSize: 11,
+                color: 'var(--dc-text)',
+                overflow: 'auto',
+                margin: 0,
+                lineHeight: 1.5,
+              }}
+            >
+              {JSON.stringify(
+                {
+                  servers: {
+                    drizby: {
+                      type: 'http',
+                      url: mcpUrl || 'https://your-drizby-server.com/mcp',
+                    },
+                  },
+                },
+                null,
+                2
+              )}
+            </pre>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

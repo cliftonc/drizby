@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useBranding } from '../hooks/useBranding'
 
 export default function ResetPasswordPage() {
   const { authenticated, needsSetup, refetch } = useAuth()
+  const branding = useBranding()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
@@ -98,9 +100,9 @@ export default function ResetPasswordPage() {
             marginBottom: 8,
           }}
         >
-          <img src="/logo.png" alt="" style={{ width: 32, height: 32 }} />
+          <img src={branding.logoUrl} alt="" style={{ width: 32, height: 32 }} />
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dc-text)', margin: 0 }}>
-            Drizby
+            {branding.name}
           </h1>
         </div>
         <p

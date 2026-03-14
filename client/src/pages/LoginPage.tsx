@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useBranding } from '../hooks/useBranding'
 
 export default function LoginPage() {
   const { authenticated, needsSetup, pendingAdminSetup, login, googleEnabled } = useAuth()
+  const branding = useBranding()
   const [searchParams] = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -54,9 +56,9 @@ export default function LoginPage() {
             marginBottom: 8,
           }}
         >
-          <img src="/logo.png" alt="" style={{ width: 32, height: 32 }} />
+          <img src={branding.logoUrl} alt="" style={{ width: 32, height: 32 }} />
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dc-text)', margin: 0 }}>
-            Drizby
+            {branding.name}
           </h1>
         </div>
         <p
@@ -138,6 +140,7 @@ export default function LoginPage() {
               </label>
               <Link
                 to={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`}
+                tabIndex={-1}
                 style={{ fontSize: 12, color: 'var(--dc-primary)', textDecoration: 'none' }}
               >
                 Forgot password?

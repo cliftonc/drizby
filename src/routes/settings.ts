@@ -45,13 +45,14 @@ app.use('*', async (c, next) => {
 // GET /api/settings/features — return server feature flags
 app.get('/features', async c => {
   const db = c.get('db') as any
-  const [row] = await db
-    .select()
-    .from(settings)
-    .where(and(eq(settings.key, 'mcp_enabled'), eq(settings.organisationId, 1)))
+  const rows = await db.select().from(settings).where(eq(settings.organisationId, 1))
+  const map: Record<string, string> = {}
+  for (const r of rows) map[r.key] = r.value
   return c.json({
-    mcpEnabled: row?.value === 'true',
+    mcpEnabled: map.mcp_enabled === 'true',
     appUrl: process.env.APP_URL || '',
+    brandName: map.brand_name || '',
+    brandLogoUrl: map.brand_logo_url || '',
   })
 })
 
@@ -59,22 +60,36 @@ app.get('/features', async c => {
 app.put('/features', async c => {
   const db = c.get('db') as any
   const body = await c.req.json()
-  const { mcpEnabled } = body as { mcpEnabled?: boolean }
+  const { mcpEnabled, brandName, brandLogoUrl } = body as {
+    mcpEnabled?: boolean
+    brandName?: string
+    brandLogoUrl?: string
+  }
 
-  if (mcpEnabled !== undefined) {
-    const key = 'mcp_enabled'
-    const value = String(mcpEnabled)
-    const existing = await db
-      .select()
-      .from(settings)
-      .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
-    if (existing.length > 0) {
-      await db
-        .update(settings)
-        .set({ value, updatedAt: new Date() })
-        .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
+  const pairs: [string, string | undefined][] = [
+    ['mcp_enabled', mcpEnabled !== undefined ? String(mcpEnabled) : undefined],
+    ['brand_name', brandName],
+    ['brand_logo_url', brandLogoUrl],
+  ]
+
+  for (const [key, value] of pairs) {
+    if (value === undefined) continue
+
+    if (value === '') {
+      await db.delete(settings).where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
     } else {
-      await db.insert(settings).values({ key, value, organisationId: 1 })
+      const existing = await db
+        .select()
+        .from(settings)
+        .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
+      if (existing.length > 0) {
+        await db
+          .update(settings)
+          .set({ value, updatedAt: new Date() })
+          .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
+      } else {
+        await db.insert(settings).values({ key, value, organisationId: 1 })
+      }
     }
   }
 

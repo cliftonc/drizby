@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useBranding } from '../hooks/useBranding'
 
 export default function PendingSetupPage() {
   const { pendingAdminSetup, needsSetup, authenticated } = useAuth()
+  const branding = useBranding()
   const [resending, setResending] = useState(false)
   const [resent, setResent] = useState(false)
 
@@ -60,7 +62,7 @@ export default function PendingSetupPage() {
             marginBottom: 32,
           }}
         >
-          Your Drizby instance is being set up
+          Your {branding.name} instance is being set up
         </p>
 
         <div

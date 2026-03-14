@@ -1,8 +1,10 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useBranding } from '../hooks/useBranding'
 
 export default function PendingApprovalPage() {
   const { logout } = useAuth()
+  const branding = useBranding()
   const navigate = useNavigate()
 
   return (
@@ -25,9 +27,9 @@ export default function PendingApprovalPage() {
             marginBottom: 24,
           }}
         >
-          <img src="/logo.png" alt="" style={{ width: 32, height: 32 }} />
+          <img src={branding.logoUrl} alt="" style={{ width: 32, height: 32 }} />
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dc-text)', margin: 0 }}>
-            Drizby
+            {branding.name}
           </h1>
         </div>
         <div

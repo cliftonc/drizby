@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useBranding } from '../hooks/useBranding'
 import ThemeToggle from './ThemeToggle'
 
 const SIDEBAR_WIDTH_KEY = 'dc-sidebar-width'
@@ -145,6 +146,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuth()
+  const branding = useBranding()
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY)
     return saved ? Number.parseInt(saved, 10) : DEFAULT_WIDTH
@@ -301,8 +303,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {icons.hamburger}
         </button>
         <div className="flex items-center gap-1.5">
-          <img src="/logo.png" alt="Drizby" className="w-5 h-5" style={{ opacity: 1 }} />
-          <span className="text-base font-bold">Drizby</span>
+          <img
+            src={branding.logoUrl}
+            alt={branding.name}
+            className="w-5 h-5"
+            style={{ opacity: 1 }}
+          />
+          <span className="text-base font-bold">{branding.name}</span>
         </div>
         <ThemeToggle />
       </div>
@@ -352,8 +359,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           }}
         >
           <div className="flex items-center gap-1.5">
-            <img src="/logo.png" alt="Drizby" className="w-6 h-6 shrink-0" style={{ opacity: 1 }} />
-            {!collapsed && <span className="text-lg font-bold">Drizby</span>}
+            <img
+              src={branding.logoUrl}
+              alt={branding.name}
+              className="w-6 h-6 shrink-0"
+              style={{ opacity: 1 }}
+            />
+            {!collapsed && <span className="text-lg font-bold">{branding.name}</span>}
           </div>
           {!collapsed && <ThemeToggle />}
         </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useBranding } from '../hooks/useBranding'
 
 type Phase = 'form' | 'seeding' | 'complete' | 'done'
 
@@ -12,6 +13,7 @@ interface SeedProgress {
 
 export default function SetupPage() {
   const { needsSetup, needsSeed, authenticated, refetch } = useAuth()
+  const branding = useBranding()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -176,9 +178,9 @@ export default function SetupPage() {
             marginBottom: 8,
           }}
         >
-          <img src="/logo.png" alt="" style={{ width: 32, height: 32 }} />
+          <img src={branding.logoUrl} alt="" style={{ width: 32, height: 32 }} />
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dc-text)', margin: 0 }}>
-            Welcome to Drizby
+            Welcome to {branding.name}
           </h1>
         </div>
         <p

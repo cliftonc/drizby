@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useBranding } from '../hooks/useBranding'
 
 export default function RegisterPage() {
   const { authenticated, needsSetup, register } = useAuth()
+  const branding = useBranding()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -65,9 +67,9 @@ export default function RegisterPage() {
             marginBottom: 8,
           }}
         >
-          <img src="/logo.png" alt="" style={{ width: 32, height: 32 }} />
+          <img src={branding.logoUrl} alt="" style={{ width: 32, height: 32 }} />
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--dc-text)', margin: 0 }}>
-            Drizby
+            {branding.name}
           </h1>
         </div>
         <p
