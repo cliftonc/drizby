@@ -12,8 +12,10 @@ import {
   connections,
   contentGroupVisibility,
   cubeDefinitions,
+  emailVerificationTokens,
   groupTypes,
   groups,
+  magicLinkTokens,
   notebooks,
   oauthAccounts,
   passwordResetTokens,
@@ -23,6 +25,7 @@ import {
   userSessions,
   users,
 } from '../../schema'
+import { maybeDecrypt, maybeEncrypt } from '../auth/encryption'
 import { guardPermission } from '../permissions/guard'
 import { getAISettings } from '../services/ai-settings'
 import { connectionManager } from '../services/connection-manager'
@@ -122,9 +125,12 @@ app.put('/ai', async c => {
     baseUrl?: string
   }
 
+  // Encrypt the API key before storing
+  const encryptedApiKey = apiKey ? await maybeEncrypt(apiKey) : apiKey
+
   const pairs: [string, string | undefined][] = [
     ['ai_provider', provider],
-    ['ai_api_key', apiKey],
+    ['ai_api_key', encryptedApiKey],
     ['ai_model', model],
     ['ai_base_url', baseUrl],
   ]
@@ -165,7 +171,7 @@ app.put('/ai', async c => {
 app.get('/oauth', async c => {
   const db = c.get('db') as any
 
-  // Read raw DB values so we can show config even when disabled
+  // Read all settings at once
   const rows = await db
     .select({ key: settings.key, value: settings.value })
     .from(settings)
@@ -173,21 +179,48 @@ app.get('/oauth', async c => {
   const map: Record<string, string> = {}
   for (const r of rows) map[r.key] = r.value
 
-  const clientId = map.oauth_google_client_id || process.env.GOOGLE_CLIENT_ID || ''
-  const clientSecret = map.oauth_google_client_secret || process.env.GOOGLE_CLIENT_SECRET || ''
-  const enabled = map.oauth_google_enabled !== 'false' && !!clientId && !!clientSecret
-  const redirectUri =
-    process.env.GOOGLE_REDIRECT_URI ||
-    `${(process.env.APP_URL || 'http://localhost:3461').replace(/\/$/, '')}/api/auth/google/callback`
+  const baseUrl = (process.env.APP_URL || 'http://localhost:3461').replace(/\/$/, '')
 
-  return c.json({
-    google: {
+  async function providerConfig(provider: string, envPrefix: string) {
+    const rawClientId = map[`oauth_${provider}_client_id`] || ''
+    const rawClientSecret = map[`oauth_${provider}_client_secret`] || ''
+
+    const clientId =
+      (rawClientId ? await maybeDecrypt(rawClientId) : '') ||
+      process.env[`${envPrefix}_CLIENT_ID`] ||
+      ''
+    const clientSecret =
+      (rawClientSecret ? await maybeDecrypt(rawClientSecret) : '') ||
+      process.env[`${envPrefix}_CLIENT_SECRET`] ||
+      ''
+    const enabled = map[`oauth_${provider}_enabled`] !== 'false' && !!clientId && !!clientSecret
+    const redirectUri =
+      process.env[`${envPrefix}_REDIRECT_URI`] || `${baseUrl}/api/auth/${provider}/callback`
+    return {
       enabled,
       clientId,
       hasClientSecret: !!clientSecret,
       clientSecretHint: clientSecret ? `****${clientSecret.slice(-4)}` : '',
       redirectUri,
+    }
+  }
+
+  return c.json({
+    google: await providerConfig('google', 'GOOGLE'),
+    github: await providerConfig('github', 'GITHUB'),
+    gitlab: await providerConfig('gitlab', 'GITLAB'),
+    microsoft: {
+      ...(await providerConfig('microsoft', 'MICROSOFT')),
+      tenantId: map.oauth_microsoft_tenant_id || process.env.MICROSOFT_TENANT_ID || 'common',
     },
+    slack: await providerConfig('slack', 'SLACK'),
+    magicLink: {
+      enabled: map.magic_link_enabled === 'true',
+    },
+    password: {
+      enabled: map.password_auth_enabled !== 'false',
+    },
+    autoAcceptEmailDomains: map.auto_accept_email_domains || '',
   })
 })
 
@@ -195,13 +228,52 @@ app.get('/oauth', async c => {
 app.put('/oauth', async c => {
   const db = c.get('db') as any
   const body = await c.req.json()
-  const { google } = body as {
-    google?: { enabled?: boolean; clientId?: string; clientSecret?: string }
+
+  // Helper to upsert settings key-value pairs
+  async function upsertSetting(key: string, value: string | undefined) {
+    if (value === undefined) return
+    if (value === '') {
+      await db.delete(settings).where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
+    } else {
+      const existing = await db
+        .select()
+        .from(settings)
+        .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
+      if (existing.length > 0) {
+        await db
+          .update(settings)
+          .set({ value, updatedAt: new Date() })
+          .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
+      } else {
+        await db.insert(settings).values({ key, value, organisationId: 1 })
+      }
+    }
   }
 
-  if (google) {
-    // If enabling, validate that credentials are present
-    if (google.enabled === true) {
+  // Process each provider
+  const providers = ['google', 'github', 'gitlab', 'microsoft', 'slack'] as const
+  const envPrefixes: Record<string, string> = {
+    google: 'GOOGLE',
+    github: 'GITHUB',
+    gitlab: 'GITLAB',
+    microsoft: 'MICROSOFT',
+    slack: 'SLACK',
+  }
+
+  for (const provider of providers) {
+    const providerData = body[provider] as
+      | {
+          enabled?: boolean
+          clientId?: string
+          clientSecret?: string
+          tenantId?: string
+        }
+      | undefined
+
+    if (!providerData) continue
+
+    // If enabling, validate credentials
+    if (providerData.enabled === true) {
       const existingRows = await db
         .select({ key: settings.key, value: settings.value })
         .from(settings)
@@ -209,46 +281,61 @@ app.put('/oauth', async c => {
       const map: Record<string, string> = {}
       for (const r of existingRows) map[r.key] = r.value
 
-      const finalClientId = google.clientId ?? map.oauth_google_client_id ?? ''
+      const prefix = envPrefixes[provider]
+      const finalClientId =
+        providerData.clientId ??
+        map[`oauth_${provider}_client_id`] ??
+        process.env[`${prefix}_CLIENT_ID`] ??
+        ''
       const finalClientSecret =
-        google.clientSecret !== undefined
-          ? google.clientSecret
-          : (map.oauth_google_client_secret ?? '')
+        providerData.clientSecret !== undefined
+          ? providerData.clientSecret
+          : (map[`oauth_${provider}_client_secret`] ?? process.env[`${prefix}_CLIENT_SECRET`] ?? '')
 
       if (!finalClientId || !finalClientSecret) {
         return c.json(
-          { error: 'Client ID and Client Secret are required to enable Google OAuth' },
+          { error: `Client ID and Client Secret are required to enable ${provider} OAuth` },
           400
         )
       }
     }
 
-    const pairs: [string, string | undefined][] = [
-      ['oauth_google_enabled', google.enabled !== undefined ? String(google.enabled) : undefined],
-      ['oauth_google_client_id', google.clientId],
-      ['oauth_google_client_secret', google.clientSecret],
-    ]
+    await upsertSetting(
+      `oauth_${provider}_enabled`,
+      providerData.enabled !== undefined ? String(providerData.enabled) : undefined
+    )
+    await upsertSetting(`oauth_${provider}_client_id`, providerData.clientId)
+    // Encrypt the client secret before storing
+    const encryptedSecret = providerData.clientSecret
+      ? await maybeEncrypt(providerData.clientSecret)
+      : providerData.clientSecret
+    await upsertSetting(`oauth_${provider}_client_secret`, encryptedSecret)
 
-    for (const [key, value] of pairs) {
-      if (value === undefined) continue
-
-      if (value === '') {
-        await db.delete(settings).where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
-      } else {
-        const existing = await db
-          .select()
-          .from(settings)
-          .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
-        if (existing.length > 0) {
-          await db
-            .update(settings)
-            .set({ value, updatedAt: new Date() })
-            .where(and(eq(settings.key, key), eq(settings.organisationId, 1)))
-        } else {
-          await db.insert(settings).values({ key, value, organisationId: 1 })
-        }
-      }
+    // Microsoft-specific: tenant ID
+    if (provider === 'microsoft' && providerData.tenantId !== undefined) {
+      await upsertSetting('oauth_microsoft_tenant_id', providerData.tenantId)
     }
+  }
+
+  // Magic link
+  if (body.magicLink !== undefined) {
+    const { enabled } = body.magicLink as { enabled?: boolean }
+    if (enabled !== undefined) {
+      await upsertSetting('magic_link_enabled', String(enabled))
+    }
+  }
+
+  // Password auth
+  if (body.password !== undefined) {
+    const { enabled } = body.password as { enabled?: boolean }
+    if (enabled !== undefined) {
+      await upsertSetting('password_auth_enabled', String(enabled))
+    }
+  }
+
+  // Auto-accept email domains
+  if (body.autoAcceptEmailDomains !== undefined) {
+    await upsertSetting('auto_accept_email_domains', body.autoAcceptEmailDomains as string)
   }
 
   invalidateCubeAppCache()
@@ -281,6 +368,8 @@ app.post('/factory-reset', async c => {
   invalidateCubeAppCache()
 
   // Delete all rows from every table (order matters for FK constraints)
+  await db.delete(emailVerificationTokens)
+  await db.delete(magicLinkTokens)
   await db.delete(passwordResetTokens)
   await db.delete(userSessions)
   await db.delete(oauthAccounts)

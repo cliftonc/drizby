@@ -39,7 +39,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user?.role === 'user') {
-    return <PendingApprovalPage />
+    return <PendingApprovalPage emailVerified={user.emailVerified !== false} />
   }
 
   return <>{children}</>

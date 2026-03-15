@@ -178,6 +178,7 @@ export const users = sqliteTable(
     passwordHash: text('password_hash'),
     role: text('role').notNull().default('member'),
     isBlocked: integer('is_blocked', { mode: 'boolean' }).notNull().default(false),
+    emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(true),
     avatarUrl: text('avatar_url'),
     organisationId: integer('organisation_id').notNull().default(1),
     createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
@@ -488,6 +489,39 @@ export const contentGroupVisibilityRelations = relations(contentGroupVisibility,
   }),
 }))
 
+// Email verification tokens for password-registered accounts
+export const emailVerificationTokens = sqliteTable('email_verification_tokens', {
+  id: text('id').primaryKey(), // 64-char hex token
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+export const emailVerificationTokensRelations = relations(emailVerificationTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [emailVerificationTokens.userId],
+    references: [users.id],
+  }),
+}))
+
+// Magic link tokens for passwordless authentication
+export const magicLinkTokens = sqliteTable('magic_link_tokens', {
+  id: text('id').primaryKey(), // hex token hash
+  email: text('email').notNull(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+export const magicLinkTokensRelations = relations(magicLinkTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [magicLinkTokens.userId],
+    references: [users.id],
+  }),
+}))
+
 // Export schema for use with Drizzle
 export const schema = {
   connections,
@@ -504,6 +538,8 @@ export const schema = {
   groups,
   userGroups,
   contentGroupVisibility,
+  emailVerificationTokens,
+  magicLinkTokens,
   oauthClients,
   oauthTokens,
   oauthAuthCodes,
@@ -521,6 +557,8 @@ export const schema = {
   oauthClientsRelations,
   oauthTokensRelations,
   oauthAuthCodesRelations,
+  emailVerificationTokensRelations,
+  magicLinkTokensRelations,
 }
 
 export type Schema = typeof schema

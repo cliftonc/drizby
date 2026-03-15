@@ -8,6 +8,7 @@ import { SemanticLayerCompiler } from 'drizzle-cube/server'
 import type { Cube, DrizzleDatabase } from 'drizzle-cube/server'
 import { eq } from 'drizzle-orm'
 import { connections, cubeDefinitions, schemaFiles } from '../../schema'
+import { maybeDecrypt } from '../auth/encryption'
 import { compileCube, compileSchema } from './cube-compiler'
 import { createDriver } from './driver-factory'
 
@@ -62,7 +63,8 @@ class ConnectionManager {
       await this.remove(connectionId)
     }
 
-    const driver = await createDriver(engineType, connectionString, provider)
+    const decryptedConnectionString = await maybeDecrypt(connectionString)
+    const driver = await createDriver(engineType, decryptedConnectionString, provider)
 
     const semanticLayer = new SemanticLayerCompiler({
       drizzle: driver.db,

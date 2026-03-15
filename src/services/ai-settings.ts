@@ -6,6 +6,7 @@
 import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { and, eq, inArray } from 'drizzle-orm'
 import { settings } from '../../schema'
+import { maybeDecrypt } from '../auth/encryption'
 
 const AI_KEYS = ['ai_provider', 'ai_api_key', 'ai_model', 'ai_base_url'] as const
 
@@ -17,9 +18,11 @@ export async function getAISettings(db: DrizzleDatabase) {
 
   const map = new Map(rows.map((r: any) => [r.key, r.value]))
 
+  const rawApiKey = map.get('ai_api_key') as string | undefined
+
   return {
     provider: map.get('ai_provider') as 'anthropic' | 'openai' | 'google' | undefined,
-    apiKey: map.get('ai_api_key') as string | undefined,
+    apiKey: rawApiKey ? await maybeDecrypt(rawApiKey) : undefined,
     model: map.get('ai_model') as string | undefined,
     baseUrl: map.get('ai_base_url') as string | undefined,
   }

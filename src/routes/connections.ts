@@ -7,6 +7,7 @@ import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { connections, cubeDefinitions, schemaFiles } from '../../schema'
+import { maybeDecrypt, maybeEncrypt } from '../auth/encryption'
 import { guardPermission } from '../permissions/guard'
 import { connectionManager } from '../services/connection-manager'
 import { testDriver } from '../services/driver-factory'
@@ -124,7 +125,9 @@ app.get('/:id', async c => {
     return c.json({ error: 'Connection not found' }, 404)
   }
 
-  return c.json(result[0])
+  const conn = result[0]
+  conn.connectionString = await maybeDecrypt(conn.connectionString)
+  return c.json(conn)
 })
 
 // Create connection (admin only)
@@ -132,6 +135,7 @@ app.post('/', adminGuard, async c => {
   const db = c.get('db') as any
   const body = await c.req.json()
 
+  const encryptedConnStr = await maybeEncrypt(body.connectionString)
   const result = await db
     .insert(connections)
     .values({
@@ -139,7 +143,7 @@ app.post('/', adminGuard, async c => {
       description: body.description,
       engineType: body.engineType,
       provider: body.provider || null,
-      connectionString: body.connectionString,
+      connectionString: encryptedConnStr,
       organisationId: 1,
     })
     .returning()
@@ -183,6 +187,9 @@ app.put('/:id', adminGuard, async c => {
   const id = Number.parseInt(c.req.param('id'))
   const body = await c.req.json()
 
+  const encryptedConnStr = body.connectionString
+    ? await maybeEncrypt(body.connectionString)
+    : body.connectionString
   const result = await db
     .update(connections)
     .set({
@@ -190,7 +197,7 @@ app.put('/:id', adminGuard, async c => {
       description: body.description,
       engineType: body.engineType,
       provider: body.provider || null,
-      connectionString: body.connectionString,
+      connectionString: encryptedConnStr,
       isActive: body.isActive,
       updatedAt: new Date(),
     })
@@ -238,7 +245,8 @@ app.post('/:id/test', adminGuard, async c => {
   }
 
   const conn = result[0]
-  const testResult = await testDriver(conn.engineType, conn.connectionString, conn.provider)
+  const decryptedConnStr = await maybeDecrypt(conn.connectionString)
+  const testResult = await testDriver(conn.engineType, decryptedConnStr, conn.provider)
   return c.json(testResult)
 })
 

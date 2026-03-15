@@ -21,6 +21,7 @@ const sections: NavSection[] = [
     label: 'Configuration',
     items: [
       { path: '/settings/ai', label: 'AI', adminOnly: true },
+      { path: '/settings/auth', label: 'Authentication', adminOnly: true },
       { path: '/settings/data', label: 'Data', adminOnly: true },
       { path: '/settings/features', label: 'Features', adminOnly: true },
       { path: '/settings/groups', label: 'Groups', adminOnly: true },

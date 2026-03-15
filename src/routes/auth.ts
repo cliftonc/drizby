@@ -5,6 +5,7 @@ import { count, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import {
+  emailVerificationTokens,
   groupTypes,
   groups,
   oauthAccounts,
@@ -13,8 +14,23 @@ import {
   userGroups,
   users,
 } from '../../schema'
+import {
+  createSignedToken,
+  getMagicLinkSecret,
+  storeMagicLinkToken,
+  verifyAndConsumeMagicLink,
+} from '../auth/magic-link'
 import { authMiddleware, optionalAuth } from '../auth/middleware'
 import { createGoogleClient, fetchGoogleProfile } from '../auth/oauth'
+import { createGitHubClient, fetchGitHubProfile } from '../auth/oauth-github'
+import { createGitLabClient, fetchGitLabProfile } from '../auth/oauth-gitlab'
+import { createMicrosoftClient, fetchMicrosoftProfile } from '../auth/oauth-microsoft'
+import {
+  buildSlackAuthUrl,
+  exchangeSlackCode,
+  fetchSlackProfile,
+  getSlackConfig,
+} from '../auth/oauth-slack'
 import { hashPassword, verifyPassword } from '../auth/password'
 import {
   clearSessionCookie,
@@ -24,15 +40,23 @@ import {
   setSessionCookie,
 } from '../auth/session'
 import {
+  createEmailVerificationTemplate,
+  createMagicLinkEmailTemplate,
   createNewUserNotificationTemplate,
   createPasswordChangedEmailTemplate,
   createPasswordResetConfirmEmailTemplate,
   createPasswordResetEmailTemplate,
-  createWelcomeEmailTemplate,
   getAppName,
   getAppUrl,
   sendEmail,
 } from '../services/email'
+import {
+  getAutoAcceptDomains,
+  getEnabledProviders,
+  getMagicLinkEnabled,
+  getPasswordEnabled,
+  isEmailAutoAccepted,
+} from '../services/oauth-settings'
 
 interface Variables {
   db: DrizzleDatabase
@@ -40,6 +64,81 @@ interface Variables {
 }
 
 const app = new Hono<{ Variables: Variables }>()
+
+// ---------------------------------------------------------------------------
+// Shared OAuth callback helper
+// ---------------------------------------------------------------------------
+
+async function handleOAuthLogin(
+  db: any,
+  profile: {
+    provider: string
+    providerUserId: string
+    email: string
+    name: string
+    avatarUrl?: string
+  }
+): Promise<{ userId: number; isBlocked: boolean }> {
+  // Check if oauth account exists
+  const [existingOauth] = await db
+    .select()
+    .from(oauthAccounts)
+    .where(eq(oauthAccounts.providerUserId, profile.providerUserId))
+
+  let userId: number
+
+  if (existingOauth) {
+    userId = existingOauth.userId
+    // Update last-used timestamp
+    await db
+      .update(oauthAccounts)
+      .set({ updatedAt: new Date() })
+      .where(eq(oauthAccounts.id, existingOauth.id))
+  } else {
+    // Check if user with this email exists
+    const [existingUser] = await db.select().from(users).where(eq(users.email, profile.email))
+
+    if (existingUser) {
+      userId = existingUser.id
+    } else {
+      // Create new user
+      const username = profile.email.split('@')[0]
+      const [{ value: userCount }] = await db.select({ value: count() }).from(users)
+      let role = 'user'
+      if (userCount === 0) {
+        role = 'admin'
+      } else {
+        const autoAcceptDomains = await getAutoAcceptDomains(db)
+        if (isEmailAutoAccepted(profile.email, autoAcceptDomains)) {
+          role = 'member'
+        }
+      }
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          email: profile.email,
+          username,
+          name: profile.name,
+          role,
+          avatarUrl: profile.avatarUrl,
+          organisationId: 1,
+        })
+        .returning()
+      userId = newUser.id
+    }
+
+    // Link oauth account (no tokens stored — they're not needed post-login)
+    await db.insert(oauthAccounts).values({
+      userId,
+      provider: profile.provider,
+      providerUserId: profile.providerUserId,
+    })
+  }
+
+  // Check if blocked
+  const [user] = await db.select().from(users).where(eq(users.id, userId))
+  return { userId, isBlocked: user.isBlocked }
+}
 
 // Check auth status (no auth required)
 app.get('/status', optionalAuth, async c => {
@@ -59,6 +158,8 @@ app.get('/status', optionalAuth, async c => {
     }
   }
 
+  const enabledProviders = await getEnabledProviders(db)
+
   return c.json({
     needsSetup,
     pendingAdminSetup,
@@ -71,9 +172,11 @@ app.get('/status', optionalAuth, async c => {
           name: auth.user.name,
           role: auth.user.role,
           avatarUrl: auth.user.avatarUrl,
+          emailVerified: auth.user.emailVerified,
         }
       : null,
-    googleEnabled: !!(await createGoogleClient(db)),
+    enabledProviders,
+    googleEnabled: enabledProviders.includes('google'),
   })
 })
 
@@ -124,6 +227,11 @@ app.post('/setup', async c => {
 // Self-registration — creates a pending user (role: 'user')
 app.post('/register', async c => {
   const db = c.get('db') as any
+
+  if (!(await getPasswordEnabled(db))) {
+    return c.json({ error: 'Password authentication is disabled' }, 403)
+  }
+
   const body = await c.req.json()
   const { name, email, password } = body
 
@@ -146,6 +254,7 @@ app.post('/register', async c => {
         username: email.split('@')[0],
         passwordHash,
         role: 'user',
+        emailVerified: false,
         organisationId: 1,
       })
       .returning()
@@ -153,14 +262,23 @@ app.post('/register', async c => {
     const sessionId = await createSession(db, user.id)
     setSessionCookie(c, sessionId)
 
-    // Fire-and-forget: send welcome email and notify admins
+    // Send verification email
     const appName = getAppName()
     const appUrl = getAppUrl()
+    const verificationToken = crypto.randomBytes(32).toString('hex')
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
+    await db.insert(emailVerificationTokens).values({
+      id: verificationToken,
+      userId: user.id,
+      expiresAt,
+    })
+
+    const verifyUrl = `${appUrl}/verify-email?token=${verificationToken}`
     sendEmail(
       user.email,
-      `Welcome to ${appName}`,
-      createWelcomeEmailTemplate(user.name, appName, `${appUrl}/login`)
+      `Verify your email on ${appName}`,
+      createEmailVerificationTemplate(user.name, verifyUrl, appName)
     ).catch(() => {})
 
     // Notify all admins
@@ -200,6 +318,11 @@ app.post('/register', async c => {
 // Login with email + password
 app.post('/login', async c => {
   const db = c.get('db') as any
+
+  if (!(await getPasswordEnabled(db))) {
+    return c.json({ error: 'Password authentication is disabled' }, 403)
+  }
+
   const { email, password } = await c.req.json()
 
   if (!email || !password) {
@@ -475,7 +598,98 @@ app.post('/resend-setup-email', async c => {
   return c.json({ success: true })
 })
 
-// Google OAuth - initiate
+// ---------------------------------------------------------------------------
+// Email verification
+// ---------------------------------------------------------------------------
+
+app.post('/verify-email', async c => {
+  const db = c.get('db') as any
+  const { token } = await c.req.json()
+
+  if (!token) {
+    return c.json({ error: 'Token is required' }, 400)
+  }
+
+  const [verificationToken] = await db
+    .select()
+    .from(emailVerificationTokens)
+    .where(eq(emailVerificationTokens.id, token))
+
+  if (!verificationToken) {
+    return c.json({ error: 'Invalid or already used verification link' }, 400)
+  }
+
+  if (new Date() > verificationToken.expiresAt) {
+    await db.delete(emailVerificationTokens).where(eq(emailVerificationTokens.id, token))
+    return c.json({ error: 'Verification link has expired' }, 400)
+  }
+
+  // Mark email as verified
+  await db
+    .update(users)
+    .set({ emailVerified: true, updatedAt: new Date() })
+    .where(eq(users.id, verificationToken.userId))
+
+  // Apply auto-accept domain logic
+  const [user] = await db.select().from(users).where(eq(users.id, verificationToken.userId))
+  if (user && user.role === 'user') {
+    const autoAcceptDomains = await getAutoAcceptDomains(db)
+    if (isEmailAutoAccepted(user.email, autoAcceptDomains)) {
+      await db
+        .update(users)
+        .set({ role: 'member', updatedAt: new Date() })
+        .where(eq(users.id, user.id))
+    }
+  }
+
+  // Delete all verification tokens for this user
+  await db
+    .delete(emailVerificationTokens)
+    .where(eq(emailVerificationTokens.userId, verificationToken.userId))
+
+  // Create session
+  const sessionId = await createSession(db, verificationToken.userId)
+  setSessionCookie(c, sessionId)
+  return c.json({ success: true })
+})
+
+app.post('/resend-verification', authMiddleware, async c => {
+  const db = c.get('db') as any
+  const auth = c.get('auth') as any
+
+  if (auth.user.emailVerified) {
+    return c.json({ error: 'Email already verified' }, 400)
+  }
+
+  // Delete existing tokens
+  await db.delete(emailVerificationTokens).where(eq(emailVerificationTokens.userId, auth.user.id))
+
+  // Create new token
+  const token = crypto.randomBytes(32).toString('hex')
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+
+  await db.insert(emailVerificationTokens).values({
+    id: token,
+    userId: auth.user.id,
+    expiresAt,
+  })
+
+  const appName = getAppName()
+  const verifyUrl = `${getAppUrl()}/verify-email?token=${token}`
+
+  sendEmail(
+    auth.user.email,
+    `Verify your email on ${appName}`,
+    createEmailVerificationTemplate(auth.user.name, verifyUrl, appName)
+  ).catch(() => {})
+
+  return c.json({ success: true })
+})
+
+// ---------------------------------------------------------------------------
+// Google OAuth
+// ---------------------------------------------------------------------------
+
 app.get('/google', async c => {
   const db = c.get('db') as any
   const google = await createGoogleClient(db)
@@ -498,7 +712,6 @@ app.get('/google', async c => {
   return c.redirect(url.toString())
 })
 
-// Google OAuth - callback
 app.get('/google/callback', async c => {
   const db = c.get('db') as any
   const google = await createGoogleClient(db)
@@ -515,7 +728,6 @@ app.get('/google/callback', async c => {
     return c.redirect('/login?error=invalid_state')
   }
 
-  // Clean up cookies
   deleteCookie(c, 'oauth_state', { path: '/' })
   deleteCookie(c, 'oauth_code_verifier', { path: '/' })
 
@@ -524,67 +736,364 @@ app.get('/google/callback', async c => {
     const accessToken = tokens.accessToken()
     const profile = await fetchGoogleProfile(accessToken)
 
-    // Check if oauth account exists
-    const [existingOauth] = await db
-      .select()
-      .from(oauthAccounts)
-      .where(eq(oauthAccounts.providerUserId, profile.sub))
+    const result = await handleOAuthLogin(db, {
+      provider: 'google',
+      providerUserId: profile.sub,
+      email: profile.email,
+      name: profile.name,
+      avatarUrl: profile.picture,
+    })
 
-    let userId: number
-
-    if (existingOauth) {
-      userId = existingOauth.userId
-      // Update tokens
-      await db
-        .update(oauthAccounts)
-        .set({ accessToken, updatedAt: new Date() })
-        .where(eq(oauthAccounts.id, existingOauth.id))
-    } else {
-      // Check if user with this email exists
-      const [existingUser] = await db.select().from(users).where(eq(users.email, profile.email))
-
-      if (existingUser) {
-        userId = existingUser.id
-      } else {
-        // Create new user
-        const username = profile.email.split('@')[0]
-        const [{ value: userCount }] = await db.select({ value: count() }).from(users)
-        const [newUser] = await db
-          .insert(users)
-          .values({
-            email: profile.email,
-            username,
-            name: profile.name,
-            role: userCount === 0 ? 'admin' : 'user',
-            avatarUrl: profile.picture,
-            organisationId: 1,
-          })
-          .returning()
-        userId = newUser.id
-      }
-
-      // Link oauth account
-      await db.insert(oauthAccounts).values({
-        userId,
-        provider: 'google',
-        providerUserId: profile.sub,
-        accessToken,
-      })
-    }
-
-    // Check if blocked
-    const [user] = await db.select().from(users).where(eq(users.id, userId))
-    if (user.isBlocked) {
+    if (result.isBlocked) {
       return c.redirect('/login?error=blocked')
     }
 
-    const sessionId = await createSession(db, userId)
+    const sessionId = await createSession(db, result.userId)
     setSessionCookie(c, sessionId)
     return c.redirect('/')
   } catch (err) {
     console.error('Google OAuth error:', err)
     return c.redirect('/login?error=oauth_failed')
   }
+})
+
+// ---------------------------------------------------------------------------
+// GitHub OAuth
+// ---------------------------------------------------------------------------
+
+app.get('/github', async c => {
+  const db = c.get('db') as any
+  const result = await createGitHubClient(db)
+  if (!result) return c.json({ error: 'GitHub OAuth not configured' }, 400)
+
+  const state = generateState()
+  const url = result.client.createAuthorizationURL(state, ['read:user', 'user:email'])
+
+  setCookie(c, 'oauth_state', state, { httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 600 })
+  return c.redirect(url.toString())
+})
+
+app.get('/github/callback', async c => {
+  const db = c.get('db') as any
+  const result = await createGitHubClient(db)
+  if (!result) return c.redirect('/login?error=oauth_not_configured')
+
+  const code = c.req.query('code')
+  const state = c.req.query('state')
+  const storedState = getCookie(c, 'oauth_state')
+
+  if (!code || !state || state !== storedState) {
+    return c.redirect('/login?error=invalid_state')
+  }
+
+  deleteCookie(c, 'oauth_state', { path: '/' })
+
+  try {
+    const tokens = await result.client.validateAuthorizationCode(code)
+    const accessToken = tokens.accessToken()
+    const profile = await fetchGitHubProfile(accessToken)
+
+    const loginResult = await handleOAuthLogin(db, {
+      provider: 'github',
+      providerUserId: profile.sub,
+      email: profile.email,
+      name: profile.name,
+      avatarUrl: profile.picture,
+    })
+
+    if (loginResult.isBlocked) return c.redirect('/login?error=blocked')
+
+    const sessionId = await createSession(db, loginResult.userId)
+    setSessionCookie(c, sessionId)
+    return c.redirect('/')
+  } catch (err) {
+    console.error('GitHub OAuth error:', err)
+    return c.redirect('/login?error=oauth_failed')
+  }
+})
+
+// ---------------------------------------------------------------------------
+// GitLab OAuth
+// ---------------------------------------------------------------------------
+
+app.get('/gitlab', async c => {
+  const db = c.get('db') as any
+  const result = await createGitLabClient(db)
+  if (!result) return c.json({ error: 'GitLab OAuth not configured' }, 400)
+
+  const state = generateState()
+  const codeVerifier = generateCodeVerifier()
+  const url = result.createAuthorizationURL(state, codeVerifier, ['openid', 'profile', 'email'])
+
+  setCookie(c, 'oauth_state', state, { httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 600 })
+  setCookie(c, 'oauth_code_verifier', codeVerifier, {
+    httpOnly: true,
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: 600,
+  })
+
+  return c.redirect(url.toString())
+})
+
+app.get('/gitlab/callback', async c => {
+  const db = c.get('db') as any
+  const result = await createGitLabClient(db)
+  if (!result) return c.redirect('/login?error=oauth_not_configured')
+
+  const code = c.req.query('code')
+  const state = c.req.query('state')
+  const storedState = getCookie(c, 'oauth_state')
+  const codeVerifier = getCookie(c, 'oauth_code_verifier')
+
+  if (!code || !state || state !== storedState || !codeVerifier) {
+    return c.redirect('/login?error=invalid_state')
+  }
+
+  deleteCookie(c, 'oauth_state', { path: '/' })
+  deleteCookie(c, 'oauth_code_verifier', { path: '/' })
+
+  try {
+    const tokens = await result.validateAuthorizationCode(code, codeVerifier)
+    const accessToken = tokens.accessToken()
+    const profile = await fetchGitLabProfile(accessToken)
+
+    const loginResult = await handleOAuthLogin(db, {
+      provider: 'gitlab',
+      providerUserId: profile.sub,
+      email: profile.email,
+      name: profile.name,
+      avatarUrl: profile.picture,
+    })
+
+    if (loginResult.isBlocked) return c.redirect('/login?error=blocked')
+
+    const sessionId = await createSession(db, loginResult.userId)
+    setSessionCookie(c, sessionId)
+    return c.redirect('/')
+  } catch (err) {
+    console.error('GitLab OAuth error:', err)
+    return c.redirect('/login?error=oauth_failed')
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Microsoft OAuth (with PKCE)
+// ---------------------------------------------------------------------------
+
+app.get('/microsoft', async c => {
+  const db = c.get('db') as any
+  const result = await createMicrosoftClient(db)
+  if (!result) return c.json({ error: 'Microsoft OAuth not configured' }, 400)
+
+  const state = generateState()
+  const codeVerifier = generateCodeVerifier()
+  const url = result.client.createAuthorizationURL(state, codeVerifier, [
+    'openid',
+    'profile',
+    'email',
+    'User.Read',
+  ])
+
+  setCookie(c, 'oauth_state', state, { httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 600 })
+  setCookie(c, 'oauth_code_verifier', codeVerifier, {
+    httpOnly: true,
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: 600,
+  })
+
+  return c.redirect(url.toString())
+})
+
+app.get('/microsoft/callback', async c => {
+  const db = c.get('db') as any
+  const result = await createMicrosoftClient(db)
+  if (!result) return c.redirect('/login?error=oauth_not_configured')
+
+  const code = c.req.query('code')
+  const state = c.req.query('state')
+  const storedState = getCookie(c, 'oauth_state')
+  const codeVerifier = getCookie(c, 'oauth_code_verifier')
+
+  if (!code || !state || state !== storedState || !codeVerifier) {
+    return c.redirect('/login?error=invalid_state')
+  }
+
+  deleteCookie(c, 'oauth_state', { path: '/' })
+  deleteCookie(c, 'oauth_code_verifier', { path: '/' })
+
+  try {
+    const tokens = await result.client.validateAuthorizationCode(code, codeVerifier)
+    const accessToken = tokens.accessToken()
+    const profile = await fetchMicrosoftProfile(accessToken)
+
+    const loginResult = await handleOAuthLogin(db, {
+      provider: 'microsoft',
+      providerUserId: profile.sub,
+      email: profile.email,
+      name: profile.name,
+    })
+
+    if (loginResult.isBlocked) return c.redirect('/login?error=blocked')
+
+    const sessionId = await createSession(db, loginResult.userId)
+    setSessionCookie(c, sessionId)
+    return c.redirect('/')
+  } catch (err) {
+    console.error('Microsoft OAuth error:', err)
+    return c.redirect('/login?error=oauth_failed')
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Slack OAuth (custom OIDC)
+// ---------------------------------------------------------------------------
+
+app.get('/slack', async c => {
+  const db = c.get('db') as any
+  const config = await getSlackConfig(db)
+  if (!config) return c.json({ error: 'Slack OAuth not configured' }, 400)
+
+  const state = generateState()
+  const nonce = crypto.randomBytes(16).toString('hex')
+  const url = buildSlackAuthUrl(config.clientId, config.redirectUri, state, nonce)
+
+  setCookie(c, 'oauth_state', state, { httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 600 })
+  setCookie(c, 'oauth_nonce', nonce, { httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 600 })
+
+  return c.redirect(url)
+})
+
+app.get('/slack/callback', async c => {
+  const db = c.get('db') as any
+  const config = await getSlackConfig(db)
+  if (!config) return c.redirect('/login?error=oauth_not_configured')
+
+  const code = c.req.query('code')
+  const state = c.req.query('state')
+  const storedState = getCookie(c, 'oauth_state')
+
+  if (!code || !state || state !== storedState) {
+    return c.redirect('/login?error=invalid_state')
+  }
+
+  const storedNonce = getCookie(c, 'oauth_nonce')
+
+  deleteCookie(c, 'oauth_state', { path: '/' })
+  deleteCookie(c, 'oauth_nonce', { path: '/' })
+
+  try {
+    const { accessToken, idToken } = await exchangeSlackCode(
+      config.clientId,
+      config.clientSecret,
+      code,
+      config.redirectUri
+    )
+
+    // Verify nonce from id_token to prevent replay attacks
+    if (idToken && storedNonce) {
+      try {
+        const [, payloadB64] = idToken.split('.')
+        if (payloadB64) {
+          const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString())
+          if (payload.nonce !== storedNonce) {
+            return c.redirect('/login?error=invalid_state')
+          }
+        }
+      } catch {
+        return c.redirect('/login?error=oauth_failed')
+      }
+    }
+
+    const profile = await fetchSlackProfile(accessToken)
+
+    const loginResult = await handleOAuthLogin(db, {
+      provider: 'slack',
+      providerUserId: profile.sub,
+      email: profile.email,
+      name: profile.name,
+      avatarUrl: profile.picture,
+    })
+
+    if (loginResult.isBlocked) return c.redirect('/login?error=blocked')
+
+    const sessionId = await createSession(db, loginResult.userId)
+    setSessionCookie(c, sessionId)
+    return c.redirect('/')
+  } catch (err) {
+    console.error('Slack OAuth error:', err)
+    return c.redirect('/login?error=oauth_failed')
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Magic Link
+// ---------------------------------------------------------------------------
+
+app.post('/magic-link/request', async c => {
+  const db = c.get('db') as any
+  const { email } = await c.req.json()
+
+  if (!email) {
+    return c.json({ error: 'Email is required' }, 400)
+  }
+
+  const enabled = await getMagicLinkEnabled(db)
+  if (!enabled) {
+    return c.json({ error: 'Magic link authentication is not enabled' }, 400)
+  }
+
+  // Always return 200 to avoid leaking info
+  try {
+    const secret = getMagicLinkSecret()
+    const signedToken = await createSignedToken(email, secret)
+    await storeMagicLinkToken(db, email, signedToken)
+
+    const appName = getAppName()
+    const magicLinkUrl = `${getAppUrl()}/magic-link/verify?token=${encodeURIComponent(signedToken)}`
+
+    sendEmail(
+      email,
+      `Sign in to ${appName}`,
+      createMagicLinkEmailTemplate(magicLinkUrl, appName)
+    ).catch(() => {})
+  } catch (err) {
+    console.error('Magic link error:', err)
+  }
+
+  return c.json({ success: true })
+})
+
+app.post('/magic-link/verify', async c => {
+  const db = c.get('db') as any
+  const { token } = await c.req.json()
+
+  if (!token) {
+    return c.json({ error: 'Token is required' }, 400)
+  }
+
+  const secret = getMagicLinkSecret()
+  const result = await verifyAndConsumeMagicLink(db, token, secret)
+
+  if (!result.success) {
+    const messages: Record<string, string> = {
+      expired: 'This magic link has expired. Please request a new one.',
+      invalid: 'This magic link is invalid.',
+      already_used: 'This magic link has already been used. Please request a new one.',
+    }
+    return c.json({ error: messages[result.reason] || 'Verification failed' }, 400)
+  }
+
+  // Check if blocked
+  const [user] = await db.select().from(users).where(eq(users.id, result.userId))
+  if (user?.isBlocked) {
+    return c.json({ error: 'Account is blocked' }, 403)
+  }
+
+  const sessionId = await createSession(db, result.userId)
+  setSessionCookie(c, sessionId)
+  return c.json({ success: true })
 })
 
 export default app

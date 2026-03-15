@@ -7,6 +7,7 @@ import DashboardViewPage from './pages/DashboardViewPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
+import MagicLinkVerifyPage from './pages/MagicLinkVerifyPage'
 import NotebookViewPage from './pages/NotebookViewPage'
 import NotebooksListPage from './pages/NotebooksListPage'
 import PendingSetupPage from './pages/PendingSetupPage'
@@ -14,6 +15,7 @@ import RegisterPage from './pages/RegisterPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import SchemaEditorPage from './pages/SchemaEditorPage'
 import SetupPage from './pages/SetupPage'
+import VerifyEmailPage from './pages/VerifyEmailPage'
 import SettingsPage from './pages/settings/SettingsPage'
 
 /** Redirects bare /schema-editor and /schema-editor/:connId to last-visited file URL */
@@ -62,6 +64,8 @@ function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/magic-link/verify" element={<MagicLinkVerifyPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/setup" element={<SetupPage />} />
       <Route path="/pending-setup" element={<PendingSetupPage />} />
       <Route

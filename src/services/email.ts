@@ -220,6 +220,35 @@ ${button('Sign In', loginUrl)}
   )
 }
 
+export function createMagicLinkEmailTemplate(magicLinkUrl: string, appName: string): string {
+  return emailLayout(
+    `
+<h2 style="margin:0 0 16px;font-size:18px;color:#f1f5f9;">Sign in to ${appName}</h2>
+<p style="margin:0 0 16px;">Click the button below to sign in. This link expires in 15 minutes.</p>
+${button('Sign In', magicLinkUrl)}
+<p style="margin:0;color:#94a3b8;font-size:13px;">If you didn't request this, you can safely ignore this email.</p>
+`,
+    appName
+  )
+}
+
+export function createEmailVerificationTemplate(
+  userName: string,
+  verifyUrl: string,
+  appName: string
+): string {
+  return emailLayout(
+    `
+<h2 style="margin:0 0 16px;font-size:18px;color:#f1f5f9;">Verify Your Email</h2>
+<p style="margin:0 0 8px;">Hi ${userName},</p>
+<p style="margin:0 0 16px;">Please verify your email address to complete your ${appName} registration. This link expires in 24 hours.</p>
+${button('Verify Email', verifyUrl)}
+<p style="margin:0;color:#94a3b8;font-size:13px;">If you didn't create this account, you can ignore this email.</p>
+`,
+    appName
+  )
+}
+
 export function createInviteEmailTemplate(
   userName: string,
   inviterName: string,

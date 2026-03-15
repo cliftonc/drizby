@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom'
 import ConnectionsPage from '../ConnectionsPage'
 import AISettingsPage from './AISettingsPage'
+import AuthProvidersPage from './AuthProvidersPage'
 import DataSettingsPage from './DataSettingsPage'
 import GeneralSettings from './GeneralSettings'
 import GroupsPage from './GroupsPage'
@@ -18,6 +19,7 @@ export default function SettingsPage() {
           <Route path="team" element={<TeamPage />} />
           <Route path="groups" element={<GroupsPage />} />
           <Route path="ai" element={<AISettingsPage />} />
+          <Route path="auth" element={<AuthProvidersPage />} />
           <Route path="features" element={<ServerFeaturesPage />} />
           <Route path="data" element={<DataSettingsPage />} />
           <Route path="connections" element={<ConnectionsPage />} />

@@ -51,6 +51,10 @@ VOLUME /app/data
 ENV NODE_ENV=production
 ENV PORT=3461
 
+# Encryption secret for secrets at rest (OAuth secrets, API keys, connection strings)
+# If not set, secrets are stored in plaintext
+# ENV ENCRYPTION_SECRET=
+
 # Email notifications (optional)
 # ENV RESEND_API_KEY=
 # ENV RESEND_FROM_EMAIL=

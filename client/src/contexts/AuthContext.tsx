@@ -7,6 +7,7 @@ interface User {
   name: string
   role: string
   avatarUrl?: string
+  emailVerified?: boolean
 }
 
 interface AuthState {
@@ -16,6 +17,7 @@ interface AuthState {
   pendingAdminSetup: boolean
   needsSeed: boolean
   authenticated: boolean
+  enabledProviders: string[]
   googleEnabled: boolean
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
@@ -88,7 +90,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         pendingAdminSetup: data?.pendingAdminSetup || false,
         needsSeed: data?.needsSeed || false,
         authenticated: data?.authenticated || false,
-        googleEnabled: data?.googleEnabled || false,
+        enabledProviders: data?.enabledProviders || [],
+        googleEnabled: (data?.enabledProviders || []).includes('google'),
         login,
         register,
         logout,
