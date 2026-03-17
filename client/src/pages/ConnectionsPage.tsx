@@ -45,6 +45,7 @@ const ENGINE_TYPES = [
   { id: 'mysql', label: 'MySQL' },
   { id: 'sqlite', label: 'SQLite' },
   { id: 'singlestore', label: 'SingleStore' },
+  { id: 'databend', label: 'Databend' },
   { id: 'duckdb', label: 'DuckDB' },
 ]
 

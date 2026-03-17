@@ -4,7 +4,7 @@
  */
 
 export type ConnectionMode = 'connection-string' | 'structured'
-export type EngineType = 'postgres' | 'mysql' | 'sqlite' | 'singlestore' | 'duckdb'
+export type EngineType = 'postgres' | 'mysql' | 'sqlite' | 'singlestore' | 'duckdb' | 'databend'
 
 export interface StructuredField {
   key: string
@@ -251,6 +251,21 @@ export const PROVIDERS: ProviderDef[] = [
     ],
   },
 
+  // ── Databend ──────────────────────────────────────────────
+  {
+    id: 'databend',
+    label: 'Databend',
+    engineType: 'databend',
+    connectionMode: 'connection-string',
+    npmPackage: 'databend-driver',
+    drizzleImport: 'drizzle-databend',
+    placeholder: 'databend://user:password@host:8000/database?sslmode=disable',
+    example: 'databend://databend:databend@localhost:8000/default?sslmode=disable',
+    docUrl: 'https://www.npmjs.com/package/drizzle-databend',
+    helpText:
+      "Databend — cloud-native data warehouse. Uses the databend-driver with Drizzle's Postgres-compatible surface.",
+  },
+
   // ── DuckDB ──────────────────────────────────────────────
   {
     id: 'duckdb',
@@ -285,6 +300,7 @@ export function getDefaultProvider(engineType: string): string {
     sqlite: 'better-sqlite3',
     singlestore: 'singlestore',
     duckdb: 'duckdb',
+    databend: 'databend',
   }
   return defaults[engineType] || engineType
 }
@@ -308,7 +324,7 @@ export async function buildDrizzleKitConfig(
       ? 'sqlite'
       : engineType === 'mysql' || engineType === 'singlestore'
         ? 'mysql'
-        : 'postgresql'
+        : 'postgresql' // postgres, databend both use postgresql dialect
   const dialect = providerDef?.drizzleKitDialect || defaultDialect
 
   // Parse structured connection strings (JSON) into key-value config
@@ -347,5 +363,6 @@ export const ENGINE_TYPES: { id: EngineType; label: string }[] = [
   { id: 'mysql', label: 'MySQL' },
   { id: 'sqlite', label: 'SQLite' },
   { id: 'singlestore', label: 'SingleStore' },
+  { id: 'databend', label: 'Databend' },
   { id: 'duckdb', label: 'DuckDB' },
 ]

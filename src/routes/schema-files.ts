@@ -206,8 +206,10 @@ app.post('/generate-selected-cubes', async c => {
 
             // Build self-contained source file
             const tableImports = new Set(cube.tables)
+            // Only import eq if the AI-generated source actually uses it (e.g. for filtered measures)
+            const needsEq = source.includes('eq(')
             const importLines = [
-              `import { eq } from 'drizzle-orm'`,
+              ...(needsEq ? [`import { eq } from 'drizzle-orm'`] : []),
               `import { defineCube } from 'drizzle-cube/server'`,
               `import type { QueryContext, BaseQueryDefinition, Cube } from 'drizzle-cube/server'`,
               `import { ${[...tableImports].join(', ')} } from './${cube.schemaFile}'`,
@@ -906,7 +908,7 @@ departmentId: integer('department_id')                     // key is "department
 - Every measure MUST have a \`name\` property matching its key
 - Measures have ONLY these properties: \`name\`, \`title\`, \`type\`, \`sql\`, and optionally \`filters\` — do NOT add \`format\` or other properties
 - Set \`primaryKey: true\` on the ID column dimension
-- Do NOT include any joins — joins will be added in a separate step
+- Do NOT include any \`joins\` property — joins will be added in a separate step. Never use \`eq()\` for joins.
 - Do NOT add a \`where\` clause to the \`sql\` block — security context filtering is not currently supported
 - Only reference table variables that exist in the schema files provided
 - Reference columns using the Drizzle table variable: \`tableName.columnProperty\` (e.g. \`orders.createdAt\`, NOT \`orders.created_at\`)

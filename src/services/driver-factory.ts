@@ -184,6 +184,18 @@ export async function createDriver(
       return { client, db, cleanup: async () => client.close(), engineType: 'sqlite' }
     }
 
+    // ── Databend ──────────────────────────────────────────
+    case 'databend': {
+      const { drizzle } = await tryImport('drizzle-databend', 'drizzle-databend')
+      const db = await drizzle(connectionString)
+      return {
+        client: db.$client,
+        db: db as unknown as DrizzleDatabase,
+        cleanup: async () => db.close(),
+        engineType: 'databend',
+      }
+    }
+
     // ── DuckDB ────────────────────────────────────────────
     case 'duckdb': {
       const duckdb = await tryImport('duckdb', 'duckdb')

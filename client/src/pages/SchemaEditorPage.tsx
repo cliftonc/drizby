@@ -840,11 +840,14 @@ export default function SchemaEditorPage() {
 
   const loadExtraLibs = async (monaco: any) => {
     // Load real .d.ts files from node_modules via the server
-    const [drizzleOrmTypes, drizzleCubeTypes] = await Promise.all([
+    const [drizzleOrmTypes, drizzleCubeTypes, drizzleDatabendTypes] = await Promise.all([
       fetch('/api/editor/types/drizzle-orm')
         .then(r => r.json())
         .catch(() => ({})),
       fetch('/api/editor/types/drizzle-cube')
+        .then(r => r.json())
+        .catch(() => ({})),
+      fetch('/api/editor/types/drizzle-databend')
         .then(r => r.json())
         .catch(() => ({})),
     ])
@@ -854,6 +857,9 @@ export default function SchemaEditorPage() {
       ts.addExtraLib(content, `file:///node_modules/${path}`)
     }
     for (const [path, content] of Object.entries(drizzleCubeTypes) as [string, string][]) {
+      ts.addExtraLib(content, `file:///node_modules/${path}`)
+    }
+    for (const [path, content] of Object.entries(drizzleDatabendTypes) as [string, string][]) {
       ts.addExtraLib(content, `file:///node_modules/${path}`)
     }
 

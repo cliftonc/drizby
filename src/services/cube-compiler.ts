@@ -302,10 +302,17 @@ export function compileSchema(sourceCode: string): CompileResult {
   const drizzlePgCore = esmRequire('drizzle-orm/pg-core')
   const drizzleSqliteCore = esmRequire('drizzle-orm/sqlite-core')
 
+  // Lazy-load optional drivers (may not be installed)
+  let drizzleDatabend: any
+  try {
+    drizzleDatabend = esmRequire('drizzle-databend')
+  } catch {}
+
   return typeCheckAndCompile(sourceCode, (specifier: string) => {
     if (specifier === 'drizzle-orm') return drizzleOrm
     if (specifier === 'drizzle-orm/pg-core') return drizzlePgCore
     if (specifier === 'drizzle-orm/sqlite-core') return drizzleSqliteCore
+    if (specifier === 'drizzle-databend' && drizzleDatabend) return drizzleDatabend
     throw new Error(`Module '${specifier}' is not allowed in schema files`)
   })
 }
@@ -324,6 +331,11 @@ export function compileCube(
   const drizzlePgCore = esmRequire('drizzle-orm/pg-core')
   const drizzleSqliteCore = esmRequire('drizzle-orm/sqlite-core')
   const drizzleCubeServer = esmRequire('drizzle-cube/server')
+
+  let drizzleDatabend: any
+  try {
+    drizzleDatabend = esmRequire('drizzle-databend')
+  } catch {}
 
   // Build virtual files for schema imports so type-checking resolves them.
   // Use the actual schema source code so the type checker sees real column types.
@@ -347,6 +359,7 @@ export function compileCube(
       if (specifier === 'drizzle-orm/pg-core') return drizzlePgCore
       if (specifier === 'drizzle-orm/sqlite-core') return drizzleSqliteCore
       if (specifier === 'drizzle-cube/server') return drizzleCubeServer
+      if (specifier === 'drizzle-databend' && drizzleDatabend) return drizzleDatabend
 
       const normalized = specifier.replace(/^\.\//, '').replace(/\.ts$/, '')
       if (schemaExports[normalized]) return schemaExports[normalized]
