@@ -1096,4 +1096,85 @@ app.post('/magic-link/verify', async c => {
   return c.json({ success: true })
 })
 
+// ---------------------------------------------------------------------------
+// Cloud Admin Login (Drizby Cloud → Instance)
+// ---------------------------------------------------------------------------
+
+const CLOUD_ADMIN_TOKEN_MAX_AGE_MS = 30_000 // 30 seconds
+const usedCloudAdminNonces = new Map<string, number>()
+
+// Periodically clean expired nonces
+setInterval(() => {
+  const cutoff = Date.now() - CLOUD_ADMIN_TOKEN_MAX_AGE_MS * 2
+  for (const [nonce, ts] of usedCloudAdminNonces) {
+    if (ts < cutoff) usedCloudAdminNonces.delete(nonce)
+  }
+}, 60_000)
+
+app.get('/cloud-admin', async c => {
+  const secret = process.env.CLOUD_ADMIN_SECRET
+  if (!secret) {
+    return c.json({ error: 'Cloud admin login not configured' }, 404)
+  }
+
+  const email = c.req.query('email')
+  const name = c.req.query('name')
+  const ts = c.req.query('ts')
+  const nonce = c.req.query('nonce')
+  const sig = c.req.query('sig')
+
+  if (!email || !name || !ts || !nonce || !sig) {
+    return c.json({ error: 'Invalid request' }, 400)
+  }
+
+  // Check token age
+  const tokenAge = Date.now() - Number.parseInt(ts, 10)
+  if (Number.isNaN(tokenAge) || tokenAge > CLOUD_ADMIN_TOKEN_MAX_AGE_MS || tokenAge < 0) {
+    return c.json({ error: 'Token expired' }, 401)
+  }
+
+  // Check nonce replay
+  if (usedCloudAdminNonces.has(nonce)) {
+    return c.json({ error: 'Token already used' }, 401)
+  }
+
+  // Verify HMAC
+  const payload = `${email}|${name}|${ts}|${nonce}`
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex')
+  if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) {
+    return c.json({ error: 'Invalid signature' }, 401)
+  }
+
+  // Mark nonce as used
+  usedCloudAdminNonces.set(nonce, Date.now())
+
+  // Find or create cloud admin user — use real email so notifications work
+  const db = c.get('db') as any
+  const [existingUser] = await db.select().from(users).where(eq(users.email, email))
+
+  let userId: number
+  if (existingUser) {
+    // Log in as the existing user (don't modify their role)
+    userId = existingUser.id
+  } else {
+    const username = email.split('@')[0]
+    const [newUser] = await db
+      .insert(users)
+      .values({
+        email,
+        username,
+        name,
+        role: 'admin',
+        emailVerified: true,
+        organisationId: 1,
+      })
+      .returning()
+    userId = newUser.id
+  }
+
+  const sessionId = await createSession(db, userId)
+  setSessionCookie(c, sessionId)
+  return c.redirect('/')
+})
+
 export default app
