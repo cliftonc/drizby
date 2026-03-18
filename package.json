@@ -1,6 +1,6 @@
 {
   "name": "drizby",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "description": "Configurable BI platform powered by drizzle-cube",
   "type": "module",
   "scripts": {
