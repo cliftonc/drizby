@@ -840,17 +840,21 @@ export default function SchemaEditorPage() {
 
   const loadExtraLibs = async (monaco: any) => {
     // Load real .d.ts files from node_modules via the server
-    const [drizzleOrmTypes, drizzleCubeTypes, drizzleDatabendTypes] = await Promise.all([
-      fetch('/api/editor/types/drizzle-orm')
-        .then(r => r.json())
-        .catch(() => ({})),
-      fetch('/api/editor/types/drizzle-cube')
-        .then(r => r.json())
-        .catch(() => ({})),
-      fetch('/api/editor/types/drizzle-databend')
-        .then(r => r.json())
-        .catch(() => ({})),
-    ])
+    const [drizzleOrmTypes, drizzleCubeTypes, drizzleDatabendTypes, drizzleSnowflakeTypes] =
+      await Promise.all([
+        fetch('/api/editor/types/drizzle-orm')
+          .then(r => r.json())
+          .catch(() => ({})),
+        fetch('/api/editor/types/drizzle-cube')
+          .then(r => r.json())
+          .catch(() => ({})),
+        fetch('/api/editor/types/drizzle-databend')
+          .then(r => r.json())
+          .catch(() => ({})),
+        fetch('/api/editor/types/drizzle-snowflake')
+          .then(r => r.json())
+          .catch(() => ({})),
+      ])
 
     const ts = monaco.languages.typescript.typescriptDefaults
     for (const [path, content] of Object.entries(drizzleOrmTypes) as [string, string][]) {
@@ -860,6 +864,9 @@ export default function SchemaEditorPage() {
       ts.addExtraLib(content, `file:///node_modules/${path}`)
     }
     for (const [path, content] of Object.entries(drizzleDatabendTypes) as [string, string][]) {
+      ts.addExtraLib(content, `file:///node_modules/${path}`)
+    }
+    for (const [path, content] of Object.entries(drizzleSnowflakeTypes) as [string, string][]) {
       ts.addExtraLib(content, `file:///node_modules/${path}`)
     }
 

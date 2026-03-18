@@ -307,12 +307,17 @@ export function compileSchema(sourceCode: string): CompileResult {
   try {
     drizzleDatabend = esmRequire('drizzle-databend')
   } catch {}
+  let drizzleSnowflake: any
+  try {
+    drizzleSnowflake = esmRequire('drizzle-snowflake')
+  } catch {}
 
   return typeCheckAndCompile(sourceCode, (specifier: string) => {
     if (specifier === 'drizzle-orm') return drizzleOrm
     if (specifier === 'drizzle-orm/pg-core') return drizzlePgCore
     if (specifier === 'drizzle-orm/sqlite-core') return drizzleSqliteCore
     if (specifier === 'drizzle-databend' && drizzleDatabend) return drizzleDatabend
+    if (specifier === 'drizzle-snowflake' && drizzleSnowflake) return drizzleSnowflake
     throw new Error(`Module '${specifier}' is not allowed in schema files`)
   })
 }
@@ -335,6 +340,10 @@ export function compileCube(
   let drizzleDatabend: any
   try {
     drizzleDatabend = esmRequire('drizzle-databend')
+  } catch {}
+  let drizzleSnowflake: any
+  try {
+    drizzleSnowflake = esmRequire('drizzle-snowflake')
   } catch {}
 
   // Build virtual files for schema imports so type-checking resolves them.
@@ -360,6 +369,7 @@ export function compileCube(
       if (specifier === 'drizzle-orm/sqlite-core') return drizzleSqliteCore
       if (specifier === 'drizzle-cube/server') return drizzleCubeServer
       if (specifier === 'drizzle-databend' && drizzleDatabend) return drizzleDatabend
+      if (specifier === 'drizzle-snowflake' && drizzleSnowflake) return drizzleSnowflake
 
       const normalized = specifier.replace(/^\.\//, '').replace(/\.ts$/, '')
       if (schemaExports[normalized]) return schemaExports[normalized]
