@@ -196,6 +196,29 @@ export async function createDriver(
       }
     }
 
+    // ── Snowflake ──────────────────────────────────────────
+    case 'snowflake': {
+      const { drizzle } = await tryImport('drizzle-snowflake', 'drizzle-snowflake')
+      const config = parseConfig(connectionString)
+      const db = await drizzle({
+        connection: {
+          account: config.account,
+          username: config.username,
+          password: config.password,
+          database: config.database,
+          warehouse: config.warehouse || undefined,
+          schema: config.schema || undefined,
+          role: config.role || undefined,
+        },
+      })
+      return {
+        client: db.$client,
+        db: db as unknown as DrizzleDatabase,
+        cleanup: async () => db.close(),
+        engineType: 'snowflake',
+      }
+    }
+
     // ── DuckDB ────────────────────────────────────────────
     case 'duckdb': {
       const duckdb = await tryImport('duckdb', 'duckdb')

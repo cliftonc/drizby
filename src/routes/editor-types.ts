@@ -46,6 +46,7 @@ function collectDtsFiles(dir: string, base: string = dir): Record<string, string
 let drizzleOrmCache: Record<string, string> | null = null
 let drizzleCubeCache: Record<string, string> | null = null
 let drizzleDatabendCache: Record<string, string> | null = null
+let drizzleSnowflakeCache: Record<string, string> | null = null
 
 function getDrizzleOrmTypes(): Record<string, string> {
   if (drizzleOrmCache) return drizzleOrmCache
@@ -105,6 +106,24 @@ function getDrizzleDatabendTypes(): Record<string, string> {
   }
 }
 
+function getDrizzleSnowflakeTypes(): Record<string, string> {
+  if (drizzleSnowflakeCache) return drizzleSnowflakeCache
+
+  try {
+    const packageDir = dirname(esmRequire.resolve('drizzle-snowflake'))
+    const result: Record<string, string> = {}
+    const files = collectDtsFiles(packageDir)
+    for (const [path, content] of Object.entries(files)) {
+      result[`drizzle-snowflake/${path}`] = content
+    }
+    drizzleSnowflakeCache = result
+    return result
+  } catch {
+    // Package not installed — return empty
+    return {}
+  }
+}
+
 // Serve all .d.ts files as JSON maps { path: content }
 app.get('/drizzle-orm', c => {
   return c.json(getDrizzleOrmTypes())
@@ -154,6 +173,10 @@ app.get('/drizzle-cube', async c => {
 
 app.get('/drizzle-databend', c => {
   return c.json(getDrizzleDatabendTypes())
+})
+
+app.get('/drizzle-snowflake', c => {
+  return c.json(getDrizzleSnowflakeTypes())
 })
 
 // Serve generated schema .d.ts for a specific schema file

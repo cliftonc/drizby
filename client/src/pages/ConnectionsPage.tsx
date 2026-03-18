@@ -46,6 +46,7 @@ const ENGINE_TYPES = [
   { id: 'sqlite', label: 'SQLite' },
   { id: 'singlestore', label: 'SingleStore' },
   { id: 'databend', label: 'Databend' },
+  { id: 'snowflake', label: 'Snowflake' },
   { id: 'duckdb', label: 'DuckDB' },
 ]
 

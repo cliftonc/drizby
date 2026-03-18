@@ -4,7 +4,14 @@
  */
 
 export type ConnectionMode = 'connection-string' | 'structured'
-export type EngineType = 'postgres' | 'mysql' | 'sqlite' | 'singlestore' | 'duckdb' | 'databend'
+export type EngineType =
+  | 'postgres'
+  | 'mysql'
+  | 'sqlite'
+  | 'singlestore'
+  | 'duckdb'
+  | 'databend'
+  | 'snowflake'
 
 export interface StructuredField {
   key: string
@@ -266,6 +273,64 @@ export const PROVIDERS: ProviderDef[] = [
       "Databend — cloud-native data warehouse. Uses the databend-driver with Drizzle's Postgres-compatible surface.",
   },
 
+  // ── Snowflake ────────────────────────────────────────────
+  {
+    id: 'snowflake',
+    label: 'Snowflake',
+    engineType: 'snowflake',
+    connectionMode: 'structured',
+    npmPackage: 'snowflake-sdk',
+    drizzleImport: 'drizzle-snowflake',
+    docUrl: 'https://www.npmjs.com/package/drizzle-snowflake',
+    helpText:
+      'Snowflake cloud data warehouse. Uses snowflake-sdk with the drizzle-snowflake driver.',
+    structuredFields: [
+      {
+        key: 'account',
+        label: 'Account',
+        placeholder: 'orgname-accountname',
+        required: true,
+      },
+      {
+        key: 'username',
+        label: 'Username',
+        placeholder: 'my_user',
+        required: true,
+      },
+      {
+        key: 'password',
+        label: 'Password',
+        placeholder: 'my_password',
+        required: true,
+        secret: true,
+      },
+      {
+        key: 'database',
+        label: 'Database',
+        placeholder: 'MY_DB',
+        required: true,
+      },
+      {
+        key: 'warehouse',
+        label: 'Warehouse',
+        placeholder: 'COMPUTE_WH',
+        required: false,
+      },
+      {
+        key: 'schema',
+        label: 'Schema',
+        placeholder: 'PUBLIC',
+        required: false,
+      },
+      {
+        key: 'role',
+        label: 'Role',
+        placeholder: 'ACCOUNTADMIN',
+        required: false,
+      },
+    ],
+  },
+
   // ── DuckDB ──────────────────────────────────────────────
   {
     id: 'duckdb',
@@ -301,6 +366,7 @@ export function getDefaultProvider(engineType: string): string {
     singlestore: 'singlestore',
     duckdb: 'duckdb',
     databend: 'databend',
+    snowflake: 'snowflake',
   }
   return defaults[engineType] || engineType
 }
@@ -324,7 +390,7 @@ export async function buildDrizzleKitConfig(
       ? 'sqlite'
       : engineType === 'mysql' || engineType === 'singlestore'
         ? 'mysql'
-        : 'postgresql' // postgres, databend both use postgresql dialect
+        : 'postgresql' // postgres, databend, snowflake all use postgresql dialect
   const dialect = providerDef?.drizzleKitDialect || defaultDialect
 
   // Parse structured connection strings (JSON) into key-value config
@@ -364,5 +430,6 @@ export const ENGINE_TYPES: { id: EngineType; label: string }[] = [
   { id: 'sqlite', label: 'SQLite' },
   { id: 'singlestore', label: 'SingleStore' },
   { id: 'databend', label: 'Databend' },
+  { id: 'snowflake', label: 'Snowflake' },
   { id: 'duckdb', label: 'DuckDB' },
 ]
