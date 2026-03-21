@@ -38,37 +38,37 @@ code {
    Drizby Theme Overrides
    Must come AFTER drizzle-cube imports to win the cascade.
    drizzle-cube ships its own :root / [data-theme=dark] defaults in blue;
-   we override them here with the Drizby indigo-purple palette.
+   we override them here with the Drizby teal palette.
    ========================================================================== */
 
 html[data-theme="drizby-light"] {
-  --dc-primary: #6366f1;
-  --dc-primary-hover: #4f46e5;
+  --dc-primary: #0891b2;
+  --dc-primary-hover: #0e7490;
   --dc-primary-content: #ffffff;
-  --dc-primary-rgb: 99, 102, 241;
-  --dc-primary-bg: #eef2ff;
-  --dc-info: #6366f1;
-  --dc-info-bg: #e0e7ff;
-  --dc-info-border: #a5b4fc;
-  --dc-accent: #6366f1;
-  --dc-accent-hover: #4f46e5;
-  --dc-accent-bg: #eef2ff;
-  --dc-accent-border: #a5b4fc;
-  --dc-sidebar-active: rgba(99, 102, 241, 0.3);
+  --dc-primary-rgb: 8, 145, 178;
+  --dc-primary-bg: #ecfeff;
+  --dc-info: #0891b2;
+  --dc-info-bg: #cffafe;
+  --dc-info-border: #67e8f9;
+  --dc-accent: #0891b2;
+  --dc-accent-hover: #0e7490;
+  --dc-accent-bg: #ecfeff;
+  --dc-accent-border: #67e8f9;
+  --dc-sidebar-active: rgba(8, 145, 178, 0.3);
 }
 
 html[data-theme="drizby-dark"] {
-  --dc-primary: #818cf8;
-  --dc-primary-hover: #6366f1;
-  --dc-primary-content: #1e1b4b;
-  --dc-primary-rgb: 129, 140, 248;
-  --dc-primary-bg: #312e81;
-  --dc-info: #818cf8;
-  --dc-info-bg: #312e81;
-  --dc-info-border: #4f46e5;
-  --dc-accent: #818cf8;
-  --dc-accent-hover: #6366f1;
-  --dc-accent-bg: #312e81;
-  --dc-accent-border: #4f46e5;
-  --dc-sidebar-active: rgba(129, 140, 248, 0.2);
+  --dc-primary: #22d3ee;
+  --dc-primary-hover: #06b6d4;
+  --dc-primary-content: #042f2e;
+  --dc-primary-rgb: 34, 211, 238;
+  --dc-primary-bg: #164e63;
+  --dc-info: #22d3ee;
+  --dc-info-bg: #164e63;
+  --dc-info-border: #0e7490;
+  --dc-accent: #22d3ee;
+  --dc-accent-hover: #06b6d4;
+  --dc-accent-bg: #164e63;
+  --dc-accent-border: #0e7490;
+  --dc-sidebar-active: rgba(34, 211, 238, 0.2);
 }

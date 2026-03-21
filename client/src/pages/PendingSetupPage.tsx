@@ -79,7 +79,7 @@ export default function PendingSetupPage() {
               width: 48,
               height: 48,
               borderRadius: '50%',
-              backgroundColor: 'var(--dc-primary-bg, #eef2ff)',
+              backgroundColor: 'var(--dc-primary-bg, #ecfeff)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
