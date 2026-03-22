@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import AnalysisBuilderPage from './pages/AnalysisBuilderPage'
 import DashboardListPage from './pages/DashboardListPage'
 import DashboardViewPage from './pages/DashboardViewPage'
+import DataBrowserPage from './pages/DataBrowserPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
@@ -80,6 +81,7 @@ function App() {
                 <Route path="/dashboards/:id" element={<DashboardViewPage />} />
                 <Route path="/analysis-builder" element={<AnalysisBuilderPage />} />
                 <Route path="/schema-explorer" element={<SchemaExplorerPage />} />
+                <Route path="/data-browser" element={<DataBrowserPage />} />
                 <Route path="/schema-editor" element={<SchemaEditorRedirect />} />
                 <Route path="/schema-editor/:connectionId" element={<SchemaEditorRedirect />} />
                 <Route
