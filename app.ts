@@ -16,6 +16,7 @@ import { getSessionCookie, validateSession } from './src/auth/session'
 import { db } from './src/db/index'
 import { defineAbilitiesFor } from './src/permissions/abilities'
 import type { AppAbility } from './src/permissions/abilities'
+import aiApp from './src/routes/ai-routes'
 import analyticsApp from './src/routes/analytics-pages'
 import authApp from './src/routes/auth'
 import connectionsApp from './src/routes/connections'
@@ -451,6 +452,7 @@ app.route('/api/notebooks', notebooksApp)
 app.route('/api/groups', groupsApp)
 app.route('/api/users', usersApp)
 app.route('/api/settings', settingsApp)
+app.route('/api/ai', aiApp)
 
 // Error handling
 app.onError((err, c) => {

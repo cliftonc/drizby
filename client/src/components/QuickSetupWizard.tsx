@@ -249,9 +249,15 @@ export function QuickSetupWizard({
 
   // ── Flow actions ─────────────────────────────────────────────────────
 
-  const startPullOrSkip = (connId: number, engine?: string) => {
+  const getEngineForConnection = useCallback(
+    (connId: number): string | undefined => {
+      return existingConnections.find(c => c.id === connId)?.engineType
+    },
+    [existingConnections]
+  )
+
+  const startPullOrSkip = useCallback((connId: number, engine?: string) => {
     if (engine && PULL_UNSUPPORTED_ENGINES.has(engine)) {
-      // Engine doesn't support drizzle-kit pull — skip to done with instructions
       setState(prev => ({
         ...prev,
         connectionId: connId,
@@ -263,11 +269,7 @@ export function QuickSetupWizard({
     }
     setState(prev => ({ ...prev, step: 'pulling' }))
     runIntrospect(connId)
-  }
-
-  const getEngineForConnection = (connId: number): string | undefined => {
-    return existingConnections.find(c => c.id === connId)?.engineType
-  }
+  }, [])
 
   const handleAISaved = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['settings', 'ai'] })
@@ -278,7 +280,7 @@ export function QuickSetupWizard({
         state.engineType || getEngineForConnection(state.connectionId)
       )
     }
-  }, [state.connectionId, state.engineType, queryClient, existingConnections])
+  }, [state.connectionId, state.engineType, queryClient, startPullOrSkip, getEngineForConnection])
 
   const handleAISkipped = useCallback(() => {
     setState(prev => ({ ...prev, hasAI: false }))
@@ -288,7 +290,7 @@ export function QuickSetupWizard({
         state.engineType || getEngineForConnection(state.connectionId)
       )
     }
-  }, [state.connectionId, state.engineType, existingConnections])
+  }, [state.connectionId, state.engineType, startPullOrSkip, getEngineForConnection])
 
   const handleSelectExistingConnection = useCallback(
     (connId: number) => {
@@ -304,7 +306,7 @@ export function QuickSetupWizard({
         startPullOrSkip(connId, engine)
       }
     },
-    [state.hasAI, existingConnections]
+    [state.hasAI, getEngineForConnection, startPullOrSkip]
   )
 
   const handleConnectionCreated = useCallback(
@@ -336,7 +338,7 @@ export function QuickSetupWizard({
         setIsCreating(false)
       }
     },
-    [queryClient, state.hasAI]
+    [queryClient, state.hasAI, startPullOrSkip]
   )
 
   const runIntrospect = async (connId: number) => {
