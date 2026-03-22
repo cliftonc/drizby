@@ -2,6 +2,7 @@ import Editor, { type OnMount } from '@monaco-editor/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { QuickSetupWizard } from '../components/QuickSetupWizard'
 import { useConfirm } from '../hooks/useConfirm'
 import { usePrompt } from '../hooks/usePrompt'
 
@@ -136,6 +137,7 @@ export default function SchemaEditorPage() {
   const handleSaveRef = useRef(() => {})
   const [confirm, ConfirmDialog] = useConfirm()
   const [prompt, PromptDialog] = usePrompt()
+  const [showQuickSetup, setShowQuickSetup] = useState(false)
 
   const { data: connections = [] } = useQuery<Connection[]>({
     queryKey: ['connections'],
@@ -684,6 +686,19 @@ export default function SchemaEditorPage() {
       })
       if (!res.ok) throw new Error('Failed to apply joins')
       queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
+
+      // Recompile affected cubes so joins are registered in the semantic layer
+      setAiGenState(prev => ({ ...prev, message: 'Compiling cubes with joins...' }))
+      const cubeIds = filtered.map((f: any) => f.cubeDefId as number)
+      for (const id of cubeIds) {
+        await fetch(`/api/cube-definitions/${id}/compile`, {
+          method: 'POST',
+          credentials: 'include',
+        })
+      }
+      queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
+      queryClient.invalidateQueries({ queryKey: ['connections', 'status'] })
+      queryClient.invalidateQueries({ queryKey: ['cube', 'meta'] })
       setAiGenState(prev => ({ ...prev, phase: 'done', message: '' }))
     } catch {
       setAiGenState(prev => ({ ...prev, phase: 'done', message: '' }))
@@ -1091,6 +1106,38 @@ export default function SchemaEditorPage() {
               />
             </svg>
           </button>
+          <button
+            onClick={() => setShowQuickSetup(true)}
+            title="Setup Connection & Semantic Layer"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--dc-primary)',
+              backgroundColor: 'var(--dc-primary)',
+              color: '#fff',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Setup
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+            </svg>
+          </button>
           {!hasAI && (
             <a
               href="/settings/ai"
@@ -1343,8 +1390,18 @@ export default function SchemaEditorPage() {
                   path={`file:///src/${selectedFile.type === 'schema' ? selectedFile.data.name : `${selectedFile.data.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.ts`}`}
                   value={editorContent}
                   onChange={value => {
-                    setEditorContent(value || '')
-                    setIsDirty(true)
+                    const v = value || ''
+                    setEditorContent(v)
+                    // Compare against saved source to avoid false dirty state from programmatic changes
+                    if (selectedFile) {
+                      const saved =
+                        selectedFile.type === 'schema'
+                          ? selectedFile.data.sourceCode
+                          : selectedFile.data.sourceCode || ''
+                      setIsDirty(v !== saved)
+                    } else {
+                      setIsDirty(true)
+                    }
                   }}
                   onMount={handleEditorMount}
                   options={{
@@ -1440,6 +1497,25 @@ export default function SchemaEditorPage() {
                       ? 'Pulling schema...'
                       : 'Pull Schema from Database'}
                   </button>
+                  {hasAI && (
+                    <div style={{ marginTop: 12 }}>
+                      <button
+                        onClick={() => setShowQuickSetup(true)}
+                        style={{
+                          background: 'none',
+                          border: '1px solid var(--dc-primary)',
+                          color: 'var(--dc-primary)',
+                          cursor: 'pointer',
+                          fontSize: 13,
+                          fontWeight: 500,
+                          padding: '6px 16px',
+                          borderRadius: 6,
+                        }}
+                      >
+                        {'\ud83e\ude84'} Quick Setup &mdash; Pull &amp; Generate
+                      </button>
+                    </div>
+                  )}
                   <div style={{ marginTop: 12, fontSize: 12 }}>
                     or{' '}
                     <button
@@ -1492,6 +1568,27 @@ export default function SchemaEditorPage() {
       <style>{'@keyframes spin { to { transform: rotate(360deg) } }'}</style>
       <ConfirmDialog />
       <PromptDialog />
+      <QuickSetupWizard
+        isOpen={showQuickSetup}
+        connectionId={selectedConnectionId ?? undefined}
+        onClose={() => setShowQuickSetup(false)}
+        onComplete={connId => {
+          setShowQuickSetup(false)
+          // Reset editor state so no "unsaved changes" prompt
+          setSelectedFile(null)
+          setEditorContent('')
+          setIsDirty(false)
+          setCompileOutput(null)
+          queryClient.invalidateQueries({ queryKey: ['schema-files'] })
+          queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
+          queryClient.invalidateQueries({ queryKey: ['connections', 'status'] })
+          if (connId !== selectedConnectionId) {
+            setSelectedConnectionId(connId)
+          }
+          // Navigate to the editor without a file selected — user picks from sidebar
+          navigate(`/schema-editor/${connId}`, { replace: true })
+        }}
+      />
     </div>
   )
 }

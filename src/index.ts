@@ -19,20 +19,23 @@ async function start() {
   // Auto-setup: create admin if ADMIN_EMAIL + RESEND_API_KEY are set
   await runAutoSetup(db)
 
-  // Initialize all connections and compile cubes from DB
-  await initializeConnections()
-
   logEmailConfig()
 
   console.log(`Starting Drizby server on http://localhost:${port}`)
   console.log(`Analytics API: http://localhost:${port}/cubejs-api/v1/meta`)
 
+  // Start server FIRST so it accepts requests immediately
   serve({
     fetch: app.fetch,
     port,
   })
 
   console.log(`Server running on port ${port}`)
+
+  // Initialize connections and compile cubes in the background
+  initializeConnections().catch(err => {
+    console.error('Connection initialization failed:', err)
+  })
 }
 
 start().catch(err => {

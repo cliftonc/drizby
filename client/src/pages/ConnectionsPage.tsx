@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import {
+  ConnectionForm,
+  type ConnectionFormData,
+  type ProviderDef,
+} from '../components/ConnectionForm'
+import { QuickSetupWizard } from '../components/QuickSetupWizard'
 import { useConfirm } from '../hooks/useConfirm'
 
 interface Connection {
@@ -13,47 +20,12 @@ interface Connection {
   createdAt: string
 }
 
-interface ConnectionFormData {
-  name: string
-  description: string
-  engineType: string
-  provider: string
-  connectionString: string
-}
-
-interface ProviderDef {
-  id: string
-  label: string
-  engineType: string
-  connectionMode: 'connection-string' | 'structured'
-  npmPackage: string
-  placeholder?: string
-  example?: string
-  docUrl?: string
-  helpText?: string
-  structuredFields?: Array<{
-    key: string
-    label: string
-    placeholder: string
-    required: boolean
-    secret?: boolean
-  }>
-}
-
-const ENGINE_TYPES = [
-  { id: 'postgres', label: 'PostgreSQL' },
-  { id: 'mysql', label: 'MySQL' },
-  { id: 'sqlite', label: 'SQLite' },
-  { id: 'singlestore', label: 'SingleStore' },
-  { id: 'databend', label: 'Databend' },
-  { id: 'snowflake', label: 'Snowflake' },
-  { id: 'duckdb', label: 'DuckDB' },
-]
-
 export default function ConnectionsPage() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [showQuickSetup, setShowQuickSetup] = useState(false)
   const [confirm, ConfirmDialog] = useConfirm()
 
   const { data: connections = [], isLoading } = useQuery<Connection[]>({
@@ -174,24 +146,56 @@ export default function ConnectionsPage() {
             Manage connections to your data sources
           </p>
         </div>
-        <button
-          onClick={() => {
-            setShowForm(!showForm)
-            setEditingId(null)
-          }}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: 'var(--dc-primary)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontSize: 14,
-            fontWeight: 500,
-          }}
-        >
-          {showForm ? 'Cancel' : 'Add Connection'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => {
+              setShowForm(!showForm)
+              setEditingId(null)
+            }}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: 'transparent',
+              color: 'var(--dc-primary)',
+              border: '1px solid var(--dc-primary)',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 500,
+            }}
+          >
+            {showForm ? 'Cancel' : 'Add Connection'}
+          </button>
+          <button
+            onClick={() => setShowQuickSetup(true)}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: 'var(--dc-primary)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            Setup Connection & Semantic Layer
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -301,6 +305,44 @@ export default function ConnectionsPage() {
                     )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                      onClick={() => navigate(`/schema-editor/${conn.id}`)}
+                      style={{
+                        padding: '4px 10px',
+                        backgroundColor: 'transparent',
+                        color: 'var(--dc-primary)',
+                        border: '1px solid var(--dc-primary)',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                      </svg>
+                      Semantic Layer
+                    </button>
+                    <div
+                      style={{
+                        width: 1,
+                        height: 20,
+                        backgroundColor: 'var(--dc-border)',
+                        marginLeft: 2,
+                        marginRight: 2,
+                      }}
+                    />
                     {testResult[conn.id] && testResult[conn.id] !== 'loading' && (
                       <span
                         style={{
@@ -367,376 +409,15 @@ export default function ConnectionsPage() {
         </div>
       )}
       <ConfirmDialog />
+      <QuickSetupWizard
+        isOpen={showQuickSetup}
+        onClose={() => setShowQuickSetup(false)}
+        onComplete={connId => {
+          setShowQuickSetup(false)
+          queryClient.invalidateQueries({ queryKey: ['connections'] })
+          navigate(`/schema-editor/${connId}`)
+        }}
+      />
     </div>
   )
-}
-
-function ConnectionForm({
-  providers,
-  onSubmit,
-  isLoading,
-  onCancel,
-  showTest,
-  initial,
-  submitLabel = 'Create Connection',
-  title = 'New Connection',
-}: {
-  providers: ProviderDef[]
-  onSubmit: (data: ConnectionFormData) => void
-  isLoading: boolean
-  onCancel: () => void
-  showTest?: boolean
-  initial?: ConnectionFormData
-  submitLabel?: string
-  title?: string
-}) {
-  const [form, setForm] = useState<ConnectionFormData>(
-    initial ?? {
-      name: '',
-      description: '',
-      engineType: 'postgres',
-      provider: 'postgres-js',
-      connectionString: '',
-    }
-  )
-  const [structuredConfig, setStructuredConfig] = useState<Record<string, string>>(() => {
-    // If editing a structured provider, parse the JSON connection string
-    if (initial?.connectionString) {
-      try {
-        const parsed = JSON.parse(initial.connectionString)
-        if (typeof parsed === 'object' && parsed !== null) return parsed
-      } catch {}
-    }
-    return {}
-  })
-  const [testResult, setTestResult] = useState<
-    { success: boolean; message: string } | 'loading' | null
-  >(null)
-
-  const selectedProvider = providers.find(p => p.id === form.provider)
-  const engineProviders = providers.filter(p => p.engineType === form.engineType)
-  const isStructured = selectedProvider?.connectionMode === 'structured'
-
-  // When engine type changes, select the first provider for that engine
-  useEffect(() => {
-    if (!initial) {
-      const firstProvider = providers.find(p => p.engineType === form.engineType)
-      if (
-        firstProvider &&
-        !providers.some(p => p.id === form.provider && p.engineType === form.engineType)
-      ) {
-        setForm(f => ({ ...f, provider: firstProvider.id, connectionString: '' }))
-        setStructuredConfig({})
-      }
-    }
-  }, [form.engineType, form.provider, providers, initial])
-
-  const getConnectionStringForSubmit = (): string => {
-    if (isStructured) {
-      return JSON.stringify(structuredConfig)
-    }
-    return form.connectionString
-  }
-
-  const handleTest = async () => {
-    setTestResult('loading')
-    try {
-      const res = await fetch('/api/connections/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          engineType: form.engineType,
-          provider: form.provider,
-          connectionString: getConnectionStringForSubmit(),
-        }),
-      })
-      const data = await res.json()
-      setTestResult(data)
-    } catch {
-      setTestResult({ success: false, message: 'Request failed' })
-    }
-  }
-
-  const handleSubmit = () => {
-    onSubmit({
-      ...form,
-      connectionString: getConnectionStringForSubmit(),
-    })
-  }
-
-  const hasRequiredFields = (): boolean => {
-    if (!form.name) return false
-    if (isStructured) {
-      return (selectedProvider?.structuredFields || [])
-        .filter(f => f.required)
-        .every(f => structuredConfig[f.key])
-    }
-    return !!form.connectionString
-  }
-
-  return (
-    <div
-      style={{
-        padding: 20,
-        backgroundColor: 'var(--dc-surface)',
-        borderRadius: 8,
-        border: '1px solid var(--dc-border)',
-        marginBottom: 16,
-      }}
-    >
-      <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600, color: 'var(--dc-text)' }}>
-        {title}
-      </h3>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div>
-          <label style={labelStyle}>Name</label>
-          <input
-            value={form.name}
-            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            placeholder="My Database"
-            style={inputStyle}
-          />
-        </div>
-        <div>
-          <label style={labelStyle}>Engine Type</label>
-          <select
-            value={form.engineType}
-            onChange={e => {
-              const engineType = e.target.value
-              const firstProvider = providers.find(p => p.engineType === engineType)
-              setForm(f => ({
-                ...f,
-                engineType,
-                provider: firstProvider?.id || engineType,
-                connectionString: '',
-              }))
-              setStructuredConfig({})
-            }}
-            style={inputStyle}
-          >
-            {ENGINE_TYPES.map(e => (
-              <option key={e.id} value={e.id}>
-                {e.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Provider selector */}
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label style={labelStyle}>Provider</label>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
-            {engineProviders.map(p => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => {
-                  setForm(f => ({ ...f, provider: p.id, connectionString: '' }))
-                  setStructuredConfig({})
-                  setTestResult(null)
-                }}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: 12,
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  border:
-                    form.provider === p.id
-                      ? '1.5px solid var(--dc-primary)'
-                      : '1px solid var(--dc-border)',
-                  backgroundColor:
-                    form.provider === p.id
-                      ? 'var(--dc-primary-bg, rgba(59,130,246,0.08))'
-                      : 'var(--dc-background)',
-                  color: form.provider === p.id ? 'var(--dc-primary)' : 'var(--dc-text)',
-                  fontWeight: form.provider === p.id ? 500 : 400,
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Provider help text + doc link */}
-        {selectedProvider && (
-          <div style={{ gridColumn: '1 / -1' }}>
-            <div
-              style={{
-                fontSize: 12,
-                color: 'var(--dc-text-muted)',
-                backgroundColor: 'var(--dc-background)',
-                padding: '8px 12px',
-                borderRadius: 6,
-                border: '1px solid var(--dc-border)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: 12,
-              }}
-            >
-              <span>
-                {selectedProvider.helpText}
-                {selectedProvider.npmPackage && (
-                  <span style={{ color: 'var(--dc-text-muted)', opacity: 0.7 }}>
-                    {' '}
-                    (npm: <code style={{ fontSize: 11 }}>{selectedProvider.npmPackage}</code>)
-                  </span>
-                )}
-              </span>
-              {selectedProvider.docUrl && (
-                <a
-                  href={selectedProvider.docUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--dc-primary)',
-                    whiteSpace: 'nowrap',
-                    textDecoration: 'none',
-                    flexShrink: 0,
-                  }}
-                >
-                  Docs &rarr;
-                </a>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label style={labelStyle}>Description</label>
-          <input
-            value={form.description}
-            onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-            placeholder="Optional description"
-            style={inputStyle}
-          />
-        </div>
-
-        {/* Connection fields — structured or connection string */}
-        {isStructured && selectedProvider?.structuredFields ? (
-          selectedProvider.structuredFields.map(field => (
-            <div key={field.key} style={{ gridColumn: '1 / -1' }}>
-              <label style={labelStyle}>
-                {field.label}
-                {!field.required && (
-                  <span style={{ fontWeight: 400, color: 'var(--dc-text-muted)', marginLeft: 4 }}>
-                    (optional)
-                  </span>
-                )}
-              </label>
-              <input
-                type={field.secret ? 'password' : 'text'}
-                value={structuredConfig[field.key] || ''}
-                onChange={e => setStructuredConfig(c => ({ ...c, [field.key]: e.target.value }))}
-                placeholder={field.placeholder}
-                style={inputStyle}
-              />
-            </div>
-          ))
-        ) : (
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>
-              Connection String
-              {selectedProvider?.example && (
-                <span style={{ fontWeight: 400, color: 'var(--dc-text-muted)', marginLeft: 6 }}>
-                  ({selectedProvider.example})
-                </span>
-              )}
-            </label>
-            <input
-              value={form.connectionString}
-              onChange={e => setForm(f => ({ ...f, connectionString: e.target.value }))}
-              placeholder={selectedProvider?.placeholder || ''}
-              style={inputStyle}
-            />
-          </div>
-        )}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-        <button
-          onClick={handleSubmit}
-          disabled={isLoading || !hasRequiredFields()}
-          style={{
-            padding: '8px 20px',
-            backgroundColor: 'var(--dc-primary)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontSize: 14,
-            fontWeight: 500,
-            opacity: isLoading || !hasRequiredFields() ? 0.5 : 1,
-          }}
-        >
-          {isLoading ? 'Saving...' : submitLabel}
-        </button>
-        {showTest && (
-          <button
-            onClick={handleTest}
-            disabled={testResult === 'loading' || !hasRequiredFields()}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: 'transparent',
-              color: 'var(--dc-primary)',
-              border: '1px solid var(--dc-primary)',
-              borderRadius: 6,
-              cursor: testResult === 'loading' || !hasRequiredFields() ? 'not-allowed' : 'pointer',
-              fontSize: 14,
-              opacity: testResult === 'loading' || !hasRequiredFields() ? 0.5 : 1,
-            }}
-          >
-            {testResult === 'loading' ? 'Testing...' : 'Test Connection'}
-          </button>
-        )}
-        <button
-          onClick={onCancel}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: 'transparent',
-            color: 'var(--dc-text-secondary)',
-            border: '1px solid var(--dc-border)',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontSize: 14,
-          }}
-        >
-          Cancel
-        </button>
-        {testResult && testResult !== 'loading' && (
-          <span
-            style={{
-              fontSize: 12,
-              color: testResult.success ? 'var(--dc-success, #22c55e)' : 'var(--dc-error)',
-              maxWidth: 400,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {testResult.message}
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: 13,
-  fontWeight: 500,
-  marginBottom: 4,
-  color: 'var(--dc-text)',
-}
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 10px',
-  border: '1px solid var(--dc-border)',
-  borderRadius: 6,
-  fontSize: 14,
-  backgroundColor: 'var(--dc-background)',
-  color: 'var(--dc-text)',
-  boxSizing: 'border-box',
 }

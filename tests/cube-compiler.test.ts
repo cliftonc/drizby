@@ -21,8 +21,8 @@ describe('cube-compiler', () => {
   // ─── Full pipeline (type-check + compile + execute) ───────────
 
   describe('full compilation', () => {
-    it('compiles a sqlite schema with table exports', () => {
-      const result = compileSchema(`
+    it('compiles a sqlite schema with table exports', async () => {
+      const result = await compileSchema(`
         import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
         export const users = sqliteTable('users', {
           id: integer('id').primaryKey(),
@@ -33,8 +33,8 @@ describe('cube-compiler', () => {
       expect(result.exports.users).toBeDefined()
     })
 
-    it('compiles a pg schema with table exports', () => {
-      const result = compileSchema(`
+    it('compiles a pg schema with table exports', async () => {
+      const result = await compileSchema(`
         import { pgTable, text, integer } from 'drizzle-orm/pg-core'
         export const products = pgTable('products', {
           id: integer('id').primaryKey(),
@@ -45,8 +45,8 @@ describe('cube-compiler', () => {
       expect(result.exports.products).toBeDefined()
     })
 
-    it('compiles multiple table exports', () => {
-      const result = compileSchema(`
+    it('compiles multiple table exports', async () => {
+      const result = await compileSchema(`
         import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
         export const users = sqliteTable('users', {
           id: integer('id').primaryKey(),
@@ -62,7 +62,7 @@ describe('cube-compiler', () => {
       expect(result.exports.posts).toBeDefined()
     })
 
-    it('compiles a cube definition importing schemas', () => {
+    it('compiles a cube definition importing schemas', async () => {
       const schemaCode = `
         import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
         export const users = sqliteTable('users', {
@@ -70,10 +70,10 @@ describe('cube-compiler', () => {
           name: text('name'),
         })
       `
-      const schemaCompiled = compileSchema(schemaCode)
+      const schemaCompiled = await compileSchema(schemaCode)
       expect(schemaCompiled.errors).toHaveLength(0)
 
-      const result = compileCube(
+      const result = await compileCube(
         `
         import { defineCube } from 'drizzle-cube/server'
         import { users } from './users'
@@ -97,8 +97,8 @@ describe('cube-compiler', () => {
       expect(result.exports.default.name).toBe('Users')
     })
 
-    it('reports type errors for invalid drizzle usage', () => {
-      const result = compileSchema(`
+    it('reports type errors for invalid drizzle usage', async () => {
+      const result = await compileSchema(`
         import { sqliteTable, text } from 'drizzle-orm/sqlite-core'
         export const users = sqliteTable('users', {
           id: text('id').nonExistentMethod(),
@@ -107,8 +107,8 @@ describe('cube-compiler', () => {
       expect(result.errors.length).toBeGreaterThan(0)
     })
 
-    it('reports errors for disallowed module imports', () => {
-      const result = compileSchema(`
+    it('reports errors for disallowed module imports', async () => {
+      const result = await compileSchema(`
         import * as fs from 'fs'
         export const data = fs.readFileSync('/etc/passwd', 'utf-8')
       `)

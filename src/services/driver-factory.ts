@@ -262,9 +262,20 @@ export async function testDriver(
     const resolvedProvider = provider || getDefaultProvider(engineType)
 
     switch (resolvedProvider) {
-      case 'better-sqlite3':
+      case 'better-sqlite3': {
         driver.client.prepare('SELECT 1').get()
+        // Check that the database actually has tables (SQLite creates empty files on connect)
+        const tables = driver.client
+          .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+          .all() as Array<{ name: string }>
+        if (tables.length === 0) {
+          return {
+            success: true,
+            message: `Connected (${Date.now() - start}ms) — warning: database has no tables`,
+          }
+        }
         break
+      }
 
       case 'duckdb':
         await new Promise<void>((resolve, reject) => {

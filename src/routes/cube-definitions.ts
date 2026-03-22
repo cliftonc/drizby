@@ -170,7 +170,10 @@ app.post('/:id/compile', async c => {
     return c.json({ error: 'No source code to compile' }, 400)
   }
 
-  const result = connectionManager.compileCubeDefinition(cubeDef.connectionId, cubeDef.sourceCode)
+  const result = await connectionManager.compileCubeDefinition(
+    cubeDef.connectionId,
+    cubeDef.sourceCode
+  )
 
   if (result.errors.length === 0) {
     await db
@@ -213,7 +216,7 @@ app.post('/validate', async c => {
 
   // Compile without registering - just check for errors
   const { compileCube } = await import('../services/cube-compiler')
-  const result = compileCube(sourceCode, managed.schemaExports, managed.schemaSources)
+  const result = await compileCube(sourceCode, managed.schemaExports, managed.schemaSources)
 
   return c.json({
     valid: result.errors.length === 0,

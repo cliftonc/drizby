@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { QuickSetupWizard } from '../components/QuickSetupWizard'
 import { useAuth } from '../contexts/AuthContext'
 import { useAnalyticsPages } from '../hooks/useAnalyticsPages'
 import { useConnections } from '../hooks/useConnections'
@@ -68,11 +69,13 @@ function SetupChecklist({
   hasOwnConnection,
   unreadyConnections = [],
   aiRef,
+  onQuickSetup,
 }: {
   hasAI: boolean
   hasOwnConnection: boolean
   unreadyConnections?: UnreadyConnection[]
   aiRef?: React.RefObject<HTMLAnchorElement | null>
+  onQuickSetup: (target: number | 'new') => void
 }) {
   const schemaIcon = (
     <svg
@@ -163,91 +166,191 @@ function SetupChecklist({
     }),
   ]
 
+  const stepItemStyle = (done: boolean): React.CSSProperties => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '10px 14px',
+    borderRadius: 8,
+    border: '1px solid var(--dc-border)',
+    backgroundColor: 'var(--dc-surface)',
+    color: 'var(--dc-text-secondary)',
+    fontSize: 13,
+    textDecoration: 'none',
+    transition: 'border-color 0.15s',
+    opacity: done ? 0.6 : 1,
+    cursor: done ? 'default' : 'pointer',
+    width: '100%',
+    boxSizing: 'border-box',
+  })
+
+  const doneIcon = (
+    <div
+      style={{
+        width: 20,
+        height: 20,
+        borderRadius: '50%',
+        flexShrink: 0,
+        backgroundColor: 'var(--dc-success, #22c55e)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="white"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M20 6 9 17l-5-5" />
+      </svg>
+    </div>
+  )
+
+  const ctaBadge = (text: string) => (
+    <span
+      style={{
+        fontSize: 12,
+        fontWeight: 500,
+        color: 'var(--dc-primary)',
+        padding: '2px 10px',
+        borderRadius: 6,
+        border: '1px solid var(--dc-primary)',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {text}
+    </span>
+  )
+
+  // Show the "Quick Setup" hero button if user hasn't completed connection + schema setup
+  const showQuickSetup = !hasOwnConnection || unreadyConnections.length > 0
+
   return (
     <>
-      {steps.map(step => (
-        <Link
-          key={step.link}
-          ref={step.isAI ? (aiRef as React.Ref<HTMLAnchorElement>) : undefined}
-          to={step.done ? '#' : step.link}
+      {showQuickSetup && (
+        <button
+          onClick={() => onQuickSetup('new')}
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 10,
-            padding: '10px 14px',
-            borderRadius: 8,
-            border: '1px solid var(--dc-border)',
-            backgroundColor: 'var(--dc-surface)',
-            color: 'var(--dc-text-secondary)',
-            fontSize: 13,
-            textDecoration: 'none',
-            transition: 'border-color 0.15s',
-            opacity: step.done ? 0.6 : 1,
-            cursor: step.done ? 'default' : 'pointer',
+            padding: '12px 16px',
+            borderRadius: 10,
+            border: '1.5px solid var(--dc-primary)',
+            background:
+              'linear-gradient(135deg, rgba(var(--dc-primary-rgb), 0.06), rgba(var(--dc-primary-rgb), 0.12))',
+            color: 'var(--dc-text)',
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: 'pointer',
+            width: '100%',
+            boxSizing: 'border-box',
+            textAlign: 'left',
+            transition: 'box-shadow 0.2s, border-color 0.2s',
           }}
-          onClick={step.done ? e => e.preventDefault() : undefined}
           onMouseEnter={e => {
-            if (!step.done) e.currentTarget.style.borderColor = 'var(--dc-primary)'
+            e.currentTarget.style.boxShadow = '0 0 16px rgba(var(--dc-primary-rgb), 0.25)'
           }}
           onMouseLeave={e => {
-            e.currentTarget.style.borderColor = 'var(--dc-border)'
+            e.currentTarget.style.boxShadow = 'none'
           }}
         >
-          {step.done ? (
-            <div
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                flexShrink: 0,
-                backgroundColor: 'var(--dc-success, #22c55e)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="white"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
-            </div>
-          ) : (
-            <div style={{ color: 'var(--dc-text-muted)', flexShrink: 0 }}>{step.icon}</div>
-          )}
+          <span style={{ fontSize: 18, flexShrink: 0 }}>{'\ud83e\ude84'}</span>
+          <span style={{ flex: 1 }}>Just set everything up for me!</span>
           <span
             style={{
-              flex: 1,
-              textDecoration: step.done ? 'line-through' : 'none',
-              color: step.done ? 'var(--dc-text-muted)' : 'var(--dc-text)',
+              fontSize: 12,
+              fontWeight: 500,
+              color: '#fff',
+              padding: '3px 12px',
+              borderRadius: 6,
+              backgroundColor: 'var(--dc-primary)',
+              whiteSpace: 'nowrap',
             }}
           >
-            {step.done ? step.doneLabel : step.label}
+            Quick Setup
           </span>
-          {!step.done && (
+        </button>
+      )}
+      {steps.map(step => {
+        const hoverHandlers = {
+          onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
+            if (!step.done) e.currentTarget.style.borderColor = 'var(--dc-primary)'
+          },
+          onMouseLeave: (e: React.MouseEvent<HTMLElement>) => {
+            e.currentTarget.style.borderColor = 'var(--dc-border)'
+          },
+        }
+
+        // For connection/schema steps, use onClick to launch wizard
+        if (!step.done && !step.isAI && step.link.startsWith('/schema-editor/')) {
+          const connId = Number.parseInt(step.link.split('/schema-editor/')[1])
+          return (
+            <button
+              key={step.link}
+              onClick={() => onQuickSetup(connId)}
+              style={stepItemStyle(false)}
+              {...hoverHandlers}
+            >
+              <div style={{ color: 'var(--dc-text-muted)', flexShrink: 0 }}>{step.icon}</div>
+              <span style={{ flex: 1, color: 'var(--dc-text)', textAlign: 'left' }}>
+                {step.label}
+              </span>
+              {ctaBadge(step.cta)}
+            </button>
+          )
+        }
+
+        if (!step.done && step.link === '/settings/connections') {
+          return (
+            <button
+              key={step.link}
+              onClick={() => onQuickSetup('new')}
+              style={stepItemStyle(false)}
+              {...hoverHandlers}
+            >
+              <div style={{ color: 'var(--dc-text-muted)', flexShrink: 0 }}>{step.icon}</div>
+              <span style={{ flex: 1, color: 'var(--dc-text)', textAlign: 'left' }}>
+                {step.label}
+              </span>
+              {ctaBadge(step.cta)}
+            </button>
+          )
+        }
+
+        return (
+          <Link
+            key={step.link}
+            ref={step.isAI ? (aiRef as React.Ref<HTMLAnchorElement>) : undefined}
+            to={step.done ? '#' : step.link}
+            style={stepItemStyle(step.done)}
+            onClick={step.done ? e => e.preventDefault() : undefined}
+            {...hoverHandlers}
+          >
+            {step.done ? (
+              doneIcon
+            ) : (
+              <div style={{ color: 'var(--dc-text-muted)', flexShrink: 0 }}>{step.icon}</div>
+            )}
             <span
               style={{
-                fontSize: 12,
-                fontWeight: 500,
-                color: 'var(--dc-primary)',
-                padding: '2px 10px',
-                borderRadius: 6,
-                border: '1px solid var(--dc-primary)',
-                whiteSpace: 'nowrap',
+                flex: 1,
+                textDecoration: step.done ? 'line-through' : 'none',
+                color: step.done ? 'var(--dc-text-muted)' : 'var(--dc-text)',
               }}
             >
-              {step.cta}
+              {step.done ? step.doneLabel : step.label}
             </span>
-          )}
-        </Link>
-      ))}
+            {!step.done && ctaBadge(step.cta)}
+          </Link>
+        )
+      })}
     </>
   )
 }
@@ -257,12 +360,14 @@ export default function HomePage() {
   const [isCreating, setIsCreating] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const createNotebook = useCreateNotebook()
   const { data: dashboards = [] } = useAnalyticsPages()
   const { data: notebooks = [] } = useNotebooks()
   const { data: connections = [] } = useConnections()
   const { user } = useAuth()
   const [selectedConnectionId, setSelectedConnectionId] = useState<number | undefined>()
+  const [quickSetupTarget, setQuickSetupTarget] = useState<number | 'new' | null>(null)
 
   const { data: aiConfig } = useQuery<{ provider: string; hasApiKey: boolean }>({
     queryKey: ['settings', 'ai'],
@@ -628,6 +733,7 @@ export default function HomePage() {
                       hasOwnConnection={hasOwnConn}
                       unreadyConnections={unready}
                       aiRef={aiTaskRef}
+                      onQuickSetup={setQuickSetupTarget}
                     />
                   </div>
                 </div>
@@ -879,6 +985,20 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+      <QuickSetupWizard
+        isOpen={quickSetupTarget !== null}
+        connectionId={typeof quickSetupTarget === 'number' ? quickSetupTarget : undefined}
+        onClose={() => setQuickSetupTarget(null)}
+        onComplete={connId => {
+          setQuickSetupTarget(null)
+          queryClient.invalidateQueries({ queryKey: ['connections', 'status'] })
+          queryClient.invalidateQueries({ queryKey: ['connections'] })
+          // Clear last-edited file so editor opens fresh without dirty state
+          localStorage.removeItem(`dc-schema-editor-conn-${connId}`)
+          localStorage.removeItem('dc-schema-editor-last')
+          navigate(`/schema-editor/${connId}`)
+        }}
+      />
     </div>
   )
 }

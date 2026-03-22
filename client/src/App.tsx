@@ -14,6 +14,7 @@ import PendingSetupPage from './pages/PendingSetupPage'
 import RegisterPage from './pages/RegisterPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import SchemaEditorPage from './pages/SchemaEditorPage'
+import SchemaExplorerPage from './pages/SchemaExplorerPage'
 import SetupPage from './pages/SetupPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import SettingsPage from './pages/settings/SettingsPage'
@@ -78,6 +79,7 @@ function App() {
                 <Route path="/dashboards" element={<DashboardListPage />} />
                 <Route path="/dashboards/:id" element={<DashboardViewPage />} />
                 <Route path="/analysis-builder" element={<AnalysisBuilderPage />} />
+                <Route path="/schema-explorer" element={<SchemaExplorerPage />} />
                 <Route path="/schema-editor" element={<SchemaEditorRedirect />} />
                 <Route path="/schema-editor/:connectionId" element={<SchemaEditorRedirect />} />
                 <Route

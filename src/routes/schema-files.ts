@@ -387,11 +387,17 @@ app.post('/apply-joins', async c => {
     const joinsDesc = Object.entries(proposal.joins)
       .map(([name, join]: [string, any]) => {
         const onStr = typeof join.on === 'string' ? join.on : JSON.stringify(join.on)
-        return `- ${name}: targetCube: '${join.targetCube}', relationship: '${join.relationship}', on: ${onStr}`
+        let desc = `- ${name}: targetCube: '${join.targetCube}', relationship: '${join.relationship}', on: ${onStr}`
+        if (join.through) {
+          const throughStr =
+            typeof join.through === 'string' ? join.through : JSON.stringify(join.through)
+          desc += `, through: ${throughStr}`
+        }
+        return desc
       })
       .join('\n')
 
-    const editPrompt = `## Schema Files (for reference — shows which tables are exported from which files)\n\n${schemaListing}\n\n## Current Cube Source Code\n\n\`\`\`typescript\n${cubeDef.sourceCode}\n\`\`\`\n\n## Joins to Add\n\n${joinsDesc}\n\nReturn the COMPLETE updated cube source code with:\n1. The joins block added (or merged with existing joins)\n2. Any new schema file imports added for tables referenced in the join \`on\` clauses (e.g. if the join references \`users.id\`, ensure the file imports \`users\` from the correct schema file)\n3. All existing code preserved exactly as-is otherwise`
+    const editPrompt = `## Schema Files (for reference — shows which tables are exported from which files)\n\n${schemaListing}\n\n## Current Cube Source Code\n\n\`\`\`typescript\n${cubeDef.sourceCode}\n\`\`\`\n\n## Joins to Add\n\n${joinsDesc}\n\nReturn the COMPLETE updated cube source code with:\n1. The joins block added (or merged with existing joins)\n2. Any new schema file imports added for tables referenced in the join \`on\` clauses and \`through.table\` (e.g. if the join references \`users.id\` or \`through: { table: timeEntries, ... }\`, ensure the file imports those tables from the correct schema file)\n3. All existing code preserved exactly as-is otherwise`
 
     try {
       const newSource = await callAI(ai, CUBE_APPLY_JOINS_SYSTEM_PROMPT, editPrompt)
@@ -499,10 +505,10 @@ app.post('/:id/compile', async c => {
   if (rows.length === 0) return c.json({ error: 'Schema file not found' }, 404)
 
   const sf = rows[0]
-  const result = compileSchema(sf.sourceCode)
+  const result = await compileSchema(sf.sourceCode)
 
   if (result.errors.length === 0) {
-    connectionManager.compileSchemaFile(sf.connectionId, sf.name, sf.sourceCode)
+    await connectionManager.compileSchemaFile(sf.connectionId, sf.name, sf.sourceCode)
     await db
       .update(schemaFiles)
       .set({ compiledAt: new Date(), compilationErrors: null })
@@ -658,7 +664,8 @@ async function runDrizzleKitPull(
     } catch (execErr: any) {
       // Filter out non-fatal warnings (SSL, deprecation) from the error message
       const stderrMsg = (execErr.stderr || '').replace(/\(node:\d+\) Warning:.*\n?/g, '').trim()
-      const msg = stderrMsg || execErr.message
+      const stdoutMsg = (execErr.stdout || '').trim()
+      const msg = stderrMsg || stdoutMsg || execErr.message
       throw new Error(`drizzle-kit pull failed: ${msg}`)
     }
 
@@ -779,7 +786,8 @@ async function callAI(
     const client = new Anthropic({ apiKey: ai.apiKey })
     const stream = await client.messages.stream({
       model: ai.model || 'claude-sonnet-4-6',
-      max_tokens: 16384,
+      max_tokens: 32768,
+      temperature: 0,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     })
@@ -794,7 +802,8 @@ async function callAI(
     const client = new OpenAI({ apiKey: ai.apiKey, ...(ai.baseUrl && { baseURL: ai.baseUrl }) })
     const response = await client.chat.completions.create({
       model: ai.model || 'gpt-4.1-mini',
-      max_tokens: 65536,
+      max_tokens: 32768,
+      temperature: 0,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -806,7 +815,7 @@ async function callAI(
   }
 
   if (ai.provider === 'google') {
-    const model = ai.model || 'gemini-3-flash-preview'
+    const model = ai.model || 'gemini-3.1-flash-lite-preview'
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${ai.apiKey}`
     const response = await fetch(url, {
       method: 'POST',
@@ -814,7 +823,7 @@ async function callAI(
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: { maxOutputTokens: 65536 },
+        generationConfig: { maxOutputTokens: 32768, temperature: 0 },
       }),
     })
     if (!response.ok) {
@@ -1000,22 +1009,68 @@ If a cube exists for the junction table, it belongsTo both sides. The parent cub
 - Use string-based targetCube: \`targetCube: 'CubeName'\` (the cube name from \`defineCube('CubeName', ...)\`, NOT the variable name)
 - Do NOT modify or repeat existing joins that are already correct
 - Only propose joins for cubes that need NEW joins
+- The "on" field uses \`{ source, target }\` object literals — NEVER use \`eq()\` calls
+  - Correct: \`on: [{ source: orders.userId, target: users.id }]\`
+  - WRONG: \`on: [eq(orders.userId, users.id)]\`
+- The same applies to \`through.sourceKey\` and \`through.targetKey\` — use \`{ source, target }\` objects, NOT \`eq()\`
 - The "on" field references Drizzle column expressions using the table VARIABLE names from the schema (e.g. \`orders.userId\`, \`users.id\`)
 - The join key name should be the target cube's PascalCase name (e.g. "Users", "Departments")
 
 ## Relationship types: 'belongsTo' | 'hasOne' | 'hasMany' | 'belongsToMany'
 
+### Direct joins (belongsTo / hasOne / hasMany)
+These use an \`on\` array with source/target column pairs:
+\`\`\`
+{ targetCube: 'Users', relationship: 'belongsTo', on: [{ source: orders.userId, target: users.id }] }
+\`\`\`
+
+### Many-to-many joins (belongsToMany)
+When two cubes are connected through a junction/pivot table, use \`belongsToMany\` with \`on: []\` (empty array, REQUIRED) and a \`through\` property. The junction table connects the two sides:
+\`\`\`
+{
+  targetCube: 'Departments',
+  relationship: 'belongsToMany',
+  on: [],
+  through: {
+    table: timeEntries,
+    sourceKey: [{ source: employees.id, target: timeEntries.employeeId }],
+    targetKey: [{ source: timeEntries.departmentId, target: departments.id }]
+  }
+}
+\`\`\`
+- \`through.table\`: the junction/pivot table variable from the schema
+- \`through.sourceKey\`: how the source cube's table connects to the junction table
+- \`through.targetKey\`: how the junction table connects to the target cube's table
+- BOTH sides of a many-to-many should get a \`belongsToMany\` join (with sourceKey/targetKey swapped)
+
+### How to identify many-to-many relationships
+If table C has FK columns pointing to both table A and table B, and cubes exist for A and B:
+- Cube A belongsToMany Cube B through table C
+- Cube B belongsToMany Cube A through table C
+This is PREFERRED over creating hasMany joins to a junction cube when the goal is to relate the two main entities.
+
+## Output format
+
 Respond with ONLY a JSON array (no markdown, no explanation). Each element must have:
 - "variableName": The JS variable name of the cube that needs joins added (e.g. "ordersCube")
-- "joins": Object of joins to add, where each key is the join name and value has { targetCube, relationship, on }
+- "joins": Object of joins to add, where each key is the join name and value has:
+  - For direct joins: { targetCube, relationship, on } where \`on\` is a string of the source code
+  - For belongsToMany: { targetCube, relationship, on, through } where \`through\` is a string of the source code
 
-The "on" field should be a string containing the actual source code for the on array, e.g.:
-"on": "[{ source: orders.userId, target: users.id }]"
+The "on" and "through" fields should be strings containing actual source code, e.g.:
+- Direct: "on": "[{ source: orders.userId, target: users.id }]"
+- Many-to-many: "on": "[]", "through": "{ table: orderProducts, sourceKey: [{ source: orders.id, target: orderProducts.orderId }], targetKey: [{ source: orderProducts.productId, target: products.id }] }"
 
-Example — given schemas with \`orders.userId → users.id\` and cubes named "Orders" and "Users":
+Example — direct join with \`orders.userId → users.id\`:
 [
   { "variableName": "ordersCube", "joins": { "Users": { "targetCube": "Users", "relationship": "belongsTo", "on": "[{ source: orders.userId, target: users.id }]" } } },
   { "variableName": "usersCube", "joins": { "Orders": { "targetCube": "Orders", "relationship": "hasMany", "on": "[{ source: users.id, target: orders.userId }]" } } }
+]
+
+Example — many-to-many with junction table \`studentCourses\`:
+[
+  { "variableName": "studentsCube", "joins": { "Courses": { "targetCube": "Courses", "relationship": "belongsToMany", "on": "[]", "through": "{ table: studentCourses, sourceKey: [{ source: students.id, target: studentCourses.studentId }], targetKey: [{ source: studentCourses.courseId, target: courses.id }] }" } } },
+  { "variableName": "coursesCube", "joins": { "Students": { "targetCube": "Students", "relationship": "belongsToMany", "on": "[]", "through": "{ table: studentCourses, sourceKey: [{ source: courses.id, target: studentCourses.courseId }], targetKey: [{ source: studentCourses.studentId, target: students.id }] }" } } }
 ]
 
 If no joins are needed, return an empty array: []`
@@ -1029,7 +1084,13 @@ const CUBE_APPLY_JOINS_SYSTEM_PROMPT = `You are an expert at editing Drizzle Cub
 - Use string-based targetCube: \`targetCube: 'CubeName'\`
 - If the cube already has a \`joins\` block, add the new joins to it without removing existing ones
 - If the cube has no \`joins\` block, add one between the \`sql\` and \`dimensions\` blocks
-- IMPORTANT: Add any missing imports for tables referenced in join \`on\` clauses. Check the schema files to find which file exports each table variable, and add/extend the import line accordingly
+- For \`belongsToMany\` joins, you MUST include \`on: []\` (empty array) AND the \`through\` property with \`table\`, \`sourceKey\`, and \`targetKey\`. The \`on\` property is always required even when empty.
+- CRITICAL: Join \`on\`, \`sourceKey\`, and \`targetKey\` arrays use \`{ source, target }\` object literals — NEVER use \`eq()\` calls
+  - Correct: \`on: [{ source: orders.userId, target: users.id }]\`
+  - Correct: \`sourceKey: [{ source: teams.id, target: teamMembers.teamId }]\`
+  - WRONG: \`on: [eq(orders.userId, users.id)]\`
+  - WRONG: \`sourceKey: [eq(teams.id, teamMembers.teamId)]\`
+- IMPORTANT: Add any missing imports for tables referenced in join \`on\` clauses AND \`through.table\` references. Check the schema files to find which file exports each table variable, and add/extend the import line accordingly
 - Do not add duplicate imports — if a table is already imported, leave it as-is
 - Do not change any other code besides adding joins and their required imports`
 
@@ -1037,13 +1098,14 @@ const SCHEMA_FILTER_SYSTEM_PROMPT = `You are an expert at editing Drizzle ORM sc
 
 ## Rules
 - Return ONLY the complete valid TypeScript source code
+- CRITICAL: Keep ALL import statements for column types that are still used by remaining tables (e.g. \`integer\`, \`text\`, \`varchar\`, \`timestamp\`, \`boolean\`, \`real\`, \`serial\`, \`bigint\`, \`pgTable\`, \`sqliteTable\`, \`pgEnum\`, etc.). Scan every remaining table definition to see which column types it uses, and ensure every one of those is in the imports.
 - Keep ALL enum declarations (pgEnum, sqliteEnum, etc.) that are referenced by remaining tables
 - Keep ALL type declarations and other non-table exports that are still used
-- Remove table definitions (pgTable/sqliteTable calls) for tables NOT in the keep list
+- ONLY remove table definitions (pgTable/sqliteTable calls) for tables NOT in the keep list
 - Remove \`.references(...)\` calls that point to removed tables — replace the column definition with the same column type but without the \`.references()\` chain
-- Clean up imports: remove unused imports that were only needed by removed tables
+- Do NOT touch the import block unless you are certain an import is not used by ANY remaining table. When in doubt, keep the import.
 - Keep the same code style, formatting, and comments
 - Do NOT add any new code, comments, or modifications beyond the removals
-- If an enum is only used by removed tables, remove it too`
+- If an enum is only used by removed tables, remove it too (and its import)`
 
 export default app

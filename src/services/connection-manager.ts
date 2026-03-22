@@ -26,12 +26,23 @@ interface ManagedConnection {
 
 class ConnectionManager {
   private connections = new Map<number, ManagedConnection>()
+  private _compiling = false
+  private _compilationProgress: { current: number; total: number; label: string } | null = null
+
+  /** Whether background compilation is in progress */
+  get isCompiling(): boolean {
+    return this._compiling
+  }
+
+  /** Current compilation progress (null if not compiling) */
+  get compilationProgress(): { current: number; total: number; label: string } | null {
+    return this._compiling ? this._compilationProgress : null
+  }
 
   /**
-   * Initialize all active connections from the database.
-   * Call this on server startup.
+   * Initialize all active connections from the database (fast — no compilation).
    */
-  async initialize(db: any): Promise<void> {
+  async initializeConnections(db: any): Promise<void> {
     const activeConnections = await db
       .select()
       .from(connections)
@@ -44,9 +55,18 @@ class ConnectionManager {
         console.error(`Failed to initialize connection ${conn.id} (${conn.name}):`, err)
       }
     }
+  }
 
-    // Load and compile all schema files and cube definitions
-    await this.compileAll(db)
+  /**
+   * Initialize connections and compile all in the background.
+   * Server can start accepting requests before compilation finishes.
+   */
+  async initialize(db: any): Promise<void> {
+    await this.initializeConnections(db)
+    // Fire and forget — compilation runs in background
+    this.compileAll(db).catch(err => {
+      console.error('Background compilation failed:', err)
+    })
   }
 
   /**
@@ -126,6 +146,18 @@ class ConnectionManager {
    * Compile all schema files and cube definitions from the database.
    */
   async compileAll(db: any): Promise<void> {
+    this._compiling = true
+    this._compilationProgress = { current: 0, total: 0, label: 'Loading...' }
+
+    try {
+      await this._compileAllInner(db)
+    } finally {
+      this._compiling = false
+      this._compilationProgress = null
+    }
+  }
+
+  private async _compileAllInner(db: any): Promise<void> {
     // Load all schema files
     const allSchemaFiles = await db.select().from(schemaFiles)
 
@@ -137,14 +169,25 @@ class ConnectionManager {
       schemasByConnection.set(sf.connectionId, list)
     }
 
+    const totalItems = allSchemaFiles.length
+    let compiled = 0
+
     // Compile schemas per connection
     for (const [connectionId, schemas] of schemasByConnection) {
       const managed = this.connections.get(connectionId)
       if (!managed) continue
 
       for (const sf of schemas) {
+        // Yield event loop so HTTP requests aren't blocked by synchronous TS compilation
+        await new Promise(resolve => setTimeout(resolve, 0))
+        compiled++
+        this._compilationProgress = {
+          current: compiled,
+          total: totalItems,
+          label: `Compiling schema: ${sf.name}`,
+        }
         try {
-          const result = compileSchema(sf.sourceCode)
+          const result = await compileSchema(sf.sourceCode, true)
           if (result.errors.length === 0) {
             const name = sf.name.replace(/\.ts$/, '')
             managed.schemaExports[name] = result.exports
@@ -177,14 +220,30 @@ class ConnectionManager {
       .from(cubeDefinitions)
       .where(eq(cubeDefinitions.isActive, true))
 
+    const totalAll = totalItems + allCubeDefs.length
+
     for (const cubeDef of allCubeDefs) {
       if (!cubeDef.sourceCode) continue
 
       const managed = this.connections.get(cubeDef.connectionId)
       if (!managed) continue
 
+      // Yield event loop so HTTP requests aren't blocked by synchronous TS compilation
+      await new Promise(resolve => setTimeout(resolve, 0))
+      compiled++
+      this._compilationProgress = {
+        current: compiled,
+        total: totalAll,
+        label: `Compiling cube: ${cubeDef.name}`,
+      }
+
       try {
-        const result = compileCube(cubeDef.sourceCode, managed.schemaExports, managed.schemaSources)
+        const result = await compileCube(
+          cubeDef.sourceCode,
+          managed.schemaExports,
+          managed.schemaSources,
+          true
+        )
         if (result.errors.length === 0) {
           // Find exported cubes and register them
           const registeredCubes = this.registerExportedCubes(result.exports, managed)
@@ -217,11 +276,15 @@ class ConnectionManager {
   /**
    * Compile a single schema file and update the managed connection's exports.
    */
-  compileSchemaFile(connectionId: number, name: string, sourceCode: string): { errors: any[] } {
+  async compileSchemaFile(
+    connectionId: number,
+    name: string,
+    sourceCode: string
+  ): Promise<{ errors: any[] }> {
     const managed = this.connections.get(connectionId)
     if (!managed) return { errors: [{ message: `Connection ${connectionId} not found` }] }
 
-    const result = compileSchema(sourceCode)
+    const result = await compileSchema(sourceCode)
     if (result.errors.length === 0) {
       const normalizedName = name.replace(/\.ts$/, '')
       managed.schemaExports[normalizedName] = result.exports
@@ -243,15 +306,15 @@ class ConnectionManager {
   /**
    * Compile a single cube definition and register its cubes.
    */
-  compileCubeDefinition(
+  async compileCubeDefinition(
     connectionId: number,
     sourceCode: string
-  ): { cubes: string[]; errors: any[] } {
+  ): Promise<{ cubes: string[]; errors: any[] }> {
     const managed = this.connections.get(connectionId)
     if (!managed)
       return { cubes: [], errors: [{ message: `Connection ${connectionId} not found` }] }
 
-    const result = compileCube(sourceCode, managed.schemaExports, managed.schemaSources)
+    const result = await compileCube(sourceCode, managed.schemaExports, managed.schemaSources)
     if (result.errors.length > 0) {
       return { cubes: [], errors: result.errors }
     }

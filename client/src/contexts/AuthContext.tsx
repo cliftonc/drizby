@@ -10,6 +10,12 @@ interface User {
   emailVerified?: boolean
 }
 
+interface CompilationProgress {
+  current: number
+  total: number
+  label: string
+}
+
 interface AuthState {
   user: User | null
   isLoading: boolean
@@ -19,6 +25,8 @@ interface AuthState {
   authenticated: boolean
   enabledProviders: string[]
   googleEnabled: boolean
+  compiling: boolean
+  compilationProgress: CompilationProgress | null
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -38,7 +46,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return res.json()
     },
     staleTime: 30 * 1000,
-    retry: 1,
+    // Poll every 2s while compiling, otherwise normal staleTime
+    refetchInterval: query => (query.state.data?.compiling ? 2000 : false),
+    // Fast retries — handles server not yet ready during dev startup
+    retry: 10,
+    retryDelay: 500,
   })
 
   const login = useCallback(
@@ -92,6 +104,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authenticated: data?.authenticated || false,
         enabledProviders: data?.enabledProviders || [],
         googleEnabled: (data?.enabledProviders || []).includes('google'),
+        compiling: data?.compiling || false,
+        compilationProgress: data?.compilationProgress || null,
         login,
         register,
         logout,

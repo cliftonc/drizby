@@ -39,6 +39,7 @@ import {
   getSessionCookie,
   setSessionCookie,
 } from '../auth/session'
+import { connectionManager } from '../services/connection-manager'
 import {
   createEmailVerificationTemplate,
   createMagicLinkEmailTemplate,
@@ -177,6 +178,8 @@ app.get('/status', optionalAuth, async c => {
       : null,
     enabledProviders,
     googleEnabled: enabledProviders.includes('google'),
+    compiling: connectionManager.isCompiling,
+    compilationProgress: connectionManager.compilationProgress,
   })
 })
 
