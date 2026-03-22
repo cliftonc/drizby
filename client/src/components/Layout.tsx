@@ -259,6 +259,46 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     })
   }
 
+  const renderDocsLink = (isMobile: boolean) => (
+    <a
+      href="https://www.drizby.com/docs/"
+      target="_blank"
+      rel="noopener noreferrer"
+      title={!isMobile && collapsed ? 'Documentation' : undefined}
+      className="flex items-center no-underline whitespace-nowrap overflow-hidden transition-colors"
+      style={{
+        gap: !isMobile && collapsed ? 0 : 10,
+        justifyContent: !isMobile && collapsed ? 'center' : 'flex-start',
+        padding: !isMobile && collapsed ? '8px 0' : '7px 12px',
+        color: 'var(--dc-sidebar-text)',
+        fontSize: 13,
+        borderTop: '1px solid rgba(255,255,255,0.1)',
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.backgroundColor = 'var(--dc-sidebar-hover)'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.backgroundColor = 'transparent'
+      }}
+    >
+      <span className="flex items-center justify-center shrink-0" style={{ opacity: 0.7 }}>
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+        </svg>
+      </span>
+      {(isMobile || !collapsed) && 'Documentation'}
+    </a>
+  )
+
   const renderSettingsLink = (isMobile: boolean) => {
     const isActive = location.pathname.startsWith('/settings')
     return (
@@ -273,7 +313,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           color: isActive ? '#fff' : 'var(--dc-sidebar-text)',
           backgroundColor: isActive ? 'var(--dc-sidebar-active)' : 'transparent',
           fontSize: 13,
-          borderTop: '1px solid rgba(255,255,255,0.1)',
         }}
       >
         <span
@@ -283,6 +322,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {icons.settings}
         </span>
         {(isMobile || !collapsed) && 'Settings'}
+        {(isMobile || !collapsed) && (
+          <span
+            style={{
+              marginLeft: 'auto',
+              fontSize: 10,
+              opacity: 0.4,
+              fontFamily: 'monospace',
+            }}
+          >
+            v{__APP_VERSION__}
+          </span>
+        )}
       </Link>
     )
   }
@@ -366,6 +417,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         }}
       >
         <div className="py-2 flex-1 overflow-auto">{renderNavItems(true)}</div>
+        {renderDocsLink(true)}
         {renderSettingsLink(true)}
         {renderUserRow(true)}
       </nav>
@@ -410,6 +462,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="py-2 flex-1 overflow-auto">{renderNavItems(false)}</div>
+        {renderDocsLink(false)}
         {renderSettingsLink(false)}
         {renderUserRow(false)}
       </nav>

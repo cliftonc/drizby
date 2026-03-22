@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+
+const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
 // Suppress proxy errors while the backend is starting up
 function onProxyError(_err: Error, _req: IncomingMessage, res: ServerResponse) {
@@ -20,6 +23,9 @@ const proxyOpts = {
 }
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [react()],
   root: './client',
   publicDir: './public',
