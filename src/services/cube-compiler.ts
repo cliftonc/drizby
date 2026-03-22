@@ -39,13 +39,14 @@ const TS_COMPILE_OPTIONS: ts.CompilerOptions = {
 }
 
 /**
- * Resolve the worker script path. In dev (tsx) we point at the .ts source;
- * the worker is spawned with execArgv so tsx can handle it.
+ * Resolve the worker script path.
+ * Uses the same directory and extension as the current file —
+ * in dev this is .ts (handled by tsx), in production it's .js (compiled).
  */
-const WORKER_PATH = join(
-  fileURLToPath(import.meta.url).replace(/[/\\][^/\\]+$/, ''),
-  'typecheck-worker.ts'
-)
+const CURRENT_FILE = fileURLToPath(import.meta.url)
+const CURRENT_DIR = CURRENT_FILE.replace(/[/\\][^/\\]+$/, '')
+const WORKER_EXT = CURRENT_FILE.endsWith('.ts') ? '.ts' : '.js'
+const WORKER_PATH = join(CURRENT_DIR, `typecheck-worker${WORKER_EXT}`)
 
 /**
  * Run type-checking in a worker thread so it doesn't block the event loop.

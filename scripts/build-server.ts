@@ -5,20 +5,30 @@
 
 import { build } from 'esbuild'
 
-await build({
-  entryPoints: ['src/index.ts'],
+const sharedOptions = {
   bundle: true,
-  format: 'esm',
-  platform: 'node',
+  format: 'esm' as const,
+  platform: 'node' as const,
   target: 'node20',
-  outfile: 'dist/server.js',
   sourcemap: true,
-  // Native modules + TypeScript (huge, uses dynamic requires for runtime compilation)
   external: ['better-sqlite3', 'typescript', 'postgres'],
   banner: {
-    // createRequire shim for external CJS modules in ESM bundle
     js: `import { createRequire as __createRequire } from 'node:module';const require = __createRequire(import.meta.url);`,
   },
+}
+
+// Main server bundle
+await build({
+  ...sharedOptions,
+  entryPoints: ['src/index.ts'],
+  outfile: 'dist/server.js',
 })
 
-console.log('Server built to dist/server.js')
+// Worker thread for type-checking (loaded dynamically, must be a separate file)
+await build({
+  ...sharedOptions,
+  entryPoints: ['src/services/typecheck-worker.ts'],
+  outfile: 'dist/typecheck-worker.js',
+})
+
+console.log('Server built to dist/server.js + dist/typecheck-worker.js')
