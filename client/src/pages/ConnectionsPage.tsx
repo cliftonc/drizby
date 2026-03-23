@@ -16,8 +16,21 @@ interface Connection {
   engineType: string
   provider: string | null
   connectionString?: string
+  maskedConnectionString?: string
   isActive: boolean
   createdAt: string
+}
+
+function formatMaskedConnectionString(masked: string): string {
+  try {
+    const parsed = JSON.parse(masked)
+    if (typeof parsed === 'object' && parsed !== null) {
+      return Object.entries(parsed)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ')
+    }
+  } catch {}
+  return masked
 }
 
 export default function ConnectionsPage() {
@@ -301,6 +314,20 @@ export default function ConnectionsPage() {
                         }}
                       >
                         {conn.description}
+                      </p>
+                    )}
+                    {conn.maskedConnectionString && (
+                      <p
+                        style={{
+                          margin: '4px 0 0',
+                          fontSize: 12,
+                          color: 'var(--dc-text-muted, var(--dc-text-secondary))',
+                          fontFamily: 'monospace',
+                          wordBreak: 'break-all',
+                          opacity: 0.7,
+                        }}
+                      >
+                        {formatMaskedConnectionString(conn.maskedConnectionString)}
                       </p>
                     )}
                   </div>

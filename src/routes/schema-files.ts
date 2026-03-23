@@ -44,9 +44,11 @@ async function autoName(
     .where(and(eq(table.connectionId, connectionId), eq(table.organisationId, orgId)))
   const names = new Set(existing.map((r: any) => r.name))
   if (!names.has(baseName)) return baseName
+  const dot = baseName.lastIndexOf('.')
+  const [stem, ext] = dot > 0 ? [baseName.slice(0, dot), baseName.slice(dot)] : [baseName, '']
   let i = 2
-  while (names.has(`${baseName}-${i}`)) i++
-  return `${baseName}-${i}`
+  while (names.has(`${stem}-${i}${ext}`)) i++
+  return `${stem}-${i}${ext}`
 }
 
 // List all schema files

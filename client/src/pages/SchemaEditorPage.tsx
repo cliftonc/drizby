@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { QuickSetupWizard } from '../components/QuickSetupWizard'
+import { TableSelector } from '../components/TableSelector'
 import { useConfirm } from '../hooks/useConfirm'
 import { usePrompt } from '../hooks/usePrompt'
 
@@ -2218,82 +2219,16 @@ function IntrospectModal({
                 <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--dc-text)' }}>
                   {canFilterTables ? 'Select Tables' : 'Tables Found'}
                 </div>
-                {canFilterTables ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
-                    <span style={{ fontSize: 12, color: 'var(--dc-text-muted)' }}>
-                      {selectedCount} of {allTables.length} selected
-                    </span>
-                    <button
-                      onClick={() =>
-                        onUpdateState(prev => ({ ...prev, selectedTables: new Set(allTables) }))
-                      }
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        fontSize: 12,
-                        color: 'var(--dc-primary)',
-                        padding: 0,
-                      }}
-                    >
-                      Select All
-                    </button>
-                    <button
-                      onClick={() =>
-                        onUpdateState(prev => ({ ...prev, selectedTables: new Set() }))
-                      }
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        fontSize: 12,
-                        color: 'var(--dc-primary)',
-                        padding: 0,
-                      }}
-                    >
-                      Deselect All
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 12, color: 'var(--dc-text-muted)', marginTop: 6 }}>
-                    {allTables.length} table{allTables.length !== 1 ? 's' : ''} found — all will be
-                    included
-                  </div>
-                )}
               </div>
-              <div style={{ flex: 1, overflow: 'auto', padding: '4px 24px 12px' }}>
-                {allTables.map(table => (
-                  <label
-                    key={table}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '6px 0',
-                      borderBottom: '1px solid var(--dc-border)',
-                      fontSize: 13,
-                      color: 'var(--dc-text)',
-                      cursor: canFilterTables ? 'pointer' : 'default',
-                    }}
-                  >
-                    {canFilterTables && (
-                      <input
-                        type="checkbox"
-                        checked={state.selectedTables.has(table)}
-                        onChange={() =>
-                          onUpdateState(prev => {
-                            const next = new Set(prev.selectedTables)
-                            if (next.has(table)) next.delete(table)
-                            else next.add(table)
-                            return { ...prev, selectedTables: next }
-                          })
-                        }
-                        style={{ accentColor: 'var(--dc-primary)' }}
-                      />
-                    )}
-                    <span>{table}</span>
-                  </label>
-                ))}
+              <div style={{ flex: 1, minHeight: 0, padding: '4px 24px 12px' }}>
+                <TableSelector
+                  tables={allTables}
+                  selectedTables={state.selectedTables}
+                  onSelectionChange={tables =>
+                    onUpdateState(prev => ({ ...prev, selectedTables: tables }))
+                  }
+                  readOnly={!canFilterTables}
+                />
               </div>
               <div
                 style={{

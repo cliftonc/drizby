@@ -10,6 +10,7 @@ import { connections, cubeDefinitions, schemaFiles } from '../../schema'
 import { maybeDecrypt, maybeEncrypt } from '../auth/encryption'
 import { guardPermission } from '../permissions/guard'
 import { connectionManager } from '../services/connection-manager'
+import { maskConnectionString } from '../services/connection-masking'
 import { testDriver } from '../services/driver-factory'
 import { PROVIDERS } from '../services/provider-registry'
 
@@ -36,6 +37,7 @@ app.get('/', async c => {
       description: connections.description,
       engineType: connections.engineType,
       provider: connections.provider,
+      connectionString: connections.connectionString,
       isActive: connections.isActive,
       createdAt: connections.createdAt,
       updatedAt: connections.updatedAt,
@@ -43,7 +45,18 @@ app.get('/', async c => {
     .from(connections)
     .where(eq(connections.organisationId, 1))
 
-  return c.json(result)
+  const masked = await Promise.all(
+    result.map(async (conn: any) => {
+      const decrypted = await maybeDecrypt(conn.connectionString)
+      const { connectionString: _, ...rest } = conn
+      return {
+        ...rest,
+        maskedConnectionString: maskConnectionString(decrypted, conn.provider),
+      }
+    })
+  )
+
+  return c.json(masked)
 })
 
 // Connection status — schema/cube compilation status per connection

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AIConfigForm } from './AIConfigForm'
 import { ConnectionForm, type ConnectionFormData, type ProviderDef } from './ConnectionForm'
+import { TableSelector } from './TableSelector'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -155,7 +156,6 @@ export function QuickSetupWizard({
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [isCreating, setIsCreating] = useState(false)
-  const [tableFilter, setTableFilter] = useState('')
   const [cubeFilter, setCubeFilter] = useState('')
 
   const { data: aiConfig } = useQuery<{ provider: string; hasApiKey: boolean }>({
@@ -1089,96 +1089,15 @@ export function QuickSetupWizard({
                     <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--dc-text)' }}>
                       Select Tables
                     </div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: 'var(--dc-text-muted)',
-                        marginTop: 4,
-                        display: 'flex',
-                        gap: 12,
-                        alignItems: 'center',
-                      }}
-                    >
-                      <span>
-                        {state.selectedTables.size} of {(state.tables || []).length} selected
-                      </span>
-                      <button
-                        onClick={() =>
-                          setState(prev => ({
-                            ...prev,
-                            selectedTables: new Set(prev.tables || []),
-                          }))
-                        }
-                        style={linkBtn}
-                      >
-                        Select All
-                      </button>
-                      <button
-                        onClick={() => setState(prev => ({ ...prev, selectedTables: new Set() }))}
-                        style={linkBtn}
-                      >
-                        Deselect All
-                      </button>
-                    </div>
-                    {(state.tables || []).length >= 50 && (
-                      <div
-                        style={{
-                          marginTop: 8,
-                          padding: '8px 12px',
-                          borderRadius: 6,
-                          fontSize: 12,
-                          backgroundColor: 'rgba(234,179,8,0.1)',
-                          border: '1px solid rgba(234,179,8,0.3)',
-                          color: 'var(--dc-text-secondary)',
-                        }}
-                      >
-                        This database has {(state.tables || []).length} tables. Consider selecting a
-                        focused subset for better cube generation.
-                      </div>
-                    )}
-                    {(state.tables || []).length > 10 && (
-                      <input
-                        type="text"
-                        value={tableFilter}
-                        onChange={e => setTableFilter(e.target.value)}
-                        placeholder="Filter tables..."
-                        style={searchInputStyle}
-                      />
-                    )}
                   </div>
-                  <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '0 24px' }}>
-                    {(state.tables || [])
-                      .filter(
-                        t => !tableFilter || t.toLowerCase().includes(tableFilter.toLowerCase())
-                      )
-                      .map(table => (
-                        <label
-                          key={table}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            padding: '6px 0',
-                            fontSize: 13,
-                            color: 'var(--dc-text)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={state.selectedTables.has(table)}
-                            onChange={() =>
-                              setState(prev => {
-                                const next = new Set(prev.selectedTables)
-                                next.has(table) ? next.delete(table) : next.add(table)
-                                return { ...prev, selectedTables: next }
-                              })
-                            }
-                            style={{ accentColor: 'var(--dc-primary)' }}
-                          />
-                          <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{table}</span>
-                        </label>
-                      ))}
+                  <div style={{ flex: 1, minHeight: 0, padding: '4px 24px 0' }}>
+                    <TableSelector
+                      tables={state.tables || []}
+                      selectedTables={state.selectedTables}
+                      onSelectionChange={tables =>
+                        setState(prev => ({ ...prev, selectedTables: tables }))
+                      }
+                    />
                   </div>
                   <div
                     style={{
