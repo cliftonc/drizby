@@ -1,4 +1,4 @@
-import { SchemaVisualization } from 'drizzle-cube/client'
+import { SchemaVisualization } from 'drizzle-cube/client/schema'
 import { useEffect, useState } from 'react'
 import ConnectionCubeProvider from '../components/ConnectionCubeProvider'
 import ConnectionSelector from '../components/ConnectionSelector'
