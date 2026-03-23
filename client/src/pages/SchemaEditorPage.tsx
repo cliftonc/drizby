@@ -1661,10 +1661,10 @@ function AiWizardModal({
           border: '1px solid var(--dc-border)',
           boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
           display: 'flex',
-          width: 720,
-          height: 480,
-          maxWidth: '95vw',
-          maxHeight: '85vh',
+          width: 'calc(100vw - 80px)',
+          height: 'calc(100vh - 80px)',
+          maxWidth: 1100,
+          maxHeight: 800,
           overflow: 'hidden',
         }}
       >
@@ -2141,10 +2141,10 @@ function IntrospectModal({
           border: '1px solid var(--dc-border)',
           boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
           display: 'flex',
-          width: 720,
-          height: 480,
-          maxWidth: '95vw',
-          maxHeight: '85vh',
+          width: 'calc(100vw - 80px)',
+          height: 'calc(100vh - 80px)',
+          maxWidth: 1100,
+          maxHeight: 800,
           overflow: 'hidden',
         }}
       >
@@ -2214,13 +2214,21 @@ function IntrospectModal({
 
           {/* Review / select tables phase */}
           {state.phase === 'review' && (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <div style={{ padding: '20px 24px 8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+              <div style={{ padding: '20px 24px 8px', flexShrink: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--dc-text)' }}>
                   {canFilterTables ? 'Select Tables' : 'Tables Found'}
                 </div>
               </div>
-              <div style={{ flex: 1, minHeight: 0, padding: '4px 24px 12px' }}>
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  padding: '4px 24px 12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
                 <TableSelector
                   tables={allTables}
                   selectedTables={state.selectedTables}
@@ -2237,6 +2245,7 @@ function IntrospectModal({
                   display: 'flex',
                   justifyContent: 'flex-end',
                   gap: 8,
+                  flexShrink: 0,
                 }}
               >
                 <button onClick={onCancel} style={toolbarBtn(false)}>

@@ -6,6 +6,7 @@
 import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
+import ts from 'typescript'
 import { invalidateCubeAppCache } from '../../app'
 import { connections, cubeDefinitions, schemaFiles } from '../../schema'
 import { guardPermission } from '../permissions/guard'
@@ -573,11 +574,17 @@ app.post('/introspect', async c => {
   }
 
   try {
-    const { source, tables } = await runDrizzleKitPull(
+    let { source, tables } = await runDrizzleKitPull(
       conn[0].connectionString,
       conn[0].engineType,
       conn[0].provider
     )
+
+    // Fix drizzle-kit bug: some array columns (e.g. uuid[]) don't get .array()
+    if (managed) {
+      source = await fixArrayColumns(source, managed.drizzle, conn[0].engineType)
+    }
+
     return c.json({ source, tables })
   } catch (err: any) {
     return c.json({ error: `Introspection failed: ${err.message}` }, 500)
@@ -596,20 +603,10 @@ app.post('/introspect/save', async c => {
     .where(and(eq(connections.id, connectionId), eq(connections.organisationId, 1)))
   if (conn.length === 0) return c.json({ error: 'Connection not found' }, 400)
 
-  // If user deselected some tables, use LLM to produce a clean filtered schema
+  // If user deselected some tables, programmatically filter the schema
   let finalSource = sourceCode
   if (selectedTables && Array.isArray(selectedTables)) {
-    const ai = await getAISettings(db)
-    if (!ai.apiKey) return c.json({ error: 'AI not configured — cannot filter tables' }, 400)
-
-    finalSource = await callAI(
-      ai,
-      SCHEMA_FILTER_SYSTEM_PROMPT,
-      `Here is the full introspected Drizzle schema:\n\n\`\`\`typescript\n${sourceCode}\n\`\`\`\n\nKeep ONLY these tables: ${selectedTables.join(', ')}\n\nRemove all other table definitions. Keep all enum declarations, type definitions, and imports that are still used. Remove \`.references(...)\` calls that point to removed tables. Clean up unused imports. Return the complete valid TypeScript source.`
-    )
-
-    if (!finalSource.trim())
-      return c.json({ error: 'AI returned empty result when filtering schema' }, 500)
+    finalSource = filterSchema(sourceCode, selectedTables)
   }
 
   const name = await autoName(db, schemaFiles, 'schema.ts', connectionId)
@@ -773,6 +770,249 @@ function stripTableExtras(source: string): string {
   result = result.replace(/\{\s*,/g, '{').replace(/,\s*\}/g, ' }')
 
   return result
+}
+
+/**
+ * Programmatically filter a Drizzle schema to keep only selected tables.
+ * Uses the TypeScript AST to accurately identify table definitions, enum usage, and imports.
+ * selectedTableSqlNames: the SQL table names the user chose (e.g. "team_invitations", "keys")
+ */
+function filterSchema(source: string, selectedTableSqlNames: string[]): string {
+  const keepSet = new Set(selectedTableSqlNames)
+  const sf = ts.createSourceFile('schema.ts', source, ts.ScriptTarget.Latest, true)
+
+  // 1. Identify which top-level variable declarations are pgTable/sqliteTable calls,
+  //    and map their SQL name to their variable name + statement range.
+  interface TableInfo {
+    varName: string
+    sqlName: string
+    node: ts.Node
+  }
+  interface EnumInfo {
+    varName: string
+    node: ts.Node
+  }
+
+  const allTables: TableInfo[] = []
+  const allEnums: EnumInfo[] = []
+  const otherStatements: ts.Node[] = []
+  const importStatements: ts.Node[] = []
+
+  for (const stmt of sf.statements) {
+    // Import declarations
+    if (ts.isImportDeclaration(stmt)) {
+      importStatements.push(stmt)
+      continue
+    }
+
+    // Exported variable statements: export const x = pgTable(...) or pgEnum(...)
+    if (
+      ts.isVariableStatement(stmt) &&
+      stmt.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)
+    ) {
+      const decl = stmt.declarationList.declarations[0]
+      if (decl && ts.isIdentifier(decl.name) && decl.initializer) {
+        const varName = decl.name.text
+        const init = decl.initializer
+
+        // Check for pgTable("name", ...) or sqliteTable("name", ...)
+        if (ts.isCallExpression(init)) {
+          const callee = init.expression
+          const calleeName = ts.isIdentifier(callee) ? callee.text : ''
+
+          if (
+            (calleeName === 'pgTable' ||
+              calleeName === 'sqliteTable' ||
+              calleeName === 'mysqlTable') &&
+            init.arguments.length >= 1 &&
+            ts.isStringLiteral(init.arguments[0])
+          ) {
+            allTables.push({ varName, sqlName: init.arguments[0].text, node: stmt })
+            continue
+          }
+
+          // Check for pgEnum("name", [...])
+          if (
+            (calleeName === 'pgEnum' ||
+              calleeName === 'sqliteEnum' ||
+              calleeName === 'mysqlEnum') &&
+            init.arguments.length >= 1 &&
+            ts.isStringLiteral(init.arguments[0])
+          ) {
+            allEnums.push({ varName, node: stmt })
+            continue
+          }
+        }
+      }
+    }
+
+    // Everything else (pgView, type declarations, etc.)
+    otherStatements.push(stmt)
+  }
+
+  // 2. Determine which tables to keep
+  const keptTables = allTables.filter(t => keepSet.has(t.sqlName))
+  // 3. Get the source text of kept tables to determine which enums are referenced
+  const keptTablesSrc = keptTables.map(t => source.slice(t.node.pos, t.node.end)).join('\n')
+  const keptEnums = allEnums.filter(e => {
+    // An enum is referenced if its variable name appears in any kept table's source
+    const pattern = new RegExp(`\\b${e.varName}\\b`)
+    return pattern.test(keptTablesSrc)
+  })
+  // Also keep "other" statements (pgView, types) that reference kept tables
+  const keptOther = otherStatements.filter(stmt => {
+    const text = source.slice(stmt.pos, stmt.end)
+    for (const t of keptTables) {
+      if (text.includes(t.varName)) return true
+    }
+    return false
+  })
+
+  // 4. Build the filtered source — collect kept statement source texts in original order
+  const keptNodes = new Set<ts.Node>()
+  for (const t of keptTables) keptNodes.add(t.node)
+  for (const e of keptEnums) keptNodes.add(e.node)
+  for (const o of keptOther) keptNodes.add(o)
+
+  const bodyParts: string[] = []
+  for (const stmt of sf.statements) {
+    if (ts.isImportDeclaration(stmt)) continue // handled separately
+    if (keptNodes.has(stmt)) {
+      bodyParts.push(source.slice(stmt.pos, stmt.end).trim())
+    }
+  }
+  const bodyText = bodyParts.join('\n\n')
+
+  // 5. Fix imports — scan bodyText for identifiers that need to be imported
+  const newImports: string[] = []
+  for (const imp of importStatements) {
+    if (!ts.isImportDeclaration(imp)) continue
+    const moduleSpecifier = (imp.moduleSpecifier as ts.StringLiteral).text
+    const namedBindings = imp.importClause?.namedBindings
+
+    if (namedBindings && ts.isNamedImports(namedBindings)) {
+      const usedNames = namedBindings.elements
+        .map(e => e.name.text)
+        .filter(name => {
+          // Keep import if identifier is used in the body
+          const pattern = new RegExp(`\\b${name}\\b`)
+          return pattern.test(bodyText)
+        })
+
+      if (usedNames.length > 0) {
+        newImports.push(`import { ${usedNames.join(', ')} } from "${moduleSpecifier}"`)
+      }
+    } else {
+      // Default or namespace imports — keep as-is if referenced
+      newImports.push(source.slice(imp.pos, imp.end).trim())
+    }
+  }
+
+  return `${newImports.join('\n')}\n\n${bodyText}\n`
+}
+
+/**
+ * Fix array columns that drizzle-kit fails to annotate with .array().
+ * Queries information_schema.columns for array types (data_type = 'ARRAY')
+ * and patches the schema source to add .array() where missing.
+ */
+async function fixArrayColumns(
+  source: string,
+  drizzleDb: any,
+  engineType: string
+): Promise<string> {
+  // Only PostgreSQL has array types
+  if (engineType !== 'postgresql' && engineType !== 'postgres') return source
+
+  try {
+    const queryResult = await drizzleDb.execute(
+      `SELECT table_name, column_name FROM information_schema.columns WHERE data_type = 'ARRAY' AND table_schema = 'public'`
+    )
+    const rows: Array<{ table_name: string; column_name: string }> = Array.isArray(queryResult)
+      ? queryResult
+      : queryResult.rows || []
+    if (rows.length === 0) return source
+
+    // Build a set of "tableSqlName:columnSqlName" that should have .array()
+    const arrayColumns = new Set(rows.map(r => `${r.table_name}:${r.column_name}`))
+
+    // Parse with TS AST to find table declarations and their columns
+    const sf = ts.createSourceFile('schema.ts', source, ts.ScriptTarget.Latest, true)
+
+    // Collect patches (position + insertion text) to apply in reverse order
+    const patches: Array<{ pos: number; insert: string }> = []
+
+    for (const stmt of sf.statements) {
+      if (!ts.isVariableStatement(stmt)) continue
+      const decl = stmt.declarationList.declarations[0]
+      if (!decl?.initializer || !ts.isCallExpression(decl.initializer)) continue
+
+      const callee = decl.initializer.expression
+      const calleeName = ts.isIdentifier(callee) ? callee.text : ''
+      if (!['pgTable', 'sqliteTable'].includes(calleeName)) continue
+      if (decl.initializer.arguments.length < 2) continue
+
+      const tableNameArg = decl.initializer.arguments[0]
+      if (!ts.isStringLiteral(tableNameArg)) continue
+      const tableSqlName = tableNameArg.text
+
+      // Second arg is the columns object literal
+      const columnsArg = decl.initializer.arguments[1]
+      if (!ts.isObjectLiteralExpression(columnsArg)) continue
+
+      for (const prop of columnsArg.properties) {
+        if (!ts.isPropertyAssignment(prop)) continue
+
+        // Get the SQL column name from the column call's first string argument,
+        // or fall back to the property name (JS key)
+        let columnSqlName: string | undefined
+        const propName = prop.name && ts.isIdentifier(prop.name) ? prop.name.text : undefined
+
+        // Walk the call chain to find the column type call with a string arg
+        let node: ts.Node = prop.initializer
+        while (ts.isCallExpression(node) || ts.isPropertyAccessExpression(node)) {
+          if (ts.isCallExpression(node)) {
+            // Check if this call has a string literal first arg (the SQL column name)
+            if (node.arguments.length > 0 && ts.isStringLiteral(node.arguments[0])) {
+              columnSqlName = node.arguments[0].text
+            }
+            node = node.expression
+          } else {
+            node = node.expression
+          }
+        }
+
+        // Fall back to converting camelCase property name to snake_case
+        if (!columnSqlName && propName) {
+          columnSqlName = propName.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`)
+        }
+
+        if (!columnSqlName) continue
+        if (!arrayColumns.has(`${tableSqlName}:${columnSqlName}`)) continue
+
+        // Check if .array() is already present in the source for this property
+        const propText = source.slice(prop.pos, prop.end)
+        if (propText.includes('.array()')) continue
+
+        // Find the end of the column expression to insert .array()
+        // The expression ends just before any trailing comma or whitespace
+        const endPos = prop.initializer.end
+        patches.push({ pos: endPos, insert: '.array()' })
+      }
+    }
+
+    // Apply patches in reverse order so positions stay valid
+    let patched = source
+    patches.sort((a, b) => b.pos - a.pos)
+    for (const { pos, insert } of patches) {
+      patched = `${patched.slice(0, pos)}${insert}${patched.slice(pos)}`
+    }
+
+    return patched
+  } catch (err) {
+    console.error('[fixArrayColumns] Failed to query array columns, skipping fix:', err)
+    return source
+  }
 }
 
 /**
@@ -992,7 +1232,22 @@ export const employees = sqliteTable('employees', {
 \`\`\`
 Match these by comparing column names against table variable names in the schema. The Drizzle variable name (e.g. \`departments\`) is what you use in the \`on\` clause, NOT the SQL table name.
 
-### 3. Junction / many-to-many tables
+### 3. Array columns are NOT valid join targets
+Columns using \`.array()\` (e.g. \`uuid('team_ids').array()\`, \`integer('tag_ids').array()\`) store denormalized arrays of IDs. These CANNOT be used in join \`on\` clauses — drizzle-cube requires scalar column-to-scalar column joins.
+
+When you see an array column that appears to reference another table's IDs (e.g. \`teamIds: uuid('team_ids').array()\` referencing teams), look for a junction table that connects the same entities (e.g. \`team_repositories\` with \`teamId\` and \`repositoryId\` columns). Use the junction table for a \`belongsToMany\` join instead.
+
+**WRONG — array column join (will not work):**
+\`\`\`
+{ targetCube: 'Teams', relationship: 'hasMany', on: [{ source: facts.teamIds, target: teams.id }] }
+\`\`\`
+
+**CORRECT — junction table join:**
+\`\`\`
+{ targetCube: 'Teams', relationship: 'belongsToMany', on: [], through: { table: teamRepositories, sourceKey: [{ source: facts.repositoryId, target: teamRepositories.repositoryId }], targetKey: [{ source: teamRepositories.teamId, target: teams.id }] } }
+\`\`\`
+
+### 4. Junction / many-to-many tables
 Tables with two FK columns and few other columns are typically junction tables for many-to-many relationships:
 \`\`\`
 export const orderProducts = pgTable('order_products', {
@@ -1002,7 +1257,7 @@ export const orderProducts = pgTable('order_products', {
 \`\`\`
 If a cube exists for the junction table, it belongsTo both sides. The parent cubes each hasMany the junction cube.
 
-## Determining relationship direction
+## 5. Determining relationship direction
 - If table A has a column referencing table B's primary key → Cube A \`belongsTo\` Cube B, and Cube B \`hasMany\` Cube A
 - If table A has a unique constraint on the FK column → use \`hasOne\` instead of \`hasMany\`
 - Always create BOTH directions of a join (the belongsTo on one side AND the hasMany on the other)
@@ -1095,19 +1350,5 @@ const CUBE_APPLY_JOINS_SYSTEM_PROMPT = `You are an expert at editing Drizzle Cub
 - IMPORTANT: Add any missing imports for tables referenced in join \`on\` clauses AND \`through.table\` references. Check the schema files to find which file exports each table variable, and add/extend the import line accordingly
 - Do not add duplicate imports — if a table is already imported, leave it as-is
 - Do not change any other code besides adding joins and their required imports`
-
-const SCHEMA_FILTER_SYSTEM_PROMPT = `You are an expert at editing Drizzle ORM schema files. Your job is to filter an introspected schema to only include specific tables while keeping the code valid.
-
-## Rules
-- Return ONLY the complete valid TypeScript source code
-- CRITICAL: Keep ALL import statements for column types that are still used by remaining tables (e.g. \`integer\`, \`text\`, \`varchar\`, \`timestamp\`, \`boolean\`, \`real\`, \`serial\`, \`bigint\`, \`pgTable\`, \`sqliteTable\`, \`pgEnum\`, etc.). Scan every remaining table definition to see which column types it uses, and ensure every one of those is in the imports.
-- Keep ALL enum declarations (pgEnum, sqliteEnum, etc.) that are referenced by remaining tables
-- Keep ALL type declarations and other non-table exports that are still used
-- ONLY remove table definitions (pgTable/sqliteTable calls) for tables NOT in the keep list
-- Remove \`.references(...)\` calls that point to removed tables — replace the column definition with the same column type but without the \`.references()\` chain
-- Do NOT touch the import block unless you are certain an import is not used by ANY remaining table. When in doubt, keep the import.
-- Keep the same code style, formatting, and comments
-- Do NOT add any new code, comments, or modifications beyond the removals
-- If an enum is only used by removed tables, remove it too (and its import)`
 
 export default app
