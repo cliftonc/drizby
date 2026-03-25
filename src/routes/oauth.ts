@@ -39,6 +39,11 @@ const scopeRepo = new ScopeRepository()
 const authCodeRepo = new AuthCodeRepository(db)
 const userRepo = new UserRepository(db)
 
+if (process.env.NODE_ENV === 'production' && !process.env.OAUTH_JWT_SECRET) {
+  throw new Error(
+    '[FATAL] OAUTH_JWT_SECRET is not set. The server cannot start in production without a stable JWT secret. Set the OAUTH_JWT_SECRET environment variable.'
+  )
+}
 const JWT_SECRET = process.env.OAUTH_JWT_SECRET || randomBytes(32).toString('hex')
 
 const authorizationServer = new AuthorizationServer(clientRepo, tokenRepo, scopeRepo, JWT_SECRET, {
