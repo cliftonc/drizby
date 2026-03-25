@@ -310,6 +310,7 @@ app.use('/cubejs-api/*', async (c, next) => {
     if (oauthUserId) {
       const [user] = await db.select().from(users).where(eq(users.id, oauthUserId))
       if (user && !user.isBlocked) {
+        if (user.role === 'user') return c.json({ error: 'Account pending approval' }, 403)
         c.set('auth', { userId: user.id, user })
         c.set('ability', defineAbilitiesFor(user.role))
         return next()
@@ -321,6 +322,7 @@ app.use('/cubejs-api/*', async (c, next) => {
   if (sessionId) {
     const result = await validateSession(db as any, sessionId)
     if (result) {
+      if (result.user.role === 'user') return c.json({ error: 'Account pending approval' }, 403)
       c.set('auth', { userId: result.user.id, user: result.user })
       c.set('ability', defineAbilitiesFor(result.user.role))
       return next()
