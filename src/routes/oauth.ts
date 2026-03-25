@@ -61,6 +61,9 @@ authorizationServer.enableGrantTypes(
 // ============================================================================
 
 function getBaseUrl(c: any): string {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL.replace(/\/$/, '')
+  }
   const host = c.req.header('x-forwarded-host') || c.req.header('host') || 'localhost:3461'
   const proto = c.req.header('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https')
   return `${proto}://${host}`
