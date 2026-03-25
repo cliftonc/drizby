@@ -39,6 +39,11 @@ const scopeRepo = new ScopeRepository()
 const authCodeRepo = new AuthCodeRepository(db)
 const userRepo = new UserRepository(db)
 
+if (process.env.NODE_ENV === 'production' && !process.env.OAUTH_JWT_SECRET) {
+  throw new Error(
+    '[FATAL] OAUTH_JWT_SECRET is not set. The server cannot start in production without a stable JWT secret. Set the OAUTH_JWT_SECRET environment variable.'
+  )
+}
 const JWT_SECRET = process.env.OAUTH_JWT_SECRET || randomBytes(32).toString('hex')
 
 const authorizationServer = new AuthorizationServer(clientRepo, tokenRepo, scopeRepo, JWT_SECRET, {
@@ -56,6 +61,9 @@ authorizationServer.enableGrantTypes(
 // ============================================================================
 
 function getBaseUrl(c: any): string {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL.replace(/\/$/, '')
+  }
   const host = c.req.header('x-forwarded-host') || c.req.header('host') || 'localhost:3461'
   const proto = c.req.header('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https')
   return `${proto}://${host}`
@@ -99,6 +107,19 @@ const oauthApp = new Hono()
 
 // --- Dynamic Client Registration (RFC 7591) ---
 oauthApp.post('/register', async c => {
+  // Require authenticated admin session
+  const sessionId = getSessionCookie(c)
+  if (!sessionId) {
+    return c.json({ error: 'unauthorized', error_description: 'Authentication required' }, 401)
+  }
+  const sessionResult = await validateSession(db as any, sessionId)
+  if (!sessionResult) {
+    return c.json({ error: 'unauthorized', error_description: 'Invalid or expired session' }, 401)
+  }
+  if (sessionResult.user.role !== 'admin') {
+    return c.json({ error: 'forbidden', error_description: 'Admin role required' }, 403)
+  }
+
   const body = await c.req.json()
   const clientName = body.client_name || 'MCP Client'
   const redirectUris: string[] = body.redirect_uris || []

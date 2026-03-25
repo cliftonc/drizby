@@ -72,6 +72,8 @@
       "**/coverage/**",
       "**/templates/**",
       "**/drizzle/**",
+      ".gsd/**",
+      ".bg-shell/**",
       "package.json",
       "package-lock.json"
     ]

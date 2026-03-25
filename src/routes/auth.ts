@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import { generateCodeVerifier, generateState } from 'arctic'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { count, eq } from 'drizzle-orm'
+import { and, count, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import {
@@ -32,6 +32,7 @@ import {
   getSlackConfig,
 } from '../auth/oauth-slack'
 import { hashPassword, verifyPassword } from '../auth/password'
+import { createRateLimiter } from '../auth/rate-limit'
 import {
   clearSessionCookie,
   createSession,
@@ -84,7 +85,12 @@ async function handleOAuthLogin(
   const [existingOauth] = await db
     .select()
     .from(oauthAccounts)
-    .where(eq(oauthAccounts.providerUserId, profile.providerUserId))
+    .where(
+      and(
+        eq(oauthAccounts.provider, profile.provider),
+        eq(oauthAccounts.providerUserId, profile.providerUserId)
+      )
+    )
 
   let userId: number
 
@@ -142,6 +148,11 @@ async function handleOAuthLogin(
 }
 
 // Check auth status (no auth required)
+const loginLimiter = createRateLimiter(10, 60_000)
+const registerLimiter = createRateLimiter(5, 60_000)
+const forgotPasswordLimiter = createRateLimiter(5, 60_000)
+const magicLinkLimiter = createRateLimiter(5, 60_000)
+
 app.get('/status', optionalAuth, async c => {
   const db = c.get('db') as any
   const [{ value: userCount }] = await db.select({ value: count() }).from(users)
@@ -228,7 +239,7 @@ app.post('/setup', async c => {
 })
 
 // Self-registration — creates a pending user (role: 'user')
-app.post('/register', async c => {
+app.post('/register', registerLimiter, async c => {
   const db = c.get('db') as any
 
   if (!(await getPasswordEnabled(db))) {
@@ -319,7 +330,7 @@ app.post('/register', async c => {
 })
 
 // Login with email + password
-app.post('/login', async c => {
+app.post('/login', loginLimiter, async c => {
   const db = c.get('db') as any
 
   if (!(await getPasswordEnabled(db))) {
@@ -459,7 +470,7 @@ app.put('/password', authMiddleware, async c => {
 })
 
 // Forgot password — public endpoint
-app.post('/forgot-password', async c => {
+app.post('/forgot-password', forgotPasswordLimiter, async c => {
   const db = c.get('db') as any
   const { email } = await c.req.json()
 
@@ -1034,7 +1045,7 @@ app.get('/slack/callback', async c => {
 // Magic Link
 // ---------------------------------------------------------------------------
 
-app.post('/magic-link/request', async c => {
+app.post('/magic-link/request', magicLinkLimiter, async c => {
   const db = c.get('db') as any
   const { email } = await c.req.json()
 
@@ -1141,7 +1152,10 @@ app.get('/cloud-admin', async c => {
     return c.json({ error: 'Token already used' }, 401)
   }
 
-  // Verify HMAC
+  // Verify HMAC — validate sig format first to prevent Buffer length mismatch crash
+  if (!/^[0-9a-f]{64}$/i.test(sig)) {
+    return c.json({ error: 'Invalid signature' }, 401)
+  }
   const payload = `${email}|${name}|${ts}|${nonce}`
   const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex')
   if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) {

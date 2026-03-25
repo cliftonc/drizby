@@ -139,8 +139,16 @@ app.get('/:id', async c => {
   }
 
   const conn = result[0]
-  conn.connectionString = await maybeDecrypt(conn.connectionString)
-  return c.json(conn)
+  const decrypted = await maybeDecrypt(conn.connectionString)
+  const ability = (c as any).get('ability') as any
+  const isAdmin = ability?.can('manage', 'Connection')
+
+  if (isAdmin) {
+    return c.json({ ...conn, connectionString: decrypted })
+  }
+
+  const { connectionString: _, ...rest } = conn
+  return c.json({ ...rest, maskedConnectionString: maskConnectionString(decrypted, conn.provider) })
 })
 
 // Create connection (admin only)

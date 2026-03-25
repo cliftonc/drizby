@@ -14,8 +14,8 @@ export function getMagicLinkSecret(): string {
   const secret = process.env.MAGIC_LINK_SECRET || process.env.ENCRYPTION_SECRET
   if (!secret) {
     if (process.env.NODE_ENV === 'production') {
-      console.warn(
-        'WARNING: Neither MAGIC_LINK_SECRET nor ENCRYPTION_SECRET is set. Magic links are using an insecure default secret.'
+      throw new Error(
+        '[FATAL] Neither MAGIC_LINK_SECRET nor ENCRYPTION_SECRET is set. The server cannot send magic links in production without a stable secret. Set the MAGIC_LINK_SECRET environment variable.'
       )
     }
     return 'drizby-magic-link-default-secret'

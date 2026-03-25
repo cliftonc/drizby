@@ -69,6 +69,8 @@ app.get('/pending-count', async c => {
   return c.json({ count: value })
 })
 
+const VALID_ROLES = ['admin', 'member', 'user'] as const
+
 // Create user — sends invite email with password reset link
 app.post('/', async c => {
   const db = c.get('db') as any
@@ -78,6 +80,10 @@ app.post('/', async c => {
 
   if (!name || !email) {
     return c.json({ error: 'Name and email are required' }, 400)
+  }
+
+  if (role !== undefined && !(VALID_ROLES as readonly string[]).includes(role)) {
+    return c.json({ error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}` }, 400)
   }
 
   const values: any = {
@@ -134,6 +140,10 @@ app.put('/:id', async c => {
   const id = Number.parseInt(c.req.param('id'))
   const auth = c.get('auth') as any
   const body = await c.req.json()
+
+  if (body.role !== undefined && !(VALID_ROLES as readonly string[]).includes(body.role)) {
+    return c.json({ error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}` }, 400)
+  }
 
   // Prevent self-demotion
   if (id === auth.user.id && body.role && body.role !== 'admin') {

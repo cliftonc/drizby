@@ -10,6 +10,7 @@ import { and, count, eq, gt } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
+import { secureHeaders } from 'hono/secure-headers'
 import { groupTypes, groups, oauthTokens, settings, userGroups, users } from './schema'
 import { authMiddleware } from './src/auth/middleware'
 import { getSessionCookie, validateSession } from './src/auth/session'
@@ -149,6 +150,32 @@ const app = new Hono<{ Variables: Variables }>()
 app.use('*', logger())
 app.use(
   '*',
+  secureHeaders({
+    xFrameOptions: 'DENY',
+    xContentTypeOptions: 'nosniff',
+    referrerPolicy: 'strict-origin-when-cross-origin',
+    strictTransportSecurity: 'max-age=31536000; includeSubDomains',
+    contentSecurityPolicy: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      fontSrc: ["'self'", 'data:'],
+      connectSrc: [
+        "'self'",
+        'ws://localhost:3460',
+        'ws://localhost:3461',
+        'http://localhost:3460',
+        'http://localhost:3461',
+      ],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+    },
+  })
+)
+app.use(
+  '*',
   cors({
     origin: ['http://localhost:3460', 'http://localhost:3461'],
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -283,6 +310,7 @@ app.use('/cubejs-api/*', async (c, next) => {
     if (oauthUserId) {
       const [user] = await db.select().from(users).where(eq(users.id, oauthUserId))
       if (user && !user.isBlocked) {
+        if (user.role === 'user') return c.json({ error: 'Account pending approval' }, 403)
         c.set('auth', { userId: user.id, user })
         c.set('ability', defineAbilitiesFor(user.role))
         return next()
@@ -294,6 +322,7 @@ app.use('/cubejs-api/*', async (c, next) => {
   if (sessionId) {
     const result = await validateSession(db as any, sessionId)
     if (result) {
+      if (result.user.role === 'user') return c.json({ error: 'Account pending approval' }, 403)
       c.set('auth', { userId: result.user.id, user: result.user })
       c.set('ability', defineAbilitiesFor(result.user.role))
       return next()
