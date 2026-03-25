@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import { generateCodeVerifier, generateState } from 'arctic'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { count, eq } from 'drizzle-orm'
+import { and, count, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import {
@@ -84,7 +84,12 @@ async function handleOAuthLogin(
   const [existingOauth] = await db
     .select()
     .from(oauthAccounts)
-    .where(eq(oauthAccounts.providerUserId, profile.providerUserId))
+    .where(
+      and(
+        eq(oauthAccounts.provider, profile.provider),
+        eq(oauthAccounts.providerUserId, profile.providerUserId)
+      )
+    )
 
   let userId: number
 
