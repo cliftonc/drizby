@@ -1146,7 +1146,10 @@ app.get('/cloud-admin', async c => {
     return c.json({ error: 'Token already used' }, 401)
   }
 
-  // Verify HMAC
+  // Verify HMAC — validate sig format first to prevent Buffer length mismatch crash
+  if (!/^[0-9a-f]{64}$/i.test(sig)) {
+    return c.json({ error: 'Invalid signature' }, 401)
+  }
   const payload = `${email}|${name}|${ts}|${nonce}`
   const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex')
   if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) {
