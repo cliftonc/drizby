@@ -12,7 +12,10 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 
 # Build client (Vite → dist/) and server (esbuild → dist/server.js)
+# Monaco editor bundling needs extra heap during Vite build
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
+ENV NODE_OPTIONS=""
 
 # ---- Deps stage: production deps with native modules ----
 FROM node:24-alpine AS deps
