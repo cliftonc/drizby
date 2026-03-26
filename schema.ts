@@ -181,6 +181,7 @@ export const users = sqliteTable(
     emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(true),
     avatarUrl: text('avatar_url'),
     organisationId: integer('organisation_id').notNull().default(1),
+    lastActiveAt: integer('last_active_at', { mode: 'timestamp' }),
     createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
     updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   },

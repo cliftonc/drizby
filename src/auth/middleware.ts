@@ -4,6 +4,18 @@ import { oauthTokens, users } from '../../schema'
 import { defineAbilitiesFor } from '../permissions/abilities'
 import { getSessionCookie, validateSession } from './session'
 
+const ACTIVITY_THROTTLE_MS = 5 * 60_000 // only update lastActiveAt every 5 minutes
+
+function touchLastActive(db: any, user: any): void {
+  const fiveMinAgo = new Date(Date.now() - ACTIVITY_THROTTLE_MS)
+  if (!user.lastActiveAt || user.lastActiveAt < fiveMinAgo) {
+    db.update(users)
+      .set({ lastActiveAt: new Date() })
+      .where(eq(users.id, user.id))
+      .catch(() => {})
+  }
+}
+
 const DEV_API_KEY = process.env.DEV_API_KEY || 'dc-bi-dev-key'
 const isDev = process.env.NODE_ENV !== 'production'
 
@@ -44,6 +56,7 @@ export async function authMiddleware(c: Context, next: Next) {
       if (user && !user.isBlocked) {
         c.set('auth', { userId: user.id, user })
         c.set('ability', defineAbilitiesFor(user.role))
+        touchLastActive(db, user)
         return next()
       }
     }
@@ -62,6 +75,7 @@ export async function authMiddleware(c: Context, next: Next) {
 
   c.set('auth', { userId: result.user.id, user: result.user })
   c.set('ability', defineAbilitiesFor(result.user.role))
+  touchLastActive(db, result.user)
   await next()
 }
 

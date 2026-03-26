@@ -6,7 +6,7 @@
 import { serveStatic } from '@hono/node-server/serve-static'
 import { createCubeApp } from 'drizzle-cube/adapters/hono'
 import type { DrizzleDatabase, SecurityContext } from 'drizzle-cube/server'
-import { and, count, eq, gt } from 'drizzle-orm'
+import { and, count, eq, gt, max } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -207,7 +207,13 @@ app.get('/health', async c => {
     const [row] = await db.select().from(settings).where(eq(settings.key, 'setup_status'))
     if (row) setupStatus = row.value
   }
-  return c.json({ status: 'ok', setupStatus, timestamp: new Date().toISOString() })
+  const [{ value: lastActivity }] = await db.select({ value: max(users.lastActiveAt) }).from(users)
+  return c.json({
+    status: 'ok',
+    setupStatus,
+    lastActivityAt: lastActivity?.toISOString() ?? null,
+    timestamp: new Date().toISOString(),
+  })
 })
 
 // OAuth 2.1 / MCP routes — gated by mcp_enabled setting

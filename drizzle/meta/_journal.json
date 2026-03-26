@@ -57,6 +57,13 @@
       "when": 1773555865849,
       "tag": "0007_nebulous_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1774499626711,
+      "tag": "0008_pale_tyrannus",
+      "breakpoints": true
     }
   ]
 }
