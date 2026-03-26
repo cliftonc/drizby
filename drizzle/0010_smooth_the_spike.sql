@@ -1,0 +1,1 @@
+ALTER TABLE `github_app_config` ADD `app_slug` text;

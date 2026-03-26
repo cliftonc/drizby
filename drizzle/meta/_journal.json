@@ -64,6 +64,20 @@
       "when": 1774499626711,
       "tag": "0008_pale_tyrannus",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1774504225182,
+      "tag": "0009_good_machine_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1774504932199,
+      "tag": "0010_smooth_the_spike",
+      "breakpoints": true
     }
   ]
 }

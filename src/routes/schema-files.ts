@@ -13,6 +13,7 @@ import { guardPermission } from '../permissions/guard'
 import { getAISettings } from '../services/ai-settings'
 import { connectionManager } from '../services/connection-manager'
 import { compileSchema, generateSchemaTypes } from '../services/cube-compiler'
+import { sanitizeFileName } from '../services/filename'
 import { buildDrizzleKitConfig } from '../services/provider-registry'
 
 interface Variables {
@@ -39,14 +40,15 @@ async function autoName(
   connectionId: number,
   orgId = 1
 ): Promise<string> {
+  const sanitized = sanitizeFileName(baseName)
   const existing = await db
     .select({ name: table.name })
     .from(table)
     .where(and(eq(table.connectionId, connectionId), eq(table.organisationId, orgId)))
   const names = new Set(existing.map((r: any) => r.name))
-  if (!names.has(baseName)) return baseName
-  const dot = baseName.lastIndexOf('.')
-  const [stem, ext] = dot > 0 ? [baseName.slice(0, dot), baseName.slice(dot)] : [baseName, '']
+  if (!names.has(sanitized)) return sanitized
+  const dot = sanitized.lastIndexOf('.')
+  const [stem, ext] = dot > 0 ? [sanitized.slice(0, dot), sanitized.slice(dot)] : [sanitized, '']
   let i = 2
   while (names.has(`${stem}-${i}${ext}`)) i++
   return `${stem}-${i}${ext}`
@@ -443,7 +445,7 @@ app.post('/', async c => {
   const result = await db
     .insert(schemaFiles)
     .values({
-      name: body.name,
+      name: sanitizeFileName(body.name),
       sourceCode: body.sourceCode,
       connectionId: body.connectionId,
       organisationId: 1,
@@ -462,7 +464,7 @@ app.put('/:id', async c => {
   const result = await db
     .update(schemaFiles)
     .set({
-      name: body.name,
+      name: body.name ? sanitizeFileName(body.name) : undefined,
       sourceCode: body.sourceCode,
       updatedAt: new Date(),
     })

@@ -23,6 +23,7 @@ import authApp from './src/routes/auth'
 import connectionsApp from './src/routes/connections'
 import cubeDefsApp from './src/routes/cube-definitions'
 import editorTypesApp from './src/routes/editor-types'
+import githubAppApp from './src/routes/github-app'
 import groupsApp from './src/routes/groups'
 import notebooksApp from './src/routes/notebooks'
 import oauthApp, {
@@ -487,6 +488,7 @@ app.route('/api/notebooks', notebooksApp)
 app.route('/api/groups', groupsApp)
 app.route('/api/users', usersApp)
 app.route('/api/settings', settingsApp)
+app.route('/api/github-app', githubAppApp)
 app.route('/api/ai', aiApp)
 
 // Error handling

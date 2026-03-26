@@ -523,6 +523,82 @@ export const magicLinkTokensRelations = relations(magicLinkTokens, ({ one }) => 
   }),
 }))
 
+// ============================================================================
+// GitHub App Integration Tables
+// ============================================================================
+
+// GitHub App configuration — stores the GitHub App credentials (one per org)
+export const githubAppConfig = sqliteTable(
+  'github_app_config',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    appId: text('app_id').notNull(),
+    appName: text('app_name'),
+    appSlug: text('app_slug'), // URL-safe slug for installation URLs
+    privateKey: text('private_key').notNull(), // encrypted via maybeEncrypt
+    clientId: text('client_id').notNull(),
+    clientSecret: text('client_secret').notNull(), // encrypted
+    webhookSecret: text('webhook_secret'), // encrypted, optional
+    organisationId: integer('organisation_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  },
+  table => [index('idx_github_app_config_org').on(table.organisationId)]
+)
+
+// GitHub installations — tracks which GitHub orgs/accounts have installed the app
+export const githubInstallations = sqliteTable(
+  'github_installations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    installationId: integer('installation_id').notNull(),
+    accountLogin: text('account_login').notNull(),
+    accountType: text('account_type').notNull(), // 'Organization' | 'User'
+    githubAppConfigId: integer('github_app_config_id')
+      .notNull()
+      .references(() => githubAppConfig.id, { onDelete: 'cascade' }),
+    organisationId: integer('organisation_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  },
+  table => [
+    uniqueIndex('idx_github_installations_unique').on(table.installationId),
+    index('idx_github_installations_org').on(table.organisationId),
+  ]
+)
+
+// GitHub sync config — instance-level sync to a repo/branch
+export const githubSyncConfig = sqliteTable(
+  'github_sync_config',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    installationId: integer('installation_id').notNull(), // GitHub's installation_id
+    repoOwner: text('repo_owner').notNull(),
+    repoName: text('repo_name').notNull(),
+    branch: text('branch').notNull().default('main'),
+    lastSyncAt: integer('last_sync_at', { mode: 'timestamp' }),
+    lastSyncStatus: text('last_sync_status'), // 'success' | 'error' | 'in_progress'
+    lastSyncError: text('last_sync_error'),
+    lastSyncCommitSha: text('last_sync_commit_sha'),
+    organisationId: integer('organisation_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  },
+  table => [index('idx_github_sync_config_org').on(table.organisationId)]
+)
+
+// GitHub App relations
+export const githubAppConfigRelations = relations(githubAppConfig, ({ many }) => ({
+  installations: many(githubInstallations),
+}))
+
+export const githubInstallationsRelations = relations(githubInstallations, ({ one }) => ({
+  appConfig: one(githubAppConfig, {
+    fields: [githubInstallations.githubAppConfigId],
+    references: [githubAppConfig.id],
+  }),
+}))
+
 // Export schema for use with Drizzle
 export const schema = {
   connections,
@@ -560,6 +636,11 @@ export const schema = {
   oauthAuthCodesRelations,
   emailVerificationTokensRelations,
   magicLinkTokensRelations,
+  githubAppConfig,
+  githubInstallations,
+  githubSyncConfig,
+  githubAppConfigRelations,
+  githubInstallationsRelations,
 }
 
 export type Schema = typeof schema

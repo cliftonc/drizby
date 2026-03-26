@@ -162,14 +162,41 @@ interface NavItem {
   adminOnly?: boolean
 }
 
-const navItems: NavItem[] = [
-  { path: '/', label: 'Home', icon: icons.home },
-  { path: '/notebooks', label: 'Notebooks', icon: icons.notebook },
-  { path: '/dashboards', label: 'Dashboards', icon: icons.dashboard },
-  { path: '/analysis-builder', label: 'Analysis Builder', icon: icons.analysis },
-  { path: '/schema-explorer', label: 'Schema Explorer', icon: icons.schemaExplorer },
-  { path: '/data-browser', label: 'Data Browser', icon: icons.dataBrowser },
-  { path: '/schema-editor', label: 'Semantic Layer', icon: icons.semanticLayer, adminOnly: true },
+interface NavSection {
+  label?: string
+  items: NavItem[]
+}
+
+const navSections: NavSection[] = [
+  {
+    items: [{ path: '/', label: 'Home', icon: icons.home }],
+  },
+  {
+    label: 'Insights',
+    items: [
+      { path: '/dashboards', label: 'Dashboards', icon: icons.dashboard },
+      { path: '/notebooks', label: 'Notebooks', icon: icons.notebook },
+    ],
+  },
+  {
+    label: 'Exploration',
+    items: [
+      { path: '/analysis-builder', label: 'Analysis Builder', icon: icons.analysis },
+      { path: '/schema-explorer', label: 'Schema Explorer', icon: icons.schemaExplorer },
+      { path: '/data-browser', label: 'Data Browser', icon: icons.dataBrowser },
+    ],
+  },
+  {
+    label: 'Modeling',
+    items: [
+      {
+        path: '/schema-editor',
+        label: 'Semantic Layer',
+        icon: icons.semanticLayer,
+        adminOnly: true,
+      },
+    ],
+  },
 ]
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -226,35 +253,58 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [collapsed])
 
   const renderNavItems = (isMobile: boolean) => {
-    const items = navItems.filter(item => !item.adminOnly || user?.role === 'admin')
-    return items.map(item => {
-      const isActive =
-        location.pathname === item.path ||
-        (item.path !== '/' && location.pathname.startsWith(item.path))
+    return navSections.map((section, sIdx) => {
+      const items = section.items.filter(item => !item.adminOnly || user?.role === 'admin')
+      if (items.length === 0) return null
 
       return (
-        <Link
-          key={item.path}
-          to={item.path}
-          title={!isMobile && collapsed ? item.label : undefined}
-          className="flex items-center no-underline whitespace-nowrap overflow-hidden transition-colors"
-          style={{
-            gap: !isMobile && collapsed ? 0 : 10,
-            justifyContent: !isMobile && collapsed ? 'center' : 'flex-start',
-            padding: !isMobile && collapsed ? '8px 0' : '7px 12px',
-            color: isActive ? '#fff' : 'var(--dc-sidebar-text)',
-            backgroundColor: isActive ? 'var(--dc-sidebar-active)' : 'transparent',
-            fontSize: 13,
-          }}
-        >
-          <span
-            className="flex items-center justify-center shrink-0"
-            style={{ opacity: isActive ? 1 : 0.7 }}
-          >
-            {item.icon}
-          </span>
-          {(isMobile || !collapsed) && item.label}
-        </Link>
+        <div key={section.label || sIdx}>
+          {section.label && (isMobile || !collapsed) && (
+            <div
+              style={{
+                padding: '10px 12px 4px',
+                fontSize: 10,
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                color: 'rgba(255,255,255,0.35)',
+              }}
+            >
+              {section.label}
+            </div>
+          )}
+          {!section.label && sIdx > 0 && collapsed && <div style={{ height: 8 }} />}
+          {items.map(item => {
+            const isActive =
+              location.pathname === item.path ||
+              (item.path !== '/' && location.pathname.startsWith(item.path))
+
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                title={!isMobile && collapsed ? item.label : undefined}
+                className="flex items-center no-underline whitespace-nowrap overflow-hidden transition-colors"
+                style={{
+                  gap: !isMobile && collapsed ? 0 : 10,
+                  justifyContent: !isMobile && collapsed ? 'center' : 'flex-start',
+                  padding: !isMobile && collapsed ? '8px 0' : '7px 12px',
+                  color: isActive ? '#fff' : 'var(--dc-sidebar-text)',
+                  backgroundColor: isActive ? 'var(--dc-sidebar-active)' : 'transparent',
+                  fontSize: 13,
+                }}
+              >
+                <span
+                  className="flex items-center justify-center shrink-0"
+                  style={{ opacity: isActive ? 1 : 0.7 }}
+                >
+                  {item.icon}
+                </span>
+                {(isMobile || !collapsed) && item.label}
+              </Link>
+            )
+          })}
+        </div>
       )
     })
   }

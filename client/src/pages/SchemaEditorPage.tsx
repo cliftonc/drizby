@@ -2,6 +2,11 @@ import Editor, { type OnMount } from '@monaco-editor/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import {
+  GitHubSyncButtons,
+  GitHubSyncModals,
+  useGitHubSync,
+} from '../components/GitHubSyncControls'
 import { QuickSetupWizard } from '../components/QuickSetupWizard'
 import { TableSelector } from '../components/TableSelector'
 import { useConfirm } from '../hooks/useConfirm'
@@ -30,6 +35,18 @@ interface CubeDefinition {
   compilationErrors: any[] | null
   isActive: boolean
   createdAt: string
+  updatedAt: string
+}
+
+interface Dashboard {
+  id: number
+  name: string
+  description: string | null
+  connectionId: number | null
+  config: unknown
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 interface Connection {
@@ -39,7 +56,10 @@ interface Connection {
   isActive: boolean
 }
 
-type FileItem = { type: 'schema'; data: SchemaFile } | { type: 'cube'; data: CubeDefinition }
+type FileItem =
+  | { type: 'schema'; data: SchemaFile }
+  | { type: 'cube'; data: CubeDefinition }
+  | { type: 'dashboard'; data: Dashboard }
 
 interface PlannedCube {
   name: string
@@ -155,6 +175,15 @@ export default function SchemaEditorPage() {
     queryFn: () => fetch('/api/cube-definitions').then(r => r.json()),
   })
 
+  const { data: dashboards = [] } = useQuery<Dashboard[]>({
+    queryKey: ['analytics-pages'],
+    queryFn: async () => {
+      const res = await fetch('/api/analytics-pages')
+      const json = await res.json()
+      return json.data ?? []
+    },
+  })
+
   const { data: aiConfig } = useQuery<{ provider: string; hasApiKey: boolean }>({
     queryKey: ['settings', 'ai'],
     queryFn: async () => {
@@ -164,6 +193,9 @@ export default function SchemaEditorPage() {
     },
   })
   const hasAI = !!(aiConfig?.provider && aiConfig?.hasApiKey)
+
+  // GitHub sync
+  const ghSync = useGitHubSync()
 
   // Initialize connection from URL or localStorage
   useEffect(() => {
@@ -246,6 +278,9 @@ export default function SchemaEditorPage() {
 
   const filteredSchemas = schemaFiles.filter(s => s.connectionId === selectedConnectionId)
   const filteredCubes = cubeDefs.filter(c => c.connectionId === selectedConnectionId)
+  const filteredDashboards = dashboards.filter(
+    d => d.isActive && (d.connectionId === selectedConnectionId || !d.connectionId)
+  )
 
   // Save schema file
   const saveSchema = useMutation({
@@ -260,6 +295,7 @@ export default function SchemaEditorPage() {
     onSuccess: () => {
       setIsDirty(false)
       queryClient.invalidateQueries({ queryKey: ['schema-files'] })
+      ghSync.invalidateSync()
     },
   })
 
@@ -276,6 +312,34 @@ export default function SchemaEditorPage() {
     onSuccess: () => {
       setIsDirty(false)
       queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
+      ghSync.invalidateSync()
+    },
+  })
+
+  // Save dashboard config
+  const saveDashboard = useMutation({
+    mutationFn: async (dashboard: Dashboard) => {
+      let config: unknown
+      try {
+        config = JSON.parse(editorContent)
+      } catch {
+        throw new Error('Invalid JSON')
+      }
+      const res = await fetch(`/api/analytics-pages/${dashboard.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: dashboard.name, config }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to save dashboard')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      setIsDirty(false)
+      queryClient.invalidateQueries({ queryKey: ['analytics-pages'] })
+      ghSync.invalidateSync()
     },
   })
 
@@ -332,7 +396,7 @@ export default function SchemaEditorPage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name,
+        name: sanitizeFileName(name),
         sourceCode: `import { pgTable, integer, text, timestamp } from 'drizzle-orm/pg-core'\n\nexport const myTable = pgTable('my_table', {\n  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),\n  name: text('name').notNull(),\n  createdAt: timestamp('created_at').defaultNow()\n})\n`,
         connectionId: selectedConnectionId,
       }),
@@ -356,12 +420,13 @@ export default function SchemaEditorPage() {
       submitText: 'Create',
     })
     if (!name) return
+    const sanitizedName = sanitizeFileName(name)
     const res = await fetch('/api/cube-definitions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name,
-        sourceCode: `import { eq } from 'drizzle-orm'\nimport { defineCube } from 'drizzle-cube/server'\nimport type { QueryContext, BaseQueryDefinition, Cube } from 'drizzle-cube/server'\n// import { myTable } from './my-schema'\n\nexport const myCube = defineCube('MyCube', {\n  title: '${name}',\n  description: '',\n\n  sql: (ctx: QueryContext): BaseQueryDefinition => ({\n    from: undefined as any, // replace with your table\n  }),\n\n  dimensions: {},\n  measures: {}\n}) as Cube\n`,
+        name: sanitizedName,
+        sourceCode: `import { eq } from 'drizzle-orm'\nimport { defineCube } from 'drizzle-cube/server'\nimport type { QueryContext, BaseQueryDefinition, Cube } from 'drizzle-cube/server'\n// import { myTable } from './my-schema'\n\nexport const myCube = defineCube('MyCube', {\n  title: '${sanitizedName}',\n  description: '',\n\n  sql: (ctx: QueryContext): BaseQueryDefinition => ({\n    from: undefined as any, // replace with your table\n  }),\n\n  dimensions: {},\n  measures: {}\n}) as Cube\n`,
         connectionId: selectedConnectionId,
       }),
     })
@@ -926,7 +991,12 @@ export default function SchemaEditorPage() {
     )
       return
     setSelectedFile(file)
-    const code = file.type === 'schema' ? file.data.sourceCode : file.data.sourceCode || ''
+    const code =
+      file.type === 'dashboard'
+        ? JSON.stringify(file.data.config, null, 2)
+        : file.type === 'schema'
+          ? file.data.sourceCode
+          : file.data.sourceCode || ''
     setEditorContent(code)
     setIsDirty(false)
     setCompileOutput(null)
@@ -943,7 +1013,8 @@ export default function SchemaEditorPage() {
   const handleSave = () => {
     if (!selectedFile) return
     if (selectedFile.type === 'schema') saveSchema.mutate(selectedFile.data)
-    else saveCube.mutate(selectedFile.data)
+    else if (selectedFile.type === 'cube') saveCube.mutate(selectedFile.data)
+    else if (selectedFile.type === 'dashboard') saveDashboard.mutate(selectedFile.data)
   }
   handleSaveRef.current = handleSave
 
@@ -954,14 +1025,29 @@ export default function SchemaEditorPage() {
       if (selectedFile.type === 'schema') compileSchema.mutate(selectedFile.data.id)
       else compileCube.mutate(selectedFile.data.id)
     }
+    if (selectedFile.type === 'dashboard') return
     if (isDirty) {
       if (selectedFile.type === 'schema') {
         saveSchema.mutate(selectedFile.data, { onSuccess: doCompile })
-      } else {
+      } else if (selectedFile.type === 'cube') {
         saveCube.mutate(selectedFile.data, { onSuccess: doCompile })
       }
     } else {
       doCompile()
+    }
+  }
+
+  const renameFile = async (type: 'schema' | 'cube', id: number, newName: string) => {
+    const endpoint = type === 'schema' ? `/api/schema-files/${id}` : `/api/cube-definitions/${id}`
+    const res = await fetch(endpoint, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName }),
+    })
+    if (res.ok) {
+      queryClient.invalidateQueries({ queryKey: ['schema-files'] })
+      queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
+      ghSync.invalidateSync()
     }
   }
 
@@ -1166,6 +1252,13 @@ export default function SchemaEditorPage() {
 
         <div style={{ flex: 1 }} />
 
+        <GitHubSyncButtons
+          syncStatus={ghSync.syncStatus}
+          pushing={ghSync.pushing}
+          onPush={ghSync.handlePush}
+          onOpenTags={() => ghSync.setShowTagsModal(true)}
+          toolbarBtn={toolbarBtn}
+        />
         <button
           onClick={handleSave}
           disabled={!isDirty || isSaving}
@@ -1173,22 +1266,38 @@ export default function SchemaEditorPage() {
         >
           {isSaving ? 'Saving...' : 'Save'}
         </button>
-        <button
-          onClick={handleCompile}
-          disabled={!selectedFile || isCompiling}
-          style={toolbarBtn(!selectedFile || isCompiling, true)}
-        >
-          {isCompiling ? 'Compiling...' : 'Compile'}
-        </button>
-        <button
-          onClick={handleDelete}
-          disabled={!selectedFile}
-          style={{ ...toolbarBtn(!selectedFile), color: selectedFile ? '#ef4444' : undefined }}
-        >
-          Delete
-        </button>
+        {selectedFile?.type !== 'dashboard' && (
+          <button
+            onClick={handleCompile}
+            disabled={!selectedFile || isCompiling}
+            style={toolbarBtn(!selectedFile || isCompiling, true)}
+          >
+            {isCompiling ? 'Compiling...' : 'Compile'}
+          </button>
+        )}
+        {selectedFile?.type !== 'dashboard' && (
+          <button
+            onClick={handleDelete}
+            disabled={!selectedFile}
+            style={{ ...toolbarBtn(!selectedFile), color: selectedFile ? '#ef4444' : undefined }}
+          >
+            Delete
+          </button>
+        )}
       </div>
-
+      <GitHubSyncModals
+        syncStatus={ghSync.syncStatus}
+        pushLogs={ghSync.pushLogs}
+        pushing={ghSync.pushing}
+        showTagsModal={ghSync.showTagsModal}
+        onClosePushLogs={() => ghSync.setPushLogs([])}
+        onCloseTagsModal={() => ghSync.setShowTagsModal(false)}
+        onRestored={() => {
+          queryClient.invalidateQueries({ queryKey: ['schema-files'] })
+          queryClient.invalidateQueries({ queryKey: ['cube-definitions'] })
+          ghSync.invalidateSync()
+        }}
+      />
       <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
         {/* Mobile file browser backdrop */}
         {fileBrowserOpen && (
@@ -1276,6 +1385,7 @@ export default function SchemaEditorPage() {
               hasErrors={!!sf.compilationErrors?.length}
               isCompiled={!!sf.compiledAt}
               onClick={() => handleSelectFile({ type: 'schema', data: sf })}
+              onRename={newName => renameFile('schema', sf.id, newName)}
             />
           ))}
 
@@ -1337,8 +1447,45 @@ export default function SchemaEditorPage() {
               hasErrors={!!cd.compilationErrors?.length}
               isCompiled={!!cd.compiledAt}
               onClick={() => handleSelectFile({ type: 'cube', data: cd })}
+              onRename={newName => renameFile('cube', cd.id, newName)}
             />
           ))}
+
+          {/* Dashboards */}
+          {filteredDashboards.length > 0 && (
+            <>
+              <div
+                style={{
+                  padding: '12px 12px 4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    color: 'var(--dc-text-secondary)',
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  Dashboards
+                </span>
+              </div>
+              {filteredDashboards.map(d => (
+                <FileTreeItem
+                  key={`d-${d.id}`}
+                  label={sanitizeFileName(d.name).replace(/\.ts$/, '.json')}
+                  isSelected={selectedFile?.type === 'dashboard' && selectedFile.data.id === d.id}
+                  hasErrors={false}
+                  isCompiled
+                  onClick={() => handleSelectFile({ type: 'dashboard', data: d })}
+                />
+              ))}
+            </>
+          )}
 
           {filteredSchemas.length === 0 && filteredCubes.length === 0 && (
             <div
@@ -1386,9 +1533,13 @@ export default function SchemaEditorPage() {
               {/* Monaco Editor */}
               <div style={{ flex: 1, minHeight: 0 }}>
                 <Editor
-                  language="typescript"
+                  language={selectedFile.type === 'dashboard' ? 'json' : 'typescript'}
                   theme={monacoTheme}
-                  path={`file:///src/${selectedFile.type === 'schema' ? selectedFile.data.name : `${selectedFile.data.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.ts`}`}
+                  path={
+                    selectedFile.type === 'dashboard'
+                      ? `file:///dashboards/${selectedFile.data.id}.json`
+                      : `file:///src/${selectedFile.type === 'schema' ? selectedFile.data.name : `${selectedFile.data.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.ts`}`
+                  }
                   value={editorContent}
                   onChange={value => {
                     const v = value || ''
@@ -1396,9 +1547,11 @@ export default function SchemaEditorPage() {
                     // Compare against saved source to avoid false dirty state from programmatic changes
                     if (selectedFile) {
                       const saved =
-                        selectedFile.type === 'schema'
-                          ? selectedFile.data.sourceCode
-                          : selectedFile.data.sourceCode || ''
+                        selectedFile.type === 'dashboard'
+                          ? JSON.stringify(selectedFile.data.config, null, 2)
+                          : selectedFile.type === 'schema'
+                            ? selectedFile.data.sourceCode
+                            : selectedFile.data.sourceCode || ''
                       setIsDirty(v !== saved)
                     } else {
                       setIsDirty(true)
@@ -1541,8 +1694,6 @@ export default function SchemaEditorPage() {
           )}
         </div>
       </div>
-
-      {/* AI Cube Generation Wizard Modal */}
       {aiActive && (
         <AiWizardModal
           state={aiGenState}
@@ -1554,7 +1705,6 @@ export default function SchemaEditorPage() {
         />
       )}
 
-      {/* Introspect Modal */}
       {introState.phase !== 'idle' && (
         <IntrospectModal
           state={introState}
@@ -1565,7 +1715,6 @@ export default function SchemaEditorPage() {
           onCancel={() => setIntroState(INITIAL_INTROSPECT_STATE)}
         />
       )}
-
       <style>{'@keyframes spin { to { transform: rotate(360deg) } }'}</style>
       <ConfirmDialog />
       <PromptDialog />
@@ -2346,19 +2495,54 @@ function SpinnerContent({ message }: { message: string }) {
   )
 }
 
+function sanitizeFileName(name: string): string {
+  let stem = name.replace(/\.ts$/i, '')
+  stem = stem.replace(/\./g, '-')
+  stem = stem
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+  if (!stem) stem = 'untitled'
+  return `${stem}.ts`
+}
+
 function FileTreeItem({
   label,
   isSelected,
   hasErrors,
   isCompiled,
   onClick,
+  onRename,
 }: {
   label: string
   isSelected: boolean
   hasErrors: boolean
   isCompiled: boolean
   onClick: () => void
+  onRename?: (newName: string) => void
 }) {
+  const [editing, setEditing] = useState(false)
+  const stem = label.replace(/\.ts$/i, '')
+  const [editValue, setEditValue] = useState(stem)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+  }, [editing])
+
+  const commitRename = () => {
+    const sanitized = sanitizeFileName(editValue)
+    setEditing(false)
+    if (sanitized !== label && onRename) {
+      onRename(sanitized)
+    }
+    setEditValue(sanitized.replace(/\.ts$/i, ''))
+  }
+
   return (
     <div
       onClick={onClick}
@@ -2383,9 +2567,61 @@ function FileTreeItem({
           backgroundColor: hasErrors ? '#ef4444' : isCompiled ? '#22c55e' : '#6b7280',
         }}
       />
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {label}
-      </span>
+      {editing ? (
+        <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+          <input
+            ref={inputRef}
+            value={editValue}
+            onChange={e => setEditValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitRename()
+              if (e.key === 'Escape') {
+                setEditValue(stem)
+                setEditing(false)
+              }
+            }}
+            onClick={e => e.stopPropagation()}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: 13,
+              padding: '0 4px',
+              border: '1px solid var(--dc-primary)',
+              borderRadius: '3px 0 0 3px',
+              backgroundColor: 'var(--dc-input-bg)',
+              color: 'var(--dc-text)',
+              outline: 'none',
+            }}
+          />
+          <span
+            style={{
+              fontSize: 13,
+              padding: '0 4px',
+              color: 'var(--dc-text-muted)',
+              border: '1px solid var(--dc-primary)',
+              borderLeft: 'none',
+              borderRadius: '0 3px 3px 0',
+              backgroundColor: 'var(--dc-surface-hover)',
+            }}
+          >
+            .ts
+          </span>
+        </div>
+      ) : (
+        <span
+          onDoubleClick={e => {
+            e.stopPropagation()
+            if (onRename) {
+              setEditValue(stem)
+              setEditing(true)
+            }
+          }}
+          style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}
+        >
+          {label}
+        </span>
+      )}
     </div>
   )
 }

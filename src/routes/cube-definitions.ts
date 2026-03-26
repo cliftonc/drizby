@@ -10,6 +10,7 @@ import { invalidateCubeAppCache } from '../../app'
 import { connections, cubeDefinitions } from '../../schema'
 import { guardPermission } from '../permissions/guard'
 import { connectionManager } from '../services/connection-manager'
+import { sanitizeFileName } from '../services/filename'
 
 interface Variables {
   db: DrizzleDatabase
@@ -83,7 +84,7 @@ app.post('/', async c => {
   const result = await db
     .insert(cubeDefinitions)
     .values({
-      name: body.name,
+      name: sanitizeFileName(body.name),
       title: body.title,
       description: body.description,
       sourceCode: body.sourceCode,
@@ -106,7 +107,7 @@ app.put('/:id', async c => {
   const result = await db
     .update(cubeDefinitions)
     .set({
-      name: body.name,
+      name: body.name ? sanitizeFileName(body.name) : undefined,
       title: body.title,
       description: body.description,
       sourceCode: body.sourceCode,

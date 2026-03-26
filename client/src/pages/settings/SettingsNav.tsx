@@ -24,6 +24,7 @@ const sections: NavSection[] = [
       { path: '/settings/auth', label: 'Authentication', adminOnly: true },
       { path: '/settings/data', label: 'Data', adminOnly: true },
       { path: '/settings/features', label: 'Features', adminOnly: true },
+      { path: '/settings/github-app', label: 'GitHub App', adminOnly: true },
       { path: '/settings/groups', label: 'Groups', adminOnly: true },
       { path: '/settings/team', label: 'Team', adminOnly: true },
     ],

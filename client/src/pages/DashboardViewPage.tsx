@@ -33,17 +33,21 @@ export default function DashboardViewPage() {
 
   const hasInitializedRef = useRef(false)
   const lastPageIdRef = useRef<string | null>(null)
+  const lastUpdatedAtRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (page) {
       const isInitialLoad = !hasInitializedRef.current
       const isPageChange = lastPageIdRef.current !== null && lastPageIdRef.current !== id
+      const isExternalUpdate =
+        lastUpdatedAtRef.current !== null && lastUpdatedAtRef.current !== page.updatedAt
 
-      if (isInitialLoad || isPageChange) {
+      if (isInitialLoad || isPageChange || isExternalUpdate) {
         setConfig(page.config)
         setLastSaved(new Date(page.updatedAt))
         hasInitializedRef.current = true
         lastPageIdRef.current = id ?? null
+        lastUpdatedAtRef.current = page.updatedAt
       }
     }
   }, [page, id])

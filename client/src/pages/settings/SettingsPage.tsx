@@ -4,6 +4,7 @@ import AISettingsPage from './AISettingsPage'
 import AuthProvidersPage from './AuthProvidersPage'
 import DataSettingsPage from './DataSettingsPage'
 import GeneralSettings from './GeneralSettings'
+import GitHubAppPage from './GitHubAppPage'
 import GroupsPage from './GroupsPage'
 import ServerFeaturesPage from './ServerFeaturesPage'
 import SettingsNav from './SettingsNav'
@@ -21,6 +22,7 @@ export default function SettingsPage() {
           <Route path="ai" element={<AISettingsPage />} />
           <Route path="auth" element={<AuthProvidersPage />} />
           <Route path="features" element={<ServerFeaturesPage />} />
+          <Route path="github-app" element={<GitHubAppPage />} />
           <Route path="data" element={<DataSettingsPage />} />
           <Route path="connections" element={<ConnectionsPage />} />
         </Routes>
