@@ -33,12 +33,14 @@
 		}
 	}
 
-	# Static files (images, favicon, etc.)
+	# Everything else — serve static files or fall back to index.html (SPA)
 	handle {
-		header Cache-Control "public, max-age=3600, must-revalidate"
+		root * /app/dist
 		try_files {path} /index.html
-		file_server {
-			root /app/dist
-		}
+		@static file
+		header @static Cache-Control "public, max-age=3600, must-revalidate"
+		@html path /index.html
+		header @html Cache-Control "no-cache"
+		file_server
 	}
 }
