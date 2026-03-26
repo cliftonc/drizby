@@ -57,19 +57,13 @@ ENV NODE_ENV=production
 ENV PORT=3461
 ENV NODE_PORT=3462
 
-# Required secrets — must be stable across restarts (generate with: openssl rand -hex 32)
-# When managed by drizby-cloud, these are auto-generated and injected per instance
-ENV OAUTH_JWT_SECRET=
-ENV ENCRYPTION_SECRET=
-
-# Email notifications (optional)
-# ENV RESEND_API_KEY=
-# ENV RESEND_FROM_EMAIL=
-# ENV APP_URL=
+# Required secrets — pass at runtime, not baked into image:
+#   OAUTH_JWT_SECRET   (generate with: openssl rand -hex 32)
+#   ENCRYPTION_SECRET  (generate with: openssl rand -hex 32)
+#
+# Optional:
+#   RESEND_API_KEY, RESEND_FROM_EMAIL, APP_URL, ADMIN_EMAIL
 ENV APP_NAME=Drizby
-
-# Auto-setup: if set (with RESEND_API_KEY), creates admin and sends reset email on first run
-# ENV ADMIN_EMAIL=
 
 EXPOSE 3461
 
