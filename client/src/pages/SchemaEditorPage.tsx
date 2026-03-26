@@ -11,6 +11,7 @@ import { QuickSetupWizard } from '../components/QuickSetupWizard'
 import { TableSelector } from '../components/TableSelector'
 import { useConfirm } from '../hooks/useConfirm'
 import { usePrompt } from '../hooks/usePrompt'
+import { initMonaco } from '../monaco-setup'
 
 interface SchemaFile {
   id: number
@@ -138,6 +139,8 @@ function useAppTheme(): 'light' | 'dark' {
 }
 
 export default function SchemaEditorPage() {
+  // Initialize Monaco on first render (lazy — not loaded until this page is visited)
+  initMonaco()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const params = useParams<{ connectionId?: string; fileType?: string; fileName?: string }>()

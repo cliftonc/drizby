@@ -195,7 +195,28 @@ app.use(
 
 // Serve built client assets in production (before API routes so / serves index.html)
 if (process.env.NODE_ENV === 'production') {
-  app.use('/*', serveStatic({ root: './dist' }))
+  // Hashed assets (JS, CSS, fonts) — cache forever (filename changes on rebuild)
+  app.use(
+    '/assets/*',
+    async (c, next) => {
+      await next()
+      if (c.res.status === 200) {
+        c.res.headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+      }
+    },
+    serveStatic({ root: './dist' })
+  )
+  // Other static files (images, favicon) — cache with revalidation
+  app.use(
+    '/*',
+    async (c, next) => {
+      await next()
+      if (c.res.status === 200 && !c.res.headers.has('Cache-Control')) {
+        c.res.headers.set('Cache-Control', 'public, max-age=3600, must-revalidate')
+      }
+    },
+    serveStatic({ root: './dist' })
+  )
 }
 
 // Health check
@@ -503,9 +524,18 @@ app.onError((err, c) => {
   )
 })
 
-// SPA fallback: serve index.html for non-API routes in production
+// SPA fallback: serve index.html for non-API routes in production (no-cache so new deploys pick up)
 if (process.env.NODE_ENV === 'production') {
-  app.use('/*', serveStatic({ root: './dist', path: 'index.html' }))
+  app.use(
+    '/*',
+    async (c, next) => {
+      await next()
+      if (c.res.status === 200) {
+        c.res.headers.set('Cache-Control', 'no-cache')
+      }
+    },
+    serveStatic({ root: './dist', path: 'index.html' })
+  )
 }
 
 app.notFound(c => {
