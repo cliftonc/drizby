@@ -193,8 +193,8 @@ app.use(
   })
 )
 
-// Serve built client assets in production (before API routes so / serves index.html)
-if (process.env.NODE_ENV === 'production') {
+// Serve built client assets in production (skip when Caddy handles static files)
+if (process.env.NODE_ENV === 'production' && !process.env.NODE_PORT) {
   // Hashed assets (JS, CSS, fonts) — cache forever (filename changes on rebuild)
   app.use(
     '/assets/*',
@@ -524,8 +524,8 @@ app.onError((err, c) => {
   )
 })
 
-// SPA fallback: serve index.html for non-API routes in production (no-cache so new deploys pick up)
-if (process.env.NODE_ENV === 'production') {
+// SPA fallback: serve index.html for non-API routes in production (skip when Caddy handles it)
+if (process.env.NODE_ENV === 'production' && !process.env.NODE_PORT) {
   app.use(
     '/*',
     async (c, next) => {

@@ -1,0 +1,44 @@
+# Drizby reverse proxy + static asset server
+# Caddy handles static files, Node handles API routes
+
+:{$PORT:3461} {
+	# Compression
+	encode gzip zstd
+
+	# API and dynamic routes → Node backend
+	handle /api/* {
+		reverse_proxy localhost:{$NODE_PORT:3462}
+	}
+	handle /cubejs-api/* {
+		reverse_proxy localhost:{$NODE_PORT:3462}
+	}
+	handle /oauth/* {
+		reverse_proxy localhost:{$NODE_PORT:3462}
+	}
+	handle /health {
+		reverse_proxy localhost:{$NODE_PORT:3462}
+	}
+	handle /mcp {
+		reverse_proxy localhost:{$NODE_PORT:3462}
+	}
+	handle /.well-known/* {
+		reverse_proxy localhost:{$NODE_PORT:3462}
+	}
+
+	# Hashed assets — immutable cache (filenames change on rebuild)
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server {
+			root /app/dist
+		}
+	}
+
+	# Static files (images, favicon, etc.)
+	handle {
+		header Cache-Control "public, max-age=3600, must-revalidate"
+		try_files {path} /index.html
+		file_server {
+			root /app/dist
+		}
+	}
+}

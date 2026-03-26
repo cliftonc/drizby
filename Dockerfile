@@ -28,8 +28,8 @@ RUN npm cache clean --force
 # ---- Runtime stage ----
 FROM node:24-alpine
 
-# Only runtime libs needed by better-sqlite3 native bindings
-RUN apk add --no-cache libstdc++
+# Runtime libs for better-sqlite3 + Caddy for static serving
+RUN apk add --no-cache libstdc++ caddy
 
 WORKDIR /app
 
@@ -43,6 +43,11 @@ COPY --from=builder /app/dist ./dist
 # Drizzle migrations
 COPY drizzle/ ./drizzle/
 
+# Caddy config + entrypoint
+COPY Caddyfile ./Caddyfile
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x docker-entrypoint.sh
+
 # Data volume for SQLite databases
 RUN mkdir -p data
 VOLUME /app/data
@@ -50,6 +55,7 @@ VOLUME /app/data
 # Production mode — disables dev API key bypass
 ENV NODE_ENV=production
 ENV PORT=3461
+ENV NODE_PORT=3462
 
 # Required secrets — must be stable across restarts (generate with: openssl rand -hex 32)
 # When managed by drizby-cloud, these are auto-generated and injected per instance
@@ -67,5 +73,5 @@ ENV APP_NAME=Drizby
 
 EXPOSE 3461
 
-# Migrations run automatically on startup (bundled in dist/server.js)
-CMD ["node", "dist/server.js"]
+# Caddy serves static assets, Node handles API routes
+CMD ["./docker-entrypoint.sh"]

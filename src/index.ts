@@ -16,7 +16,9 @@ if (process.env.NODE_ENV === 'production' && !process.env.ENCRYPTION_SECRET) {
   )
 }
 
-const port = Number.parseInt(process.env.PORT || '3461')
+// In Docker, NODE_PORT is the internal port (Caddy proxies from PORT)
+// In dev/standalone, PORT is used directly
+const port = Number.parseInt(process.env.NODE_PORT || process.env.PORT || '3461')
 
 async function start() {
   // Run migrations
