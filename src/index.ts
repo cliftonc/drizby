@@ -9,6 +9,13 @@ import { db, runMigrations } from './db/index'
 import { runAutoSetup } from './services/auto-setup'
 import { logEmailConfig } from './services/email'
 
+// Validate required production secrets
+if (process.env.NODE_ENV === 'production' && !process.env.ENCRYPTION_SECRET) {
+  throw new Error(
+    '[FATAL] ENCRYPTION_SECRET is not set. The server cannot start in production without a stable encryption key. Set the ENCRYPTION_SECRET environment variable.'
+  )
+}
+
 const port = Number.parseInt(process.env.PORT || '3461')
 
 async function start() {

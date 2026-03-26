@@ -268,8 +268,7 @@ curl -H 'Authorization: Bearer dc-bi-dev-key' http://localhost:3461/cubejs-api/v
 | `DEV_API_KEY` | `dc-bi-dev-key` | Bearer token for dev auth bypass |
 | `PORT` | `3461` | Server port |
 | `DATABASE_URL` | `./data/drizby.db` | Path to internal SQLite DB |
-| `SESSION_SECRET` | — | Required in production for cookie signing |
-| `GOOGLE_CLIENT_ID` | — | Optional: Google OAuth |
-| `GOOGLE_CLIENT_SECRET` | — | Optional: Google OAuth |
+| `OAUTH_JWT_SECRET` | — | Required in production: stable JWT signing secret for OAuth tokens |
+| `ENCRYPTION_SECRET` | — | Required in production: AES-256-GCM key for secrets at rest |
 
 AI provider keys are configured at runtime through the Settings UI and stored in the database.

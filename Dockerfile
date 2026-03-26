@@ -51,9 +51,10 @@ VOLUME /app/data
 ENV NODE_ENV=production
 ENV PORT=3461
 
-# Encryption secret for secrets at rest (OAuth secrets, API keys, connection strings)
-# If not set, secrets are stored in plaintext
-# ENV ENCRYPTION_SECRET=
+# Required secrets — must be stable across restarts (generate with: openssl rand -hex 32)
+# When managed by drizby-cloud, these are auto-generated and injected per instance
+ENV OAUTH_JWT_SECRET=
+ENV ENCRYPTION_SECRET=
 
 # Email notifications (optional)
 # ENV RESEND_API_KEY=
