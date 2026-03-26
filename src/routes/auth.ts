@@ -1189,6 +1189,15 @@ app.get('/cloud-admin', async c => {
     userId = newUser.id
   }
 
+  // Cloud admin login bypasses the password reset flow, so transition setup_status
+  const [statusRow] = await db.select().from(settings).where(eq(settings.key, 'setup_status'))
+  if (statusRow?.value === 'pending_admin_reset') {
+    await db
+      .update(settings)
+      .set({ value: 'needs_seed', updatedAt: new Date() })
+      .where(eq(settings.key, 'setup_status'))
+  }
+
   const sessionId = await createSession(db, userId)
   setSessionCookie(c, sessionId)
   return c.redirect('/')
