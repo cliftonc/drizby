@@ -147,8 +147,11 @@ async function extractSecurityContext(c: any): Promise<SecurityContext> {
 
 const app = new Hono<{ Variables: Variables }>()
 
-// Middleware
-app.use('*', logger())
+// Middleware — skip logging for health checks to reduce noise
+app.use('*', async (c, next) => {
+  if (c.req.path === '/health') return next()
+  return logger()(c, next)
+})
 app.use(
   '*',
   secureHeaders({
