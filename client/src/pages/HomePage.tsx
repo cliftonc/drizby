@@ -1,10 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import ConnectionSelector from '../components/ConnectionSelector'
 import { QuickSetupWizard } from '../components/QuickSetupWizard'
 import { useAuth } from '../contexts/AuthContext'
 import { useAnalyticsPages } from '../hooks/useAnalyticsPages'
 import { useConnections } from '../hooks/useConnections'
+import { useLastConnectionId } from '../hooks/useLastConnectionId'
 import { useCreateNotebook, useNotebooks } from '../hooks/useNotebooks'
 
 const heroTitles = [
@@ -366,7 +368,7 @@ export default function HomePage() {
   const { data: notebooks = [] } = useNotebooks()
   const { data: connections = [] } = useConnections()
   const { user } = useAuth()
-  const [selectedConnectionId, setSelectedConnectionId] = useState<number | undefined>()
+  const [selectedConnectionId, setSelectedConnectionId] = useLastConnectionId()
   const [quickSetupTarget, setQuickSetupTarget] = useState<number | 'new' | null>(null)
 
   const { data: aiConfig } = useQuery<{ provider: string; hasApiKey: boolean }>({
@@ -401,12 +403,6 @@ export default function HomePage() {
       return res.json()
     },
   })
-
-  useEffect(() => {
-    if (!selectedConnectionId && connections.length > 0) {
-      setSelectedConnectionId(connections[0].id)
-    }
-  }, [connections, selectedConnectionId])
 
   const handleAsk = useCallback(
     async (prompt?: string) => {
@@ -570,28 +566,11 @@ export default function HomePage() {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {connections.length > 1 && (
-                    <select
-                      value={selectedConnectionId ?? ''}
-                      onChange={e => setSelectedConnectionId(Number.parseInt(e.target.value))}
-                      style={{
-                        background: 'none',
-                        border: '1px solid var(--dc-border)',
-                        cursor: 'pointer',
-                        color: 'var(--dc-text-muted)',
-                        fontSize: 12,
-                        padding: '3px 6px',
-                        borderRadius: 6,
-                        outline: 'none',
-                      }}
-                    >
-                      {connections.map(conn => (
-                        <option key={conn.id} value={conn.id}>
-                          {conn.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
+                  <ConnectionSelector
+                    value={selectedConnectionId}
+                    onChange={setSelectedConnectionId}
+                    compact
+                  />
                   <button
                     onClick={handleNewNotebook}
                     disabled={isCreating}
@@ -659,37 +638,39 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Suggestion chips */}
-            <div className="flex flex-wrap justify-center gap-1.5 md:gap-2 mt-3 md:mt-4">
-              {suggestions.map(s => (
-                <button
-                  key={s}
-                  onClick={() => handleAsk(s)}
-                  disabled={isCreating}
-                  className="text-[11px] md:text-xs"
-                  style={{
-                    padding: '4px 12px',
-                    borderRadius: 20,
-                    border: '1px solid var(--dc-border)',
-                    backgroundColor: 'var(--dc-surface)',
-                    color: 'var(--dc-text-muted)',
-                    cursor: 'pointer',
-                    transition: 'border-color 0.15s, color 0.15s',
-                    opacity: isCreating ? 0.4 : 1,
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.borderColor = 'var(--dc-primary)'
-                    e.currentTarget.style.color = 'var(--dc-primary)'
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.borderColor = 'var(--dc-border)'
-                    e.currentTarget.style.color = 'var(--dc-text-muted)'
-                  }}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+            {/* Suggestion chips — only for Demo SQLite */}
+            {connections.find(c => c.id === selectedConnectionId)?.name === 'Demo SQLite' && (
+              <div className="flex flex-wrap justify-center gap-1.5 md:gap-2 mt-3 md:mt-4">
+                {suggestions.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => handleAsk(s)}
+                    disabled={isCreating}
+                    className="text-[11px] md:text-xs"
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: 20,
+                      border: '1px solid var(--dc-border)',
+                      backgroundColor: 'var(--dc-surface)',
+                      color: 'var(--dc-text-muted)',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.15s, color 0.15s',
+                      opacity: isCreating ? 0.4 : 1,
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.borderColor = 'var(--dc-primary)'
+                      e.currentTarget.style.color = 'var(--dc-primary)'
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.borderColor = 'var(--dc-border)'
+                      e.currentTarget.style.color = 'var(--dc-text-muted)'
+                    }}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

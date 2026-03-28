@@ -3,7 +3,7 @@ import { ConfirmModal } from '../components/Modal'
 
 interface ConfirmOptions {
   title: string
-  message: string
+  message: ReactNode
   confirmText?: string
   cancelText?: string
   variant?: 'danger' | 'default'

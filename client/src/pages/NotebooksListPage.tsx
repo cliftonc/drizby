@@ -1,9 +1,10 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useCallback, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import ConnectionSelector from '../components/ConnectionSelector'
 import { useAuth } from '../contexts/AuthContext'
 import { useConfirm } from '../hooks/useConfirm'
 import { useConnections } from '../hooks/useConnections'
+import { useLastConnectionId } from '../hooks/useLastConnectionId'
 import { useCreateNotebook, useDeleteNotebook, useNotebooks } from '../hooks/useNotebooks'
 
 export default function NotebooksListPage() {
@@ -14,32 +15,42 @@ export default function NotebooksListPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [confirm, ConfirmDialog] = useConfirm()
-  const [showCreateForm, setShowCreateForm] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newDescription, setNewDescription] = useState('')
-  const [newConnectionId, setNewConnectionId] = useState<number | undefined>()
   const { data: connections = [] } = useConnections()
+  const [value, setValue] = useState('')
+  const [selectedConnectionId, setSelectedConnectionId] = useLastConnectionId()
+  const [isCreating, setIsCreating] = useState(false)
+  const textareaRef = useRef<HTMLInputElement>(null)
 
   const connectionMap = new Map(connections.map(c => [c.id, c.name]))
 
-  const handleCreate = async () => {
-    if (!newName.trim()) return
-
+  const handleAsk = useCallback(async () => {
+    const text = value.trim()
+    if (!text || isCreating) return
+    setIsCreating(true)
     try {
-      const result = await createNotebook.mutateAsync({
-        name: newName.trim(),
-        description: newDescription.trim() || undefined,
-        connectionId: newConnectionId || connections[0]?.id,
+      const notebook = await createNotebook.mutateAsync({
+        name: text.slice(0, 100),
+        connectionId: selectedConnectionId,
       })
-      setShowCreateForm(false)
-      setNewName('')
-      setNewDescription('')
-      setNewConnectionId(undefined)
-      navigate(`/notebooks/${result.id}`)
-    } catch (err) {
-      console.error('Failed to create notebook:', err)
+      navigate(`/notebooks/${notebook.id}`, { state: { initialPrompt: text } })
+    } catch {
+      setIsCreating(false)
     }
-  }
+  }, [value, isCreating, createNotebook, navigate, selectedConnectionId])
+
+  const handleNewNotebook = useCallback(async () => {
+    if (isCreating) return
+    setIsCreating(true)
+    try {
+      const notebook = await createNotebook.mutateAsync({
+        name: `Notebook ${new Date().toLocaleDateString()}`,
+        connectionId: selectedConnectionId,
+      })
+      navigate(`/notebooks/${notebook.id}`)
+    } catch {
+      setIsCreating(false)
+    }
+  }, [isCreating, createNotebook, navigate, selectedConnectionId])
 
   if (error) {
     return (
@@ -53,87 +64,130 @@ export default function NotebooksListPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl sm:text-2xl font-semibold text-dc-text">Agentic Notebooks</h1>
-        <p className="mt-1 text-sm text-dc-text-muted">
-          Persistent AI workspaces for analysis. Ask questions, get charts and markdown, then keep
-          iterating.
-        </p>
-      </div>
-
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-        <div className="text-sm text-dc-text-muted">
-          {notebooks.length} notebook{notebooks.length !== 1 ? 's' : ''}
+        <div className="mb-4">
+          <h1 className="text-xl sm:text-2xl font-semibold text-dc-text">Agentic Notebooks</h1>
+          <p className="mt-1 text-sm text-dc-text-muted">
+            {notebooks.length} notebook{notebooks.length !== 1 ? 's' : ''}
+          </p>
         </div>
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="inline-flex items-center px-4 py-2 bg-dc-primary text-white rounded-lg hover:opacity-90 transition-opacity text-sm font-medium"
-        >
-          New Notebook
-        </button>
-      </div>
 
-      {showCreateForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-dc-surface rounded-xl shadow-xl max-w-md w-full p-6 border border-dc-border">
-            <h2 className="text-lg font-semibold text-dc-text mb-4">Create Notebook</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-dc-text mb-1">Name</label>
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={e => setNewName(e.target.value)}
-                  placeholder="Revenue investigation"
-                  className="w-full px-3 py-2 border border-dc-border rounded-lg bg-dc-surface text-dc-text placeholder:text-dc-text-muted focus:outline-none focus:ring-2 focus:ring-dc-primary"
-                  onKeyDown={e => e.key === 'Enter' && handleCreate()}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-dc-text mb-1">
-                  Description (optional)
-                </label>
-                <input
-                  type="text"
-                  value={newDescription}
-                  onChange={e => setNewDescription(e.target.value)}
-                  placeholder="What this notebook should answer"
-                  className="w-full px-3 py-2 border border-dc-border rounded-lg bg-dc-surface text-dc-text placeholder:text-dc-text-muted focus:outline-none focus:ring-2 focus:ring-dc-primary"
-                />
-              </div>
-              {connections.length > 1 && (
-                <div>
-                  <label className="block text-sm font-medium text-dc-text mb-1">Connection</label>
-                  <ConnectionSelector
-                    value={newConnectionId || connections[0]?.id}
-                    onChange={setNewConnectionId}
-                    className="w-full px-3 py-2 text-sm border border-dc-border rounded-lg bg-dc-surface text-dc-text"
-                  />
-                </div>
-              )}
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  onClick={() => {
-                    setShowCreateForm(false)
-                    setNewName('')
-                    setNewDescription('')
-                    setNewConnectionId(undefined)
-                  }}
-                  className="px-4 py-2 text-sm text-dc-text-secondary hover:text-dc-text transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreate}
-                  disabled={!newName.trim() || createNotebook.isPending}
-                  className="px-4 py-2 bg-dc-primary text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 text-sm font-medium"
-                >
-                  {createNotebook.isPending ? 'Creating...' : 'Create'}
-                </button>
-              </div>
-            </div>
+        {/* Question box */}
+        <div
+          style={{
+            position: 'relative',
+            borderRadius: 10,
+            border: '1px solid rgba(var(--dc-primary-rgb), 0.25)',
+            backgroundColor: 'var(--dc-surface)',
+            boxShadow: '0 0 12px -4px rgba(var(--dc-primary-rgb), 0.08)',
+          }}
+        >
+          <input
+            ref={textareaRef}
+            type="text"
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                handleAsk()
+              }
+            }}
+            placeholder="Ask a question to create a new notebook..."
+            disabled={isCreating}
+            style={{
+              width: '100%',
+              backgroundColor: 'transparent',
+              borderRadius: 10,
+              padding: '8px 12px',
+              paddingRight: 140,
+              fontSize: 13,
+              lineHeight: 1.5,
+              border: 'none',
+              outline: 'none',
+              color: 'var(--dc-text)',
+              boxSizing: 'border-box',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              right: 6,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            <ConnectionSelector
+              value={selectedConnectionId}
+              onChange={setSelectedConnectionId}
+              compact
+            />
+            <button
+              onClick={handleNewNotebook}
+              disabled={isCreating}
+              title="New blank notebook"
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--dc-text-muted)',
+                padding: '3px',
+                borderRadius: 5,
+                display: 'flex',
+                alignItems: 'center',
+                opacity: isCreating ? 0.4 : 1,
+              }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+            </button>
+            <button
+              onClick={handleAsk}
+              disabled={!value.trim() || isCreating}
+              style={{
+                backgroundColor: 'var(--dc-primary)',
+                color: 'var(--dc-primary-content)',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 500,
+                padding: '4px 10px',
+                borderRadius: 5,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                opacity: !value.trim() || isCreating ? 0.4 : 1,
+              }}
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+              </svg>
+              Ask
+            </button>
           </div>
         </div>
-      )}
+      </div>
 
       {isLoading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -158,8 +212,9 @@ export default function NotebooksListPage() {
             visual blocks.
           </p>
           <button
-            onClick={() => setShowCreateForm(true)}
-            className="inline-flex items-center px-4 py-2 bg-dc-primary text-white rounded-lg hover:opacity-90 transition-opacity text-sm font-medium"
+            onClick={handleNewNotebook}
+            disabled={isCreating}
+            className="inline-flex items-center px-4 py-2 bg-dc-primary text-white rounded-lg hover:opacity-90 transition-opacity text-sm font-medium disabled:opacity-50"
           >
             Create Your First Notebook
           </button>
@@ -178,7 +233,8 @@ export default function NotebooksListPage() {
             return (
               <div
                 key={notebook.id}
-                className="group bg-dc-surface hover:bg-dc-surface-hover rounded-xl border border-dc-border hover:border-dc-border-hover transition-all duration-200 shadow-2xs hover:shadow-md overflow-hidden"
+                onClick={() => navigate(`/notebooks/${notebook.id}`)}
+                className="group bg-dc-surface hover:bg-dc-surface-hover rounded-xl border border-dc-border hover:border-dc-border-hover transition-all duration-200 shadow-2xs hover:shadow-md cursor-pointer"
               >
                 <div className="p-5 relative">
                   <div className="absolute top-3 right-3 flex items-center gap-1.5">
@@ -203,7 +259,7 @@ export default function NotebooksListPage() {
                     {(isAdmin || notebook.createdBy === user?.id) && (
                       <button
                         onClick={async e => {
-                          e.preventDefault()
+                          e.stopPropagation()
                           if (
                             await confirm({
                               title: 'Delete notebook',
@@ -275,7 +331,7 @@ export default function NotebooksListPage() {
                 </div>
 
                 {(notebook.visibilityGroups?.length ?? 0) > 0 && (
-                  <div className="flex flex-wrap gap-1 px-5 pb-2">
+                  <div className="flex flex-wrap gap-1 px-5 pb-3">
                     {notebook.visibilityGroups!.map((g: any) => (
                       <span
                         key={g.groupId}
@@ -286,15 +342,6 @@ export default function NotebooksListPage() {
                     ))}
                   </div>
                 )}
-
-                <div className="px-5 py-3 border-t border-dc-border bg-dc-surface-secondary">
-                  <Link
-                    to={`/notebooks/${notebook.id}`}
-                    className="text-sm font-medium text-dc-primary hover:opacity-80 transition-opacity"
-                  >
-                    Open Notebook
-                  </Link>
-                </div>
               </div>
             )
           })}

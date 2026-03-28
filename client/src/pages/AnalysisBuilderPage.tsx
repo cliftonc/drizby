@@ -1,32 +1,10 @@
 import { AnalysisBuilder } from 'drizzle-cube/client'
-import { useEffect, useState } from 'react'
 import ConnectionCubeProvider from '../components/ConnectionCubeProvider'
 import ConnectionSelector from '../components/ConnectionSelector'
-import { useConnections } from '../hooks/useConnections'
-
-const STORAGE_KEY = 'dc-analysis-builder-connection'
+import { useLastConnectionId } from '../hooks/useLastConnectionId'
 
 export default function AnalysisBuilderPage() {
-  const { data: connections = [] } = useConnections()
-
-  const [connectionId, setConnectionId] = useState<number | undefined>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    return stored ? Number.parseInt(stored) : undefined
-  })
-
-  // Initialize to first connection, or reset if stored connection no longer exists
-  useEffect(() => {
-    if (connections.length > 0) {
-      if (!connectionId || !connections.some(c => c.id === connectionId)) {
-        setConnectionId(connections[0].id)
-      }
-    }
-  }, [connections, connectionId])
-
-  const handleConnectionChange = (id: number) => {
-    setConnectionId(id)
-    localStorage.setItem(STORAGE_KEY, String(id))
-  }
+  const [connectionId, setConnectionId] = useLastConnectionId()
 
   if (!connectionId) {
     return (
@@ -53,7 +31,7 @@ export default function AnalysisBuilderPage() {
               Results appear instantly as you build.
             </p>
           </div>
-          <ConnectionSelector value={connectionId} onChange={handleConnectionChange} />
+          <ConnectionSelector value={connectionId} onChange={setConnectionId} />
         </div>
       </div>
 

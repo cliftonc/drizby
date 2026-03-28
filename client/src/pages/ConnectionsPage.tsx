@@ -115,9 +115,46 @@ export default function ConnectionsPage() {
   }
 
   const handleDelete = async (conn: Connection) => {
+    // Fetch related content counts for the warning
+    let counts = { dashboardCount: 0, notebookCount: 0, schemaCount: 0, cubeCount: 0 }
+    try {
+      const res = await fetch(`/api/connections/${conn.id}/related-counts`)
+      if (res.ok) counts = await res.json()
+    } catch {}
+
+    const items: string[] = []
+    if (counts.dashboardCount > 0)
+      items.push(`${counts.dashboardCount} dashboard${counts.dashboardCount !== 1 ? 's' : ''}`)
+    if (counts.notebookCount > 0)
+      items.push(`${counts.notebookCount} notebook${counts.notebookCount !== 1 ? 's' : ''}`)
+    if (counts.schemaCount > 0)
+      items.push(`${counts.schemaCount} schema file${counts.schemaCount !== 1 ? 's' : ''}`)
+    if (counts.cubeCount > 0)
+      items.push(`${counts.cubeCount} cube definition${counts.cubeCount !== 1 ? 's' : ''}`)
+
+    const message =
+      items.length > 0 ? (
+        <div>
+          <p>
+            Are you sure you want to delete <strong>{conn.name}</strong>? The following will also be
+            permanently deleted:
+          </p>
+          <ul className="mt-2 ml-4 list-disc text-dc-text-secondary">
+            {items.map(item => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          <p className="mt-2">This cannot be undone.</p>
+        </div>
+      ) : (
+        <p>
+          Are you sure you want to delete <strong>{conn.name}</strong>? This cannot be undone.
+        </p>
+      )
+
     const confirmed = await confirm({
       title: 'Delete Connection',
-      message: `Are you sure you want to delete "${conn.name}"? Any schemas and cubes using this connection will stop working.`,
+      message,
       confirmText: 'Delete',
       variant: 'danger',
     })

@@ -204,7 +204,12 @@ export default function SchemaEditorPage() {
   useEffect(() => {
     if (connections.length === 0 || selectedConnectionId !== null) return
     const connId = params.connectionId ? Number.parseInt(params.connectionId) : null
-    const resolvedId = connId && connections.some(c => c.id === connId) ? connId : connections[0].id
+    const storedId = localStorage.getItem('dc-last-connection-id')
+    const fallbackId = storedId ? Number.parseInt(storedId) : null
+    const resolvedId =
+      (connId && connections.some(c => c.id === connId) ? connId : null) ??
+      (fallbackId && connections.some(c => c.id === fallbackId) ? fallbackId : null) ??
+      connections[0].id
     setSelectedConnectionId(resolvedId)
 
     // If bare /schema-editor URL, try restoring last file for this connection
@@ -1143,6 +1148,7 @@ export default function SchemaEditorPage() {
             onChange={e => {
               const id = Number.parseInt(e.target.value)
               setSelectedConnectionId(id)
+              localStorage.setItem('dc-last-connection-id', String(id))
               setSelectedFile(null)
               setEditorContent('')
               updateUrl(id, null)
@@ -1737,6 +1743,7 @@ export default function SchemaEditorPage() {
           queryClient.invalidateQueries({ queryKey: ['connections', 'status'] })
           if (connId !== selectedConnectionId) {
             setSelectedConnectionId(connId)
+            localStorage.setItem('dc-last-connection-id', String(connId))
           }
           // Navigate to the editor without a file selected — user picks from sidebar
           navigate(`/schema-editor/${connId}`, { replace: true })

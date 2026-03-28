@@ -6,7 +6,7 @@
 import type { DrizzleDatabase } from 'drizzle-cube/server'
 import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { connections, cubeDefinitions, schemaFiles } from '../../schema'
+import { analyticsPages, connections, cubeDefinitions, notebooks, schemaFiles } from '../../schema'
 import { maybeDecrypt, maybeEncrypt } from '../auth/encryption'
 import { guardPermission } from '../permissions/guard'
 import { connectionManager } from '../services/connection-manager'
@@ -232,7 +232,40 @@ app.put('/:id', adminGuard, async c => {
   return c.json(result[0])
 })
 
-// Delete connection (admin only)
+// Get related content counts before deleting (admin only)
+app.get('/:id/related-counts', adminGuard, async c => {
+  const db = c.get('db') as any
+  const id = Number.parseInt(c.req.param('id'))
+
+  const dashboardCount = (
+    await db
+      .select({ id: analyticsPages.id })
+      .from(analyticsPages)
+      .where(eq(analyticsPages.connectionId, id))
+  ).length
+
+  const notebookCount = (
+    await db.select({ id: notebooks.id }).from(notebooks).where(eq(notebooks.connectionId, id))
+  ).length
+
+  const schemaCount = (
+    await db
+      .select({ id: schemaFiles.id })
+      .from(schemaFiles)
+      .where(eq(schemaFiles.connectionId, id))
+  ).length
+
+  const cubeCount = (
+    await db
+      .select({ id: cubeDefinitions.id })
+      .from(cubeDefinitions)
+      .where(eq(cubeDefinitions.connectionId, id))
+  ).length
+
+  return c.json({ dashboardCount, notebookCount, schemaCount, cubeCount })
+})
+
+// Delete connection (admin only) — hard deletes connection, dashboards, and notebooks
 app.delete('/:id', adminGuard, async c => {
   const db = c.get('db') as any
   const id = Number.parseInt(c.req.param('id'))
@@ -245,6 +278,12 @@ app.delete('/:id', adminGuard, async c => {
   if (result.length === 0) {
     return c.json({ error: 'Connection not found' }, 404)
   }
+
+  // Cascade: hard-delete all related content
+  await db.delete(analyticsPages).where(eq(analyticsPages.connectionId, id))
+  await db.delete(notebooks).where(eq(notebooks.connectionId, id))
+  await db.delete(schemaFiles).where(eq(schemaFiles.connectionId, id))
+  await db.delete(cubeDefinitions).where(eq(cubeDefinitions.connectionId, id))
 
   await connectionManager.remove(id)
 

@@ -44,7 +44,7 @@ interface ConfirmModalProps {
   onClose: () => void
   onConfirm: () => void
   title: string
-  message: string
+  message: React.ReactNode
   confirmText?: string
   cancelText?: string
   variant?: 'danger' | 'default'
@@ -66,7 +66,7 @@ export function ConfirmModal({
     <Modal isOpen={isOpen} onClose={onClose}>
       <div className="p-6">
         <h3 className="text-lg font-semibold text-dc-text mb-2">{title}</h3>
-        <p className="text-sm text-dc-text-secondary mb-6">{message}</p>
+        <div className="text-sm text-dc-text-secondary mb-6">{message}</div>
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}

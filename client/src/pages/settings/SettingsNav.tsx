@@ -18,20 +18,27 @@ const sections: NavSection[] = [
     items: [{ path: '/settings', label: 'Your Profile' }],
   },
   {
-    label: 'Configuration',
+    label: 'Integrations',
     items: [
-      { path: '/settings/ai', label: 'AI', adminOnly: true },
-      { path: '/settings/auth', label: 'Authentication', adminOnly: true },
-      { path: '/settings/data', label: 'Data', adminOnly: true },
-      { path: '/settings/features', label: 'Features', adminOnly: true },
-      { path: '/settings/github-app', label: 'GitHub App', adminOnly: true },
-      { path: '/settings/groups', label: 'Groups', adminOnly: true },
-      { path: '/settings/team', label: 'Team', adminOnly: true },
+      { path: '/settings/connections', label: 'Connections', adminOnly: true },
+      { path: '/settings/ai', label: 'AI Provider', adminOnly: true },
+      { path: '/settings/github-app', label: 'GitHub Sync', adminOnly: true },
     ],
   },
   {
-    label: 'Connections',
-    items: [{ path: '/settings/connections', label: 'Connections', adminOnly: true }],
+    label: 'Team',
+    items: [
+      { path: '/settings/team', label: 'Members', adminOnly: true },
+      { path: '/settings/groups', label: 'Groups', adminOnly: true },
+      { path: '/settings/auth', label: 'Authentication', adminOnly: true },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { path: '/settings/features', label: 'Features', adminOnly: true },
+      { path: '/settings/data', label: 'Reset & Backup', adminOnly: true },
+    ],
   },
 ]
 

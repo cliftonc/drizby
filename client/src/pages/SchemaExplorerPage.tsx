@@ -1,31 +1,10 @@
 import { SchemaVisualization } from 'drizzle-cube/client/schema'
-import { useEffect, useState } from 'react'
 import ConnectionCubeProvider from '../components/ConnectionCubeProvider'
 import ConnectionSelector from '../components/ConnectionSelector'
-import { useConnections } from '../hooks/useConnections'
-
-const STORAGE_KEY = 'dc-schema-explorer-connection'
+import { useLastConnectionId } from '../hooks/useLastConnectionId'
 
 export default function SchemaExplorerPage() {
-  const { data: connections = [] } = useConnections()
-
-  const [connectionId, setConnectionId] = useState<number | undefined>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    return stored ? Number.parseInt(stored) : undefined
-  })
-
-  useEffect(() => {
-    if (connections.length > 0) {
-      if (!connectionId || !connections.some(c => c.id === connectionId)) {
-        setConnectionId(connections[0].id)
-      }
-    }
-  }, [connections, connectionId])
-
-  const handleConnectionChange = (id: number) => {
-    setConnectionId(id)
-    localStorage.setItem(STORAGE_KEY, String(id))
-  }
+  const [connectionId, setConnectionId] = useLastConnectionId()
 
   if (!connectionId) {
     return (
@@ -51,7 +30,7 @@ export default function SchemaExplorerPage() {
               Visualize cube schemas, dimensions, measures, and relationships.
             </p>
           </div>
-          <ConnectionSelector value={connectionId} onChange={handleConnectionChange} />
+          <ConnectionSelector value={connectionId} onChange={setConnectionId} />
         </div>
       </div>
 

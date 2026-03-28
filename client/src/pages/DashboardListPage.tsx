@@ -11,6 +11,7 @@ import {
 } from '../hooks/useAnalyticsPages'
 import { useConfirm } from '../hooks/useConfirm'
 import { useConnections } from '../hooks/useConnections'
+import { useLastConnectionId } from '../hooks/useLastConnectionId'
 
 export default function DashboardListPage() {
   const { data: pages = [], isLoading, error } = useAnalyticsPages()
@@ -20,7 +21,7 @@ export default function DashboardListPage() {
   const [isNewModalOpen, setIsNewModalOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDescription, setNewDescription] = useState('')
-  const [newConnectionId, setNewConnectionId] = useState<number | undefined>()
+  const [newConnectionId, setNewConnectionId] = useLastConnectionId()
   const [confirm, ConfirmDialog] = useConfirm()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -28,6 +29,7 @@ export default function DashboardListPage() {
   const { data: connections = [] } = useConnections()
 
   const connectionMap = new Map(connections.map(c => [c.id, c.name]))
+  const hasDemoConnection = connections.some(c => c.name === 'Demo SQLite')
 
   const handleCreateExample = async () => {
     try {
@@ -60,13 +62,12 @@ export default function DashboardListPage() {
       await createPage.mutateAsync({
         name: newName.trim(),
         description: newDescription.trim() || undefined,
-        connectionId: newConnectionId || connections[0]?.id,
+        connectionId: newConnectionId,
         config: { portlets: [] },
       })
       setIsNewModalOpen(false)
       setNewName('')
       setNewDescription('')
-      setNewConnectionId(undefined)
     } catch (error) {
       console.error('Failed to create dashboard:', error)
     }
@@ -103,13 +104,15 @@ export default function DashboardListPage() {
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleCreateExample}
-            disabled={createExample.isPending}
-            className="inline-flex items-center justify-center rounded-md border border-dc-accent-border bg-dc-accent-bg px-4 py-2 text-sm font-medium text-dc-accent hover:bg-dc-accent/10 hover:border-dc-accent disabled:opacity-50 whitespace-nowrap"
-          >
-            {createExample.isPending ? 'Creating...' : 'Create Example'}
-          </button>
+          {hasDemoConnection && (
+            <button
+              onClick={handleCreateExample}
+              disabled={createExample.isPending}
+              className="inline-flex items-center justify-center rounded-md border border-dc-accent-border bg-dc-accent-bg px-4 py-2 text-sm font-medium text-dc-accent hover:bg-dc-accent/10 hover:border-dc-accent disabled:opacity-50 whitespace-nowrap"
+            >
+              {createExample.isPending ? 'Creating...' : 'Create Example'}
+            </button>
+          )}
           <button
             onClick={() => setIsNewModalOpen(true)}
             className="inline-flex items-center justify-center rounded-md border border-dc-border-secondary bg-dc-surface px-4 py-2 text-sm font-medium text-dc-text-secondary shadow-xs hover:bg-dc-surface-hover disabled:opacity-50 whitespace-nowrap"
@@ -126,13 +129,15 @@ export default function DashboardListPage() {
             Get started by creating a new dashboard or example dashboard.
           </p>
           <div className="mt-6 flex gap-3 justify-center">
-            <button
-              onClick={handleCreateExample}
-              disabled={createExample.isPending}
-              className="inline-flex items-center justify-center rounded-md border border-dc-border-secondary bg-dc-surface px-4 py-2 text-sm font-medium text-dc-text-secondary shadow-xs hover:bg-dc-surface-hover disabled:opacity-50"
-            >
-              Create Example Dashboard
-            </button>
+            {hasDemoConnection && (
+              <button
+                onClick={handleCreateExample}
+                disabled={createExample.isPending}
+                className="inline-flex items-center justify-center rounded-md border border-dc-border-secondary bg-dc-surface px-4 py-2 text-sm font-medium text-dc-text-secondary shadow-xs hover:bg-dc-surface-hover disabled:opacity-50"
+              >
+                Create Example Dashboard
+              </button>
+            )}
             <button
               onClick={() => setIsNewModalOpen(true)}
               className="inline-flex items-center justify-center rounded-md border border-transparent bg-dc-primary px-4 py-2 text-sm font-medium text-white shadow-xs hover:bg-dc-primary-hover disabled:opacity-50"
@@ -294,7 +299,7 @@ export default function DashboardListPage() {
                 <div>
                   <label className="block text-sm font-medium text-dc-text mb-1">Connection</label>
                   <ConnectionSelector
-                    value={newConnectionId || connections[0]?.id}
+                    value={newConnectionId}
                     onChange={setNewConnectionId}
                     className="w-full px-3 py-2 text-sm border border-dc-border rounded-lg bg-dc-surface text-dc-text"
                   />
@@ -306,7 +311,6 @@ export default function DashboardListPage() {
                     setIsNewModalOpen(false)
                     setNewName('')
                     setNewDescription('')
-                    setNewConnectionId(undefined)
                   }}
                   className="px-4 py-2 text-sm text-dc-text-secondary hover:text-dc-text transition-colors"
                 >
