@@ -33,6 +33,7 @@ import {
 } from '../auth/oauth-slack'
 import { hashPassword, verifyPassword } from '../auth/password'
 import { createRateLimiter } from '../auth/rate-limit'
+import { createSamlEntities, extractProfile as extractSamlProfile } from '../auth/saml'
 import {
   clearSessionCookie,
   createSession,
@@ -1202,5 +1203,154 @@ app.get('/cloud-admin', async c => {
   setSessionCookie(c, sessionId)
   return c.redirect('/')
 })
+
+// ---------------------------------------------------------------------------
+// SAML 2.0 SSO
+// ---------------------------------------------------------------------------
+
+const samlCallbackLimiter = createRateLimiter(10, 60_000)
+
+app.get('/saml/login', async c => {
+  const db = c.get('db') as any
+  const entities = await createSamlEntities(db)
+  if (!entities) return c.redirect('/login?error=saml_not_configured')
+
+  const { sp, idp } = entities
+  try {
+    const { context } = sp.createLoginRequest(idp, 'redirect')
+    return c.redirect(context)
+  } catch (err) {
+    console.error('SAML login request error:', err)
+    return c.redirect('/login?error=saml_failed')
+  }
+})
+
+app.post('/saml/callback', samlCallbackLimiter, async c => {
+  const db = c.get('db') as any
+  const entities = await createSamlEntities(db)
+  if (!entities) return c.redirect('/login?error=saml_not_configured')
+
+  const { sp, idp, config } = entities
+
+  try {
+    const body = await c.req.parseBody()
+    const result = await sp.parseLoginResponse(idp, 'post', {
+      body: { SAMLResponse: body.SAMLResponse as string },
+    })
+
+    const profile = extractSamlProfile(result.extract, config.attributeMapping)
+
+    const loginResult = await handleOAuthLogin(db, {
+      provider: profile.provider,
+      providerUserId: profile.providerUserId,
+      email: profile.email,
+      name: profile.name,
+    })
+
+    if (loginResult.isBlocked) return c.redirect('/login?error=blocked')
+
+    // Sync SAML groups if present
+    if (profile.groups.length > 0) {
+      await syncSamlGroups(db, loginResult.userId, profile.groups)
+    }
+
+    const sessionId = await createSession(db, loginResult.userId)
+    setSessionCookie(c, sessionId)
+    return c.redirect('/')
+  } catch (err) {
+    console.error('SAML callback error:', err)
+    return c.redirect('/login?error=saml_failed')
+  }
+})
+
+app.get('/saml/metadata', async c => {
+  const db = c.get('db') as any
+  const entities = await createSamlEntities(db)
+  if (!entities) return c.json({ error: 'SAML not configured' }, 400)
+
+  const { sp } = entities
+  const metadata = sp.getMetadata()
+  return c.text(metadata, 200, { 'Content-Type': 'application/xml' })
+})
+
+/**
+ * Sync SAML group assertions to Drizby groups.
+ * Creates a "SAML" group type if needed, creates missing groups,
+ * and updates the user's group membership to match the assertion.
+ */
+async function syncSamlGroups(db: any, userId: number, samlGroupNames: string[]) {
+  try {
+    // Find or create the "SAML" group type
+    let [samlGroupType] = await db
+      .select()
+      .from(groupTypes)
+      .where(and(eq(groupTypes.name, 'SAML'), eq(groupTypes.organisationId, 1)))
+
+    if (!samlGroupType) {
+      ;[samlGroupType] = await db
+        .insert(groupTypes)
+        .values({
+          name: 'SAML',
+          description: 'Groups synced from SAML identity provider',
+          organisationId: 1,
+        })
+        .returning()
+    }
+
+    // Get all existing groups under the SAML type
+    const existingGroups = await db
+      .select()
+      .from(groups)
+      .where(and(eq(groups.groupTypeId, samlGroupType.id), eq(groups.organisationId, 1)))
+
+    const existingByName = new Map(existingGroups.map((g: any) => [g.name, g]))
+
+    // Create any missing groups
+    const targetGroupIds: number[] = []
+    for (const groupName of samlGroupNames) {
+      let group: any = existingByName.get(groupName)
+      if (!group) {
+        ;[group] = await db
+          .insert(groups)
+          .values({
+            name: groupName,
+            groupTypeId: samlGroupType.id,
+            organisationId: 1,
+          })
+          .returning()
+      }
+      targetGroupIds.push(group.id)
+    }
+
+    // Get user's current SAML group memberships
+    const currentMemberships = await db
+      .select({ groupId: userGroups.groupId })
+      .from(userGroups)
+      .innerJoin(groups, eq(userGroups.groupId, groups.id))
+      .where(and(eq(userGroups.userId, userId), eq(groups.groupTypeId, samlGroupType.id)))
+
+    const currentGroupIds = new Set(currentMemberships.map((m: any) => m.groupId))
+
+    // Add missing memberships
+    for (const groupId of targetGroupIds) {
+      if (!currentGroupIds.has(groupId)) {
+        await db.insert(userGroups).values({ userId, groupId })
+      }
+    }
+
+    // Remove memberships not in the assertion
+    const targetSet = new Set(targetGroupIds)
+    for (const { groupId } of currentMemberships) {
+      if (!targetSet.has(groupId)) {
+        await db
+          .delete(userGroups)
+          .where(and(eq(userGroups.userId, userId), eq(userGroups.groupId, groupId)))
+      }
+    }
+  } catch (err) {
+    // Group sync is best-effort — don't block login on failure
+    console.error('SAML group sync error:', err)
+  }
+}
 
 export default app

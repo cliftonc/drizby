@@ -31,6 +31,7 @@ import oauthApp, {
   protectedResourceMetadata,
 } from './src/routes/oauth'
 import schemaFilesApp from './src/routes/schema-files'
+import scimApp from './src/routes/scim'
 import seedDemoApp from './src/routes/seed-demo'
 import settingsApp from './src/routes/settings'
 import usersApp from './src/routes/users'
@@ -288,6 +289,9 @@ app.use('/oauth/*', async (c, next) => {
   return next()
 })
 app.route('/oauth', oauthApp)
+
+// SCIM 2.0 provisioning (has its own bearer token auth, separate from session/OAuth)
+app.route('/scim/v2', scimApp)
 
 // Inject db into all API routes
 app.use('/api/*', async (c, next) => {

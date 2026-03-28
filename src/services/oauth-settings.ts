@@ -141,6 +141,78 @@ export async function getPasswordEnabled(db: DrizzleDatabase): Promise<boolean> 
   return row?.value !== 'false'
 }
 
+// ---------------------------------------------------------------------------
+// SAML config
+// ---------------------------------------------------------------------------
+
+export interface SamlConfig {
+  enabled: boolean
+  idpMetadataUrl: string
+  idpMetadataXml: string
+  spEntityId: string
+  idpCertificate: string
+  attributeMapping: {
+    email: string
+    name: string
+    groups: string
+  }
+}
+
+const SAML_KEYS = [
+  'saml_enabled',
+  'saml_idp_metadata_url',
+  'saml_idp_metadata_xml',
+  'saml_sp_entity_id',
+  'saml_certificate',
+  'saml_attribute_mapping',
+] as const
+
+export async function getSamlConfig(db: DrizzleDatabase): Promise<SamlConfig | null> {
+  const rows = await (db as any)
+    .select({ key: settings.key, value: settings.value })
+    .from(settings)
+    .where(and(eq(settings.organisationId, 1), inArray(settings.key, [...SAML_KEYS])))
+
+  const map = new Map(rows.map((r: any) => [r.key, r.value]))
+
+  if (map.get('saml_enabled') !== 'true') return null
+
+  const rawMetadataUrl = (map.get('saml_idp_metadata_url') as string) || ''
+  const rawMetadataXml = (map.get('saml_idp_metadata_xml') as string) || ''
+  const rawCert = (map.get('saml_certificate') as string) || ''
+  const rawEntityId = (map.get('saml_sp_entity_id') as string) || ''
+
+  const idpMetadataUrl = rawMetadataUrl ? await maybeDecrypt(rawMetadataUrl) : ''
+  const idpMetadataXml = rawMetadataXml ? await maybeDecrypt(rawMetadataXml) : ''
+  const idpCertificate = rawCert ? await maybeDecrypt(rawCert) : ''
+
+  // Need at least metadata URL or XML to configure the IdP
+  if (!idpMetadataUrl && !idpMetadataXml) return null
+
+  const baseUrl = (process.env.APP_URL || 'http://localhost:3461').replace(/\/$/, '')
+  const spEntityId = rawEntityId || `${baseUrl}/api/auth/saml/metadata`
+
+  // Parse attribute mapping (stored as JSON) with sensible defaults
+  let attributeMapping = { email: 'email', name: 'name', groups: 'groups' }
+  const rawMapping = map.get('saml_attribute_mapping') as string | undefined
+  if (rawMapping) {
+    try {
+      attributeMapping = { ...attributeMapping, ...JSON.parse(rawMapping) }
+    } catch {
+      // keep defaults
+    }
+  }
+
+  return {
+    enabled: true,
+    idpMetadataUrl,
+    idpMetadataXml,
+    idpCertificate,
+    spEntityId,
+    attributeMapping,
+  }
+}
+
 export async function getEnabledProviders(db: DrizzleDatabase): Promise<string[]> {
   const providers: string[] = []
 
@@ -151,6 +223,7 @@ export async function getEnabledProviders(db: DrizzleDatabase): Promise<string[]
   if (await getMicrosoftOAuthConfig(db)) providers.push('microsoft')
   if (await getSlackOAuthConfig(db)) providers.push('slack')
   if (await getMagicLinkEnabled(db)) providers.push('magic_link')
+  if (await getSamlConfig(db)) providers.push('saml')
 
   return providers
 }

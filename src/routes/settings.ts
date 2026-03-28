@@ -3,8 +3,9 @@
  * Manages AI provider configuration
  */
 
+import crypto from 'node:crypto'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { and, eq } from 'drizzle-orm'
+import { and, count, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { invalidateCubeAppCache } from '../../app'
 import {
@@ -20,6 +21,7 @@ import {
   oauthAccounts,
   passwordResetTokens,
   schemaFiles,
+  scimTokens,
   settings,
   userGroups,
   userSessions,
@@ -221,6 +223,25 @@ app.get('/oauth', async c => {
       enabled: map.password_auth_enabled !== 'false',
     },
     autoAcceptEmailDomains: map.auto_accept_email_domains || '',
+    saml: {
+      enabled: map.saml_enabled === 'true',
+      idpMetadataUrl: map.saml_idp_metadata_url
+        ? await maybeDecrypt(map.saml_idp_metadata_url)
+        : '',
+      hasIdpMetadataXml: !!(map.saml_idp_metadata_xml
+        ? await maybeDecrypt(map.saml_idp_metadata_xml)
+        : ''),
+      spEntityId: map.saml_sp_entity_id || `${baseUrl}/api/auth/saml/metadata`,
+      hasCertificate: !!(map.saml_certificate ? await maybeDecrypt(map.saml_certificate) : ''),
+      certificateHint: map.saml_certificate
+        ? `****${(await maybeDecrypt(map.saml_certificate)).slice(-20)}`
+        : '',
+      attributeMapping: map.saml_attribute_mapping
+        ? JSON.parse(map.saml_attribute_mapping)
+        : { email: 'email', name: 'name', groups: 'groups' },
+      metadataUrl: `${baseUrl}/api/auth/saml/metadata`,
+      callbackUrl: `${baseUrl}/api/auth/saml/callback`,
+    },
   })
 })
 
@@ -338,6 +359,51 @@ app.put('/oauth', async c => {
     await upsertSetting('auto_accept_email_domains', body.autoAcceptEmailDomains as string)
   }
 
+  // SAML
+  if (body.saml !== undefined) {
+    const saml = body.saml as {
+      enabled?: boolean
+      idpMetadataUrl?: string
+      idpMetadataXml?: string
+      spEntityId?: string
+      certificate?: string
+      attributeMapping?: { email?: string; name?: string; groups?: string }
+    }
+
+    await upsertSetting(
+      'saml_enabled',
+      saml.enabled !== undefined ? String(saml.enabled) : undefined
+    )
+    await upsertSetting(
+      'saml_idp_metadata_url',
+      saml.idpMetadataUrl !== undefined
+        ? saml.idpMetadataUrl
+          ? await maybeEncrypt(saml.idpMetadataUrl)
+          : ''
+        : undefined
+    )
+    await upsertSetting(
+      'saml_idp_metadata_xml',
+      saml.idpMetadataXml !== undefined
+        ? saml.idpMetadataXml
+          ? await maybeEncrypt(saml.idpMetadataXml)
+          : ''
+        : undefined
+    )
+    await upsertSetting('saml_sp_entity_id', saml.spEntityId)
+    await upsertSetting(
+      'saml_certificate',
+      saml.certificate !== undefined
+        ? saml.certificate
+          ? await maybeEncrypt(saml.certificate)
+          : ''
+        : undefined
+    )
+    if (saml.attributeMapping !== undefined) {
+      await upsertSetting('saml_attribute_mapping', JSON.stringify(saml.attributeMapping))
+    }
+  }
+
   invalidateCubeAppCache()
   return c.json({ success: true })
 })
@@ -368,6 +434,7 @@ app.post('/factory-reset', async c => {
   invalidateCubeAppCache()
 
   // Delete all rows from every table (order matters for FK constraints)
+  await db.delete(scimTokens)
   await db.delete(emailVerificationTokens)
   await db.delete(magicLinkTokens)
   await db.delete(passwordResetTokens)
@@ -402,6 +469,118 @@ app.post('/factory-reset', async c => {
     success: true,
     message: 'Factory reset complete. Restart the server to re-seed demo data.',
   })
+})
+
+// ---------------------------------------------------------------------------
+// SCIM token management
+// ---------------------------------------------------------------------------
+
+// GET /api/settings/scim — SCIM config and token list
+app.get('/scim', async c => {
+  const db = c.get('db') as any
+
+  const rows = await db
+    .select({ key: settings.key, value: settings.value })
+    .from(settings)
+    .where(and(eq(settings.organisationId, 1)))
+  const map: Record<string, string> = {}
+  for (const r of rows) map[r.key] = r.value
+
+  const tokens = await db
+    .select({
+      id: scimTokens.id,
+      name: scimTokens.name,
+      createdAt: scimTokens.createdAt,
+      lastUsedAt: scimTokens.lastUsedAt,
+    })
+    .from(scimTokens)
+    .where(eq(scimTokens.organisationId, 1))
+
+  const [{ value: provisionedCount }] = await db
+    .select({ value: count() })
+    .from(users)
+    .where(and(eq(users.organisationId, 1), eq(users.scimProvisioned, true)))
+
+  const baseUrl = (process.env.APP_URL || 'http://localhost:3461').replace(/\/$/, '')
+
+  return c.json({
+    enabled: map.scim_enabled === 'true',
+    endpointUrl: `${baseUrl}/scim/v2`,
+    tokens,
+    provisionedUserCount: provisionedCount,
+  })
+})
+
+// PUT /api/settings/scim — enable/disable SCIM
+app.put('/scim', async c => {
+  const db = c.get('db') as any
+  const body = await c.req.json()
+  const { enabled } = body as { enabled?: boolean }
+
+  if (enabled !== undefined) {
+    const existing = await db
+      .select()
+      .from(settings)
+      .where(and(eq(settings.key, 'scim_enabled'), eq(settings.organisationId, 1)))
+    if (existing.length > 0) {
+      await db
+        .update(settings)
+        .set({ value: String(enabled), updatedAt: new Date() })
+        .where(and(eq(settings.key, 'scim_enabled'), eq(settings.organisationId, 1)))
+    } else {
+      await db
+        .insert(settings)
+        .values({ key: 'scim_enabled', value: String(enabled), organisationId: 1 })
+    }
+  }
+
+  return c.json({ success: true })
+})
+
+// POST /api/settings/scim/tokens — generate a new SCIM token
+app.post('/scim/tokens', async c => {
+  const db = c.get('db') as any
+  const auth = c.get('auth') as any
+  const body = await c.req.json()
+  const { name } = body as { name: string }
+
+  if (!name) return c.json({ error: 'Token name is required' }, 400)
+
+  // Generate a random token
+  const rawToken = crypto.randomBytes(32).toString('hex')
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex')
+  const tokenId = crypto.randomBytes(16).toString('hex')
+
+  await db.insert(scimTokens).values({
+    id: tokenId,
+    name,
+    tokenHash,
+    createdBy: auth?.userId,
+    organisationId: 1,
+  })
+
+  // Return the raw token — this is the only time it's visible
+  return c.json(
+    {
+      id: tokenId,
+      name,
+      token: rawToken,
+      createdAt: new Date().toISOString(),
+    },
+    201
+  )
+})
+
+// DELETE /api/settings/scim/tokens/:id — revoke a SCIM token
+app.delete('/scim/tokens/:id', async c => {
+  const db = c.get('db') as any
+  const tokenId = c.req.param('id')
+
+  await db
+    .delete(scimTokens)
+    .where(and(eq(scimTokens.id, tokenId), eq(scimTokens.organisationId, 1)))
+
+  return c.json({ success: true })
 })
 
 export default app

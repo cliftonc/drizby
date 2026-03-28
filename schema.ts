@@ -180,6 +180,8 @@ export const users = sqliteTable(
     isBlocked: integer('is_blocked', { mode: 'boolean' }).notNull().default(false),
     emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(true),
     avatarUrl: text('avatar_url'),
+    scimExternalId: text('scim_external_id'),
+    scimProvisioned: integer('scim_provisioned', { mode: 'boolean' }).notNull().default(false),
     organisationId: integer('organisation_id').notNull().default(1),
     lastActiveAt: integer('last_active_at', { mode: 'timestamp' }),
     createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
@@ -368,6 +370,32 @@ export const oauthAuthCodesRelations = relations(oauthAuthCodes, ({ one }) => ({
   }),
   user: one(users, {
     fields: [oauthAuthCodes.userId],
+    references: [users.id],
+  }),
+}))
+
+// ============================================================================
+// SCIM Provisioning Tables
+// ============================================================================
+
+// SCIM API tokens for IdP-to-Drizby provisioning
+export const scimTokens = sqliteTable(
+  'scim_tokens',
+  {
+    id: text('id').primaryKey(), // random hex
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    organisationId: integer('organisation_id').notNull().default(1),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
+    createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  },
+  table => [index('idx_scim_tokens_org').on(table.organisationId)]
+)
+
+export const scimTokensRelations = relations(scimTokens, ({ one }) => ({
+  creator: one(users, {
+    fields: [scimTokens.createdBy],
     references: [users.id],
   }),
 }))
@@ -641,6 +669,8 @@ export const schema = {
   githubSyncConfig,
   githubAppConfigRelations,
   githubInstallationsRelations,
+  scimTokens,
+  scimTokensRelations,
 }
 
 export type Schema = typeof schema

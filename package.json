@@ -63,6 +63,9 @@
     "react-resizable": "^3.0.0",
     "react-router-dom": "^6.8.0",
     "recharts": "^3.5.1",
+    "samlify": "^2.11.0",
+    "scimmy": "^1.3.5",
+    "scimmy-hono-routers": "^0.1.1",
     "snowflake-sdk": "^2.3.6",
     "typescript": "^5.9.3"
   },
