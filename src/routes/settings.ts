@@ -48,6 +48,7 @@ app.get('/features', async c => {
   for (const r of rows) map[r.key] = r.value
   return c.json({
     mcpEnabled: map.mcp_enabled === 'true',
+    mcpAppEnabled: map.mcp_app_enabled === 'true',
     appUrl: process.env.APP_URL || '',
     brandName: map.brand_name || '',
     brandLogoUrl: map.brand_logo_url || '',
@@ -65,14 +66,16 @@ app.use('*', async (c, next) => {
 app.put('/features', async c => {
   const db = c.get('db') as any
   const body = await c.req.json()
-  const { mcpEnabled, brandName, brandLogoUrl } = body as {
+  const { mcpEnabled, mcpAppEnabled, brandName, brandLogoUrl } = body as {
     mcpEnabled?: boolean
+    mcpAppEnabled?: boolean
     brandName?: string
     brandLogoUrl?: string
   }
 
   const pairs: [string, string | undefined][] = [
     ['mcp_enabled', mcpEnabled !== undefined ? String(mcpEnabled) : undefined],
+    ['mcp_app_enabled', mcpAppEnabled !== undefined ? String(mcpAppEnabled) : undefined],
     ['brand_name', brandName],
     ['brand_logo_url', brandLogoUrl],
   ]

@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 
 interface McpConfig {
   mcpEnabled: boolean
+  mcpAppEnabled: boolean
   appUrl: string
   brandName: string
 }
@@ -23,6 +24,7 @@ export default function McpServerPage() {
   })
 
   const [mcpEnabled, setMcpEnabled] = useState(false)
+  const [mcpAppEnabled, setMcpAppEnabled] = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null
   )
@@ -30,6 +32,7 @@ export default function McpServerPage() {
   useEffect(() => {
     if (data) {
       setMcpEnabled(data.mcpEnabled)
+      setMcpAppEnabled(data.mcpAppEnabled)
     }
   }, [data])
 
@@ -57,7 +60,7 @@ export default function McpServerPage() {
   })
 
   const handleSave = () => {
-    saveMutation.mutate({ mcpEnabled })
+    saveMutation.mutate({ mcpEnabled, mcpAppEnabled })
   }
 
   if (isLoading) return <div style={{ color: 'var(--dc-text-muted)' }}>Loading...</div>
@@ -202,6 +205,71 @@ export default function McpServerPage() {
             </label>
           </div>
         </div>
+
+        {/* MCP App mode — shown when MCP is enabled */}
+        {mcpEnabled && (
+          <div
+            style={{
+              border: '1px solid var(--dc-border)',
+              borderRadius: 8,
+              padding: 20,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--dc-text)' }}>
+                  Enable MCP App
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--dc-text-muted)', marginTop: 2 }}>
+                  Serve the MCP server as a web app, allowing browser-based MCP clients to connect.
+                </div>
+              </div>
+              <label
+                style={{
+                  position: 'relative',
+                  display: 'inline-block',
+                  width: 44,
+                  height: 24,
+                  flexShrink: 0,
+                  marginLeft: 16,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={mcpAppEnabled}
+                  onChange={e => setMcpAppEnabled(e.target.checked)}
+                  style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    cursor: 'pointer',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: mcpAppEnabled ? 'var(--dc-primary)' : 'var(--dc-input-border)',
+                    borderRadius: 12,
+                    transition: 'background-color 0.2s',
+                  }}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      height: 18,
+                      width: 18,
+                      left: mcpAppEnabled ? 22 : 3,
+                      bottom: 3,
+                      backgroundColor: 'white',
+                      borderRadius: '50%',
+                      transition: 'left 0.2s',
+                    }}
+                  />
+                </span>
+              </label>
+            </div>
+          </div>
+        )}
 
         {/* Setup instructions — shown when enabled */}
         {mcpEnabled && (

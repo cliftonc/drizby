@@ -53,6 +53,15 @@ async function isMcpEnabled(): Promise<boolean> {
   return row?.value === 'true'
 }
 
+/** Check if MCP app mode is enabled in settings. */
+async function isMcpAppEnabled(): Promise<boolean> {
+  const [row] = await db
+    .select({ value: settings.value })
+    .from(settings)
+    .where(and(eq(settings.key, 'mcp_app_enabled'), eq(settings.organisationId, 1)))
+  return row?.value === 'true'
+}
+
 /**
  * Extract the opaque token ID from a JWT access token, or return as-is if opaque.
  *
@@ -390,6 +399,7 @@ async function getCubeApp(connectionId: number) {
   if (!managed) return null
 
   const agentConfig = await getAIAgentConfig(db)
+  const mcpApp = await isMcpAppEnabled()
 
   const cubeApp = createCubeApp({
     semanticLayer: managed.semanticLayer,
@@ -409,7 +419,7 @@ async function getCubeApp(connectionId: number) {
       credentials: true,
     },
     agent: agentConfig,
-    mcp: { enabled: true },
+    mcp: { enabled: true, app: mcpApp },
   })
 
   cubeAppCache.set(connectionId, cubeApp)
