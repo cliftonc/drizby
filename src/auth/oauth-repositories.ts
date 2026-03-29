@@ -3,7 +3,7 @@
  * Used by @jmondi/oauth2-server for MCP client authentication.
  */
 
-import { randomBytes } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type {
   OAuthAuthCode,
   OAuthAuthCodeRepository,
@@ -51,9 +51,12 @@ export class ClientRepository implements OAuthClientRepository {
     if (!client.allowedGrants.includes(grantType)) return false
     // Public clients (no secret) are valid without secret check
     if (!client.secret) return true
-    // Confidential clients must provide matching secret
+    // Confidential clients must provide matching secret (constant-time comparison)
     if (!clientSecret) return false
-    return client.secret === clientSecret
+    const a = Buffer.from(client.secret, 'utf8')
+    const b = Buffer.from(clientSecret, 'utf8')
+    if (a.length !== b.length) return false
+    return timingSafeEqual(a, b)
   }
 }
 
@@ -290,7 +293,7 @@ export class UserRepository implements OAuthUserRepository {
   async getUserByCredentials(
     identifier: OAuthUserIdentifier,
     password?: string,
-    _grantType?: GrantIdentifier,
+    grantType?: GrantIdentifier,
     _client?: OAuthClient
   ): Promise<OAuthUser | undefined> {
     // The library calls this with either an email (password grant) or a numeric id
@@ -302,10 +305,16 @@ export class UserRepository implements OAuthUserRepository {
       .where(isNumericId ? eq(users.id, Number(identifier)) : eq(users.email, String(identifier)))
     if (!user) return undefined
     if (user.isBlocked) return undefined
-    if (password && user.passwordHash) {
-      const valid = await verifyPassword(password, user.passwordHash)
-      if (!valid) return undefined
+
+    // Auth code grant resolves user by ID after code exchange — no password needed
+    if (grantType === 'authorization_code' || grantType === 'refresh_token') {
+      return { id: user.id }
     }
+
+    // All other grants require password verification
+    if (!password || !user.passwordHash) return undefined
+    const valid = await verifyPassword(password, user.passwordHash)
+    if (!valid) return undefined
     return { id: user.id }
   }
 }

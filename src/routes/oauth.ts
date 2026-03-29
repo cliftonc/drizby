@@ -10,7 +10,7 @@
  * - Token revocation
  */
 
-import { randomBytes } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { AuthorizationServer } from '@jmondi/oauth2-server'
 import {
   handleVanillaError,
@@ -26,6 +26,7 @@ import {
   TokenRepository,
   UserRepository,
 } from '../auth/oauth-repositories'
+import { createRateLimiter } from '../auth/rate-limit'
 import { getSessionCookie, validateSession } from '../auth/session'
 import { db } from '../db/index'
 
@@ -64,8 +65,9 @@ function getBaseUrl(c: any): string {
   if (process.env.APP_URL) {
     return process.env.APP_URL.replace(/\/$/, '')
   }
-  const host = c.req.header('x-forwarded-host') || c.req.header('host') || 'localhost:3461'
-  const proto = c.req.header('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https')
+  // Dev-only fallback: use Host header only (never trust X-Forwarded-* without APP_URL)
+  const host = c.req.header('host') || 'localhost:3461'
+  const proto = host.startsWith('localhost') ? 'http' : 'https'
   return `${proto}://${host}`
 }
 
@@ -133,6 +135,43 @@ oauthApp.post('/register', async c => {
     )
   }
 
+  // Validate redirect URIs per OAuth 2.1: require https (except localhost), no fragments
+  for (const uri of redirectUris) {
+    let parsed: URL
+    try {
+      parsed = new URL(uri)
+    } catch {
+      return c.json(
+        { error: 'invalid_client_metadata', error_description: `Invalid redirect URI: ${uri}` },
+        400
+      )
+    }
+    if (
+      parsed.protocol !== 'https:' &&
+      !(
+        parsed.protocol === 'http:' &&
+        (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')
+      )
+    ) {
+      return c.json(
+        {
+          error: 'invalid_client_metadata',
+          error_description: 'Redirect URIs must use HTTPS (except localhost)',
+        },
+        400
+      )
+    }
+    if (parsed.hash) {
+      return c.json(
+        {
+          error: 'invalid_client_metadata',
+          error_description: 'Redirect URIs must not contain fragments',
+        },
+        400
+      )
+    }
+  }
+
   const clientId = randomBytes(16).toString('hex')
 
   await db.insert(oauthClients).values({
@@ -180,6 +219,13 @@ oauthApp.get('/authorize', async c => {
     const scopes = authRequest.scopes.map(s => s.name).join(', ') || 'mcp:read'
     const queryString = new URL(c.req.url).searchParams.toString()
 
+    // Generate CSRF token for consent form protection
+    const csrfToken = randomBytes(32).toString('hex')
+    c.header(
+      'Set-Cookie',
+      `csrf_token=${csrfToken}; HttpOnly; SameSite=Strict; Path=/oauth/authorize; Max-Age=600`
+    )
+
     return c.html(`<!DOCTYPE html>
 <html>
 <head>
@@ -215,10 +261,12 @@ oauthApp.get('/authorize', async c => {
     <div class="actions">
       <form method="POST" action="/oauth/authorize?${escapeHtml(queryString)}" style="flex:1;display:flex;">
         <input type="hidden" name="approved" value="0">
+        <input type="hidden" name="csrf_token" value="${csrfToken}">
         <button type="submit" class="deny" style="flex:1">Deny</button>
       </form>
       <form method="POST" action="/oauth/authorize?${escapeHtml(queryString)}" style="flex:1;display:flex;">
         <input type="hidden" name="approved" value="1">
+        <input type="hidden" name="csrf_token" value="${csrfToken}">
         <button type="submit" class="approve" style="flex:1">Authorize</button>
       </form>
     </div>
@@ -236,13 +284,38 @@ oauthApp.post('/authorize', async c => {
     // Read form body BEFORE requestFromVanilla consumes it
     const contentType = c.req.header('content-type') || ''
     let approved = false
+    let formCsrfToken = ''
     if (contentType.includes('application/x-www-form-urlencoded')) {
       const formData = await c.req.parseBody()
       approved = formData.approved === '1'
+      formCsrfToken = String(formData.csrf_token || '')
     } else {
       const body = await c.req.json().catch(() => ({}))
       approved = body.approved === true || body.approved === '1'
+      formCsrfToken = String(body.csrf_token || '')
     }
+
+    // Verify CSRF token from form matches the cookie
+    const cookieHeader = c.req.header('cookie') || ''
+    const csrfCookie =
+      cookieHeader
+        .split(';')
+        .map(s => s.trim())
+        .find(s => s.startsWith('csrf_token='))
+        ?.split('=')[1] || ''
+    if (
+      !formCsrfToken ||
+      !csrfCookie ||
+      formCsrfToken.length !== csrfCookie.length ||
+      !timingSafeEqual(Buffer.from(formCsrfToken), Buffer.from(csrfCookie))
+    ) {
+      return c.json({ error: 'CSRF token mismatch' }, 403)
+    }
+    // Clear the CSRF cookie after use
+    c.header(
+      'Set-Cookie',
+      'csrf_token=; HttpOnly; SameSite=Strict; Path=/oauth/authorize; Max-Age=0'
+    )
 
     // validateAuthorizationRequest only needs query params, build a GET-like request
     const url = new URL(c.req.url)
@@ -273,7 +346,8 @@ oauthApp.post('/authorize', async c => {
 })
 
 // --- Token endpoint ---
-oauthApp.post('/token', async c => {
+const tokenLimiter = createRateLimiter(30, 60_000) // 30 requests/min per IP
+oauthApp.post('/token', tokenLimiter, async c => {
   try {
     const oauthRequest = await requestFromVanilla(c.req.raw)
     const oauthResponse = await authorizationServer.respondToAccessTokenRequest(oauthRequest)
@@ -285,7 +359,8 @@ oauthApp.post('/token', async c => {
 })
 
 // --- Token revocation ---
-oauthApp.post('/token/revoke', async c => {
+const revokeLimiter = createRateLimiter(20, 60_000) // 20 requests/min per IP
+oauthApp.post('/token/revoke', revokeLimiter, async c => {
   try {
     const oauthRequest = await requestFromVanilla(c.req.raw)
     const oauthResponse = await authorizationServer.revoke(oauthRequest)

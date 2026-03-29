@@ -16,12 +16,12 @@ function touchLastActive(db: any, user: any): void {
   }
 }
 
-const DEV_API_KEY = process.env.DEV_API_KEY || 'dc-bi-dev-key'
+const DEV_API_KEY = process.env.DEV_API_KEY
 const isDev = process.env.NODE_ENV !== 'production'
 
 export async function authMiddleware(c: Context, next: Next) {
-  // Dev mode: accept a fixed API key via header or query param
-  if (isDev) {
+  // Dev mode: accept a fixed API key via header (requires DEV_API_KEY env var)
+  if (isDev && DEV_API_KEY) {
     const authHeader = c.req.header('Authorization')
     if (authHeader === `Bearer ${DEV_API_KEY}`) {
       c.set('auth', {
@@ -38,7 +38,8 @@ export async function authMiddleware(c: Context, next: Next) {
   if (authHeader?.startsWith('Bearer ')) {
     const db = c.get('db') as any
     let tokenId = authHeader.slice(7)
-    // Extract opaque token ID from JWT if needed
+    // Extract opaque token ID from JWT if needed.
+    // JWT signature is intentionally not verified — the DB lookup on jti is the real gate.
     if (tokenId.includes('.')) {
       try {
         const payload = JSON.parse(Buffer.from(tokenId.split('.')[1], 'base64url').toString())

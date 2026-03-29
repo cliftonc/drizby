@@ -40,14 +40,7 @@ interface Variables {
 
 const app = new Hono<{ Variables: Variables }>()
 
-// Admin-only guard
-app.use('*', async (c, next) => {
-  const denied = guardPermission(c, 'manage', 'Settings')
-  if (denied) return denied
-  await next()
-})
-
-// GET /api/settings/features — return server feature flags
+// GET /api/settings/features — readable by all authenticated users
 app.get('/features', async c => {
   const db = c.get('db') as any
   const rows = await db.select().from(settings).where(eq(settings.organisationId, 1))
@@ -59,6 +52,13 @@ app.get('/features', async c => {
     brandName: map.brand_name || '',
     brandLogoUrl: map.brand_logo_url || '',
   })
+})
+
+// Admin-only guard for all remaining settings routes
+app.use('*', async (c, next) => {
+  const denied = guardPermission(c, 'manage', 'Settings')
+  if (denied) return denied
+  await next()
 })
 
 // PUT /api/settings/features — update server feature flags

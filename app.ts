@@ -53,7 +53,14 @@ async function isMcpEnabled(): Promise<boolean> {
   return row?.value === 'true'
 }
 
-/** Extract the opaque token ID from a JWT access token, or return as-is if opaque. */
+/**
+ * Extract the opaque token ID from a JWT access token, or return as-is if opaque.
+ *
+ * Note: The JWT signature is intentionally NOT verified here. The extracted jti is
+ * always looked up in the database (the DB is the authoritative gate), so a forged
+ * JWT with an arbitrary jti would still need to match a valid token row. The JWT is
+ * just an envelope for the opaque token ID.
+ */
 function extractTokenId(token: string): string {
   // JWTs have 3 dot-separated base64 segments
   if (token.includes('.')) {
@@ -88,11 +95,11 @@ async function extractSecurityContext(c: any): Promise<SecurityContext> {
   let userId: number | null = null
 
   try {
-    // Dev mode: check Bearer token
+    // Dev mode: check Bearer token (requires DEV_API_KEY env var)
     const isDev = process.env.NODE_ENV !== 'production'
-    const devApiKey = process.env.DEV_API_KEY || 'dc-bi-dev-key'
+    const devApiKey = process.env.DEV_API_KEY
     const authHeader = c.req?.header?.('Authorization') ?? c?.headers?.get?.('Authorization')
-    if (isDev && authHeader === `Bearer ${devApiKey}`) {
+    if (isDev && devApiKey && authHeader === `Bearer ${devApiKey}`) {
       userId = 1
     }
 
@@ -323,13 +330,17 @@ app.use('/api/*', async (c, next) => {
   }
   await next()
 })
-app.use('/cubejs-api/*', async (c, next) => {
+/**
+ * Shared auth middleware for routes outside /api/* (cubejs-api, mcp).
+ * Checks dev key, OAuth bearer, and session cookie — rejects if none succeed.
+ */
+async function requireBearerOrSessionAuth(c: any, next: any) {
   c.set('db', db as DrizzleDatabase)
 
   // Dev mode: accept fixed API key
   const isDev = process.env.NODE_ENV !== 'production'
-  const devApiKey = process.env.DEV_API_KEY || 'dc-bi-dev-key'
-  if (isDev && c.req.header('Authorization') === `Bearer ${devApiKey}`) {
+  const devApiKey = process.env.DEV_API_KEY
+  if (isDev && devApiKey && c.req.header('Authorization') === `Bearer ${devApiKey}`) {
     c.set('auth', {
       userId: 1,
       user: { id: 1, name: 'Dev User', email: 'dev@localhost', role: 'admin' },
@@ -364,7 +375,9 @@ app.use('/cubejs-api/*', async (c, next) => {
     }
   }
   return c.json({ error: 'Unauthorized' }, 401)
-})
+}
+
+app.use('/cubejs-api/*', requireBearerOrSessionAuth)
 
 // Cube API dispatch: resolves connection from header or query, then delegates to drizzle-cube
 // Cache cube apps per connection to avoid re-creating on every request
@@ -471,7 +484,8 @@ app.all('/cubejs-api/v1/*', async c => {
   return cubeApp.fetch(c.req.raw)
 })
 
-// MCP endpoint — forward to the cube app's built-in /mcp handler (gated by setting)
+// MCP endpoint — forward to the cube app's built-in /mcp handler (gated by setting + auth)
+app.use('/mcp', requireBearerOrSessionAuth)
 app.all('/mcp', async c => {
   if (!(await isMcpEnabled())) {
     return c.json(

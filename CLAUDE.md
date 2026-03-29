@@ -220,17 +220,17 @@ To add tests for a route:
 
 ## Dev API Bypass
 
-In dev mode (`NODE_ENV !== 'production'`), all API routes accept a bearer token for auth bypass:
-
-```
-Authorization: Bearer dc-bi-dev-key
-```
-
-Works on both `/api/*` and `/cubejs-api/*`. Authenticates as admin user (id: 1). Override the key with `DEV_API_KEY` env var.
+In dev mode (`NODE_ENV !== 'production'`), all API routes accept a bearer token for auth bypass — but only if the `DEV_API_KEY` environment variable is explicitly set:
 
 ```bash
-curl -H 'Authorization: Bearer dc-bi-dev-key' http://localhost:3461/api/connections
-curl -H 'Authorization: Bearer dc-bi-dev-key' http://localhost:3461/cubejs-api/v1/meta
+export DEV_API_KEY=my-secret-dev-key
+```
+
+Works on both `/api/*`, `/cubejs-api/*`, and `/mcp`. Authenticates as admin user (id: 1).
+
+```bash
+curl -H 'Authorization: Bearer my-secret-dev-key' http://localhost:3461/api/connections
+curl -H 'Authorization: Bearer my-secret-dev-key' http://localhost:3461/cubejs-api/v1/meta
 ```
 
 ---
@@ -265,9 +265,10 @@ curl -H 'Authorization: Bearer dc-bi-dev-key' http://localhost:3461/cubejs-api/v
 | Variable | Default | Purpose |
 |---|---|---|
 | `NODE_ENV` | — | `production` disables dev API key bypass |
-| `DEV_API_KEY` | `dc-bi-dev-key` | Bearer token for dev auth bypass |
+| `DEV_API_KEY` | — | Bearer token for dev auth bypass (must be explicitly set) |
 | `PORT` | `3461` | Server port |
 | `DATABASE_URL` | `./data/drizby.db` | Path to internal SQLite DB |
+| `APP_URL` | — | Required in production: canonical base URL for OAuth metadata (e.g. `https://drizby.example.com`) |
 | `OAUTH_JWT_SECRET` | — | Required in production: stable JWT signing secret for OAuth tokens |
 | `ENCRYPTION_SECRET` | — | Required in production: AES-256-GCM key for secrets at rest |
 

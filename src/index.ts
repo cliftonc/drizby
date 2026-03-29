@@ -8,11 +8,17 @@ import app, { initializeConnections } from '../app'
 import { db, runMigrations } from './db/index'
 import { runAutoSetup } from './services/auto-setup'
 import { logEmailConfig } from './services/email'
+import { cleanupExpiredOAuthData } from './services/oauth-cleanup'
 
 // Validate required production secrets
 if (process.env.NODE_ENV === 'production' && !process.env.ENCRYPTION_SECRET) {
   throw new Error(
     '[FATAL] ENCRYPTION_SECRET is not set. The server cannot start in production without a stable encryption key. Set the ENCRYPTION_SECRET environment variable.'
+  )
+}
+if (process.env.NODE_ENV === 'production' && !process.env.APP_URL) {
+  throw new Error(
+    '[FATAL] APP_URL is not set. Required in production for OAuth metadata endpoints. Set the APP_URL environment variable (e.g. https://drizby.example.com).'
   )
 }
 
@@ -45,6 +51,20 @@ async function start() {
   initializeConnections().catch(err => {
     console.error('Connection initialization failed:', err)
   })
+
+  // Periodic cleanup of expired OAuth tokens and auth codes (every hour)
+  setInterval(async () => {
+    try {
+      const result = await cleanupExpiredOAuthData(db)
+      if (result.tokens > 0 || result.codes > 0) {
+        console.log(
+          `[oauth-cleanup] Removed ${result.tokens} expired tokens, ${result.codes} expired auth codes`
+        )
+      }
+    } catch (err) {
+      console.error('[oauth-cleanup] Error:', err)
+    }
+  }, 60 * 60_000).unref()
 }
 
 start().catch(err => {

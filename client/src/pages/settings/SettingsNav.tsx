@@ -22,6 +22,7 @@ const sections: NavSection[] = [
     items: [
       { path: '/settings/connections', label: 'Connections', adminOnly: true },
       { path: '/settings/ai', label: 'AI Provider', adminOnly: true },
+      { path: '/settings/mcp', label: 'MCP Server' },
       { path: '/settings/github-app', label: 'GitHub Sync', adminOnly: true },
     ],
   },
