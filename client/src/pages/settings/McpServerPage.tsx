@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 
 interface McpConfig {
@@ -23,19 +23,6 @@ export default function McpServerPage() {
     },
   })
 
-  const [mcpEnabled, setMcpEnabled] = useState(false)
-  const [mcpAppEnabled, setMcpAppEnabled] = useState(false)
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
-    null
-  )
-
-  useEffect(() => {
-    if (data) {
-      setMcpEnabled(data.mcpEnabled)
-      setMcpAppEnabled(data.mcpAppEnabled)
-    }
-  }, [data])
-
   const saveMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
       const res = await fetch('/api/settings/features', {
@@ -51,17 +38,11 @@ export default function McpServerPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'features'] })
-      setFeedback({ type: 'success', message: 'Settings saved.' })
-      setTimeout(() => setFeedback(null), 3000)
-    },
-    onError: (err: Error) => {
-      setFeedback({ type: 'error', message: err.message })
     },
   })
 
-  const handleSave = () => {
-    saveMutation.mutate({ mcpEnabled, mcpAppEnabled })
-  }
+  const mcpEnabled = data?.mcpEnabled ?? false
+  const mcpAppEnabled = data?.mcpAppEnabled ?? false
 
   if (isLoading) return <div style={{ color: 'var(--dc-text-muted)' }}>Loading...</div>
 
@@ -69,11 +50,10 @@ export default function McpServerPage() {
   const mcpUrl = appUrl ? `${appUrl.replace(/\/$/, '')}/mcp` : ''
   const hasAppUrl = !!mcpUrl
   const brandName = data?.brandName || 'Drizby'
-  const enabled = data?.mcpEnabled ?? false
 
   // Non-admin: show read-only view
   if (!isAdmin) {
-    if (!enabled) {
+    if (!mcpEnabled) {
       return (
         <div>
           <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--dc-text)', margin: '0 0 8px' }}>
@@ -125,23 +105,6 @@ export default function McpServerPage() {
         Expose your semantic layer to AI assistants via the Model Context Protocol.
       </p>
 
-      {feedback && (
-        <div
-          style={{
-            padding: '8px 12px',
-            borderRadius: 6,
-            fontSize: 12,
-            marginBottom: 16,
-            backgroundColor:
-              feedback.type === 'success' ? 'var(--dc-success-bg, #dcfce7)' : 'var(--dc-error-bg)',
-            border: `1px solid ${feedback.type === 'success' ? 'var(--dc-success, #22c55e)' : 'var(--dc-error-border)'}`,
-            color: feedback.type === 'success' ? 'var(--dc-success, #16a34a)' : 'var(--dc-error)',
-          }}
-        >
-          {feedback.message}
-        </div>
-      )}
-
       <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 24 }}>
         {/* Enable / Disable */}
         <div
@@ -173,7 +136,7 @@ export default function McpServerPage() {
               <input
                 type="checkbox"
                 checked={mcpEnabled}
-                onChange={e => setMcpEnabled(e.target.checked)}
+                onChange={e => saveMutation.mutate({ mcpEnabled: e.target.checked })}
                 style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
               />
               <span
@@ -237,7 +200,7 @@ export default function McpServerPage() {
                 <input
                   type="checkbox"
                   checked={mcpAppEnabled}
-                  onChange={e => setMcpAppEnabled(e.target.checked)}
+                  onChange={e => saveMutation.mutate({ mcpAppEnabled: e.target.checked })}
                   style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
                 />
                 <span
@@ -275,26 +238,6 @@ export default function McpServerPage() {
         {mcpEnabled && (
           <McpSetupInstructions mcpUrl={mcpUrl} hasAppUrl={hasAppUrl} brandName={brandName} />
         )}
-
-        <div>
-          <button
-            onClick={handleSave}
-            disabled={saveMutation.isPending}
-            style={{
-              padding: '8px 20px',
-              backgroundColor: 'var(--dc-primary)',
-              color: 'var(--dc-primary-content)',
-              fontWeight: 500,
-              borderRadius: 6,
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: 13,
-              opacity: saveMutation.isPending ? 0.5 : 1,
-            }}
-          >
-            {saveMutation.isPending ? 'Saving...' : 'Save'}
-          </button>
-        </div>
       </div>
     </div>
   )
