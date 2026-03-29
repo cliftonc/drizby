@@ -214,16 +214,36 @@ export async function getSamlConfig(db: DrizzleDatabase): Promise<SamlConfig | n
 }
 
 export async function getEnabledProviders(db: DrizzleDatabase): Promise<string[]> {
+  // Fetch all org settings in one query instead of 8+ sequential queries
+  const rows = await (db as any)
+    .select({ key: settings.key, value: settings.value })
+    .from(settings)
+    .where(eq(settings.organisationId, 1))
+  const map = new Map(rows.map((r: any) => [r.key, r.value]))
+
   const providers: string[] = []
 
-  if (await getPasswordEnabled(db)) providers.push('password')
-  if (await getGoogleOAuthConfig(db)) providers.push('google')
-  if (await getGitHubOAuthConfig(db)) providers.push('github')
-  if (await getGitLabOAuthConfig(db)) providers.push('gitlab')
-  if (await getMicrosoftOAuthConfig(db)) providers.push('microsoft')
-  if (await getSlackOAuthConfig(db)) providers.push('slack')
-  if (await getMagicLinkEnabled(db)) providers.push('magic_link')
-  if (await getSamlConfig(db)) providers.push('saml')
+  // Password: enabled by default, only disabled when explicitly 'false'
+  if (map.get('password_auth_enabled') !== 'false') providers.push('password')
+
+  // OAuth providers: need both client_id and client_secret, and not explicitly disabled
+  for (const provider of ['google', 'github', 'gitlab', 'microsoft', 'slack'] as const) {
+    if (map.get(`oauth_${provider}_enabled`) === 'false') continue
+    const rawId = map.get(`oauth_${provider}_client_id`) as string | undefined
+    const rawSecret = map.get(`oauth_${provider}_client_secret`) as string | undefined
+    if (!rawId && !process.env[`${provider.toUpperCase()}_CLIENT_ID`]) continue
+    if (!rawSecret && !process.env[`${provider.toUpperCase()}_CLIENT_SECRET`]) continue
+    providers.push(provider)
+  }
+
+  // Magic link
+  if (map.get('magic_link_enabled') === 'true') providers.push('magic_link')
+
+  // SAML: needs to be enabled and have metadata
+  if (map.get('saml_enabled') === 'true') {
+    const hasMetadata = map.has('saml_idp_metadata_url') || map.has('saml_idp_metadata_xml')
+    if (hasMetadata) providers.push('saml')
+  }
 
   return providers
 }
