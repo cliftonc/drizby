@@ -108,20 +108,10 @@ export function authorizationServerMetadata(c: any) {
 const oauthApp = new Hono()
 
 // --- Dynamic Client Registration (RFC 7591) ---
+// Open endpoint: MCP clients must be able to register without prior authentication.
+// Security is enforced downstream — registered clients still need user authorization
+// via the full OAuth 2.1 flow (PKCE + consent) to obtain access tokens.
 oauthApp.post('/register', async c => {
-  // Require authenticated admin session
-  const sessionId = getSessionCookie(c)
-  if (!sessionId) {
-    return c.json({ error: 'unauthorized', error_description: 'Authentication required' }, 401)
-  }
-  const sessionResult = await validateSession(db as any, sessionId)
-  if (!sessionResult) {
-    return c.json({ error: 'unauthorized', error_description: 'Invalid or expired session' }, 401)
-  }
-  if (sessionResult.user.role !== 'admin') {
-    return c.json({ error: 'forbidden', error_description: 'Admin role required' }, 403)
-  }
-
   const body = await c.req.json()
   const clientName = body.client_name || 'MCP Client'
   const redirectUris: string[] = body.redirect_uris || []
