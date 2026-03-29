@@ -259,40 +259,7 @@ app.get('/health', async c => {
 })
 
 // OAuth 2.1 / MCP routes — gated by mcp_enabled setting
-app.get(
-  '/.well-known/oauth-protected-resource',
-  async (c, next) => {
-    if (!(await isMcpEnabled()))
-      return c.json(
-        {
-          error: 'MCP is not enabled',
-          message:
-            'The MCP server is disabled. An admin can enable it in Settings > Server Features.',
-        },
-        404
-      )
-    return next()
-  },
-  protectedResourceMetadata
-)
-app.get(
-  '/.well-known/oauth-authorization-server',
-  async (c, next) => {
-    if (!(await isMcpEnabled()))
-      return c.json(
-        {
-          error: 'MCP is not enabled',
-          message:
-            'The MCP server is disabled. An admin can enable it in Settings > Server Features.',
-        },
-        404
-      )
-    return next()
-  },
-  authorizationServerMetadata
-)
-
-app.use('/oauth/*', async (c, next) => {
+const mcpEnabledGuard = async (c: any, next: any) => {
   if (!(await isMcpEnabled()))
     return c.json(
       {
@@ -303,7 +270,13 @@ app.use('/oauth/*', async (c, next) => {
       404
     )
   return next()
-})
+}
+
+app.get('/.well-known/oauth-protected-resource', mcpEnabledGuard, protectedResourceMetadata)
+app.get('/.well-known/oauth-protected-resource/mcp', mcpEnabledGuard, protectedResourceMetadata)
+app.get('/.well-known/oauth-authorization-server', mcpEnabledGuard, authorizationServerMetadata)
+
+app.use('/oauth/*', mcpEnabledGuard)
 app.route('/oauth', oauthApp)
 
 // SCIM 2.0 provisioning (has its own bearer token auth, separate from session/OAuth)
