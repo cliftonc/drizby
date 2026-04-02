@@ -24,6 +24,7 @@ const sections: NavSection[] = [
       { path: '/settings/ai', label: 'AI Provider', adminOnly: true },
       { path: '/settings/mcp', label: 'MCP Server' },
       { path: '/settings/github-app', label: 'GitHub Sync', adminOnly: true },
+      { path: '/settings/metabase-import', label: 'Metabase Import', adminOnly: true },
     ],
   },
   {

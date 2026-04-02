@@ -7,6 +7,7 @@ import GeneralSettings from './GeneralSettings'
 import GitHubAppPage from './GitHubAppPage'
 import GroupsPage from './GroupsPage'
 import McpServerPage from './McpServerPage'
+import MetabaseImportPage from './MetabaseImportPage'
 import ServerFeaturesPage from './ServerFeaturesPage'
 import SettingsNav from './SettingsNav'
 import TeamPage from './TeamPage'
@@ -27,6 +28,7 @@ export default function SettingsPage() {
           <Route path="github-app" element={<GitHubAppPage />} />
           <Route path="data" element={<DataSettingsPage />} />
           <Route path="connections" element={<ConnectionsPage />} />
+          <Route path="metabase-import" element={<MetabaseImportPage />} />
         </Routes>
       </div>
     </div>

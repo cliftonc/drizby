@@ -1,0 +1,52 @@
+{
+  "data": [
+    {
+      "description": "Overview of sample data and hypothetical sales",
+      "archived": false,
+      "collection_position": 2,
+      "bookmark": false,
+      "can_write": true,
+      "last_editor_common_name": null,
+      "pk_ref": null,
+      "name": "E-commerce Insights",
+      "creator_common_name": "Metabase Internal",
+      "collection_authority_level": null,
+      "creator_id": 13371338,
+      "updated_at": "2026-04-02T12:02:09.532224Z",
+      "moderated_status": null,
+      "effective_location": null,
+      "last_editor_id": null,
+      "id": 1,
+      "last_edited_at": null,
+      "context": null,
+      "scores": [
+        {
+          "score": 0.9999368222341820987653333333333333333333,
+          "name": "recency",
+          "weight": 1,
+          "contribution": 0.9999368222341820987653333333333333333333
+        },
+        { "score": 1, "name": "pinned", "weight": 0, "contribution": 0 },
+        { "score": 0, "name": "bookmarked", "weight": 1, "contribution": 0 },
+        { "score": 0.0, "name": "dashboard", "weight": 0, "contribution": 0.0 },
+        { "score": 0, "name": "prefix", "weight": 0, "contribution": 0 },
+        { "score": 0, "name": "mine", "weight": 1, "contribution": 0 },
+        { "score": 0, "name": "exact", "weight": 5, "contribution": 0 },
+        { "score": 0.0, "name": "view-count", "weight": 2, "contribution": 0.0 },
+        { "score": 0e-40, "name": "user-recency", "weight": 5, "contribution": 0e-40 },
+        { "score": 1, "name": "text", "weight": 5, "contribution": 5 },
+        { "score": 1.0, "name": "model", "weight": 2, "contribution": 2.0 }
+      ],
+      "collection": { "id": 2, "name": "Examples", "authority_level": null, "type": null },
+      "verified": null,
+      "created_at": "2026-04-02T12:02:09.532224Z",
+      "model": "dashboard"
+    }
+  ],
+  "limit": null,
+  "models": ["dashboard"],
+  "offset": null,
+  "table_db_id": null,
+  "engine": "search.engine/appdb",
+  "total": 1
+}

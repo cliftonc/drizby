@@ -25,6 +25,7 @@ import cubeDefsApp from './src/routes/cube-definitions'
 import editorTypesApp from './src/routes/editor-types'
 import githubAppApp from './src/routes/github-app'
 import groupsApp from './src/routes/groups'
+import metabaseImportApp from './src/routes/metabase-import'
 import notebooksApp from './src/routes/notebooks'
 import oauthApp, {
   authorizationServerMetadata,
@@ -515,6 +516,7 @@ app.route('/api/users', usersApp)
 app.route('/api/settings', settingsApp)
 app.route('/api/github-app', githubAppApp)
 app.route('/api/ai', aiApp)
+app.route('/api/metabase-import', metabaseImportApp)
 
 // Error handling
 app.onError((err, c) => {
