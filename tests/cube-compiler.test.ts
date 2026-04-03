@@ -1,6 +1,11 @@
 import { createRequire } from 'node:module'
-import { describe, expect, it } from 'vitest'
-import { compileCube, compileSchema, transpileAndExecute } from '../src/services/cube-compiler'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  compileCube,
+  compileSchema,
+  resolveTypecheckWorkerUrl,
+  transpileAndExecute,
+} from '../src/services/cube-compiler'
 
 const esmRequire = createRequire(import.meta.url)
 
@@ -16,6 +21,11 @@ function schemaResolver(specifier: string) {
 function sandbox(code: string) {
   return transpileAndExecute(code, schemaResolver)
 }
+
+afterEach(() => {
+  vi.resetModules()
+  vi.doUnmock('node:worker_threads')
+})
 
 describe('cube-compiler', () => {
   // ─── Full pipeline (type-check + compile + execute) ───────────
@@ -114,6 +124,40 @@ describe('cube-compiler', () => {
       `)
       expect(result.errors.length).toBeGreaterThan(0)
     })
+
+    it('uses the JavaScript worker in source runtimes', () => {
+      const workerUrl = resolveTypecheckWorkerUrl(
+        'file:///tmp/drizby/src/services/cube-compiler.ts'
+      )
+      expect(workerUrl.pathname).toMatch(/typecheck-worker\.js$/)
+    })
+
+    it('reports actionable errors when the worker fails to start', async () => {
+      vi.resetModules()
+      vi.doMock('node:worker_threads', async () => {
+        const actual =
+          await vi.importActual<typeof import('node:worker_threads')>('node:worker_threads')
+
+        class ThrowingWorker {
+          constructor() {
+            throw new Error('boom')
+          }
+        }
+
+        return {
+          ...actual,
+          Worker: ThrowingWorker as unknown as typeof actual.Worker,
+        }
+      })
+
+      const { compileSchema: compileSchemaWithMock } = await import('../src/services/cube-compiler')
+      const result = await compileSchemaWithMock('export const users = {}')
+
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0].message).toMatch(/failed to start/)
+      expect(result.errors[0].message).toMatch(/typecheck-worker\.js/)
+      expect(result.errors[0].message).toMatch(/boom/)
+    })
   })
 
   // ─── Sandbox isolation (fast, no type-checking) ───────────────
@@ -121,8 +165,7 @@ describe('cube-compiler', () => {
   describe('sandbox blocks dangerous globals', () => {
     it('blocks process.env access', () => {
       const result = sandbox(`
-        const secrets = process.env
-      `)
+        const secrets=***      `)
       expect(result.errors.length).toBeGreaterThan(0)
       expect(result.errors[0].message).toMatch(/process/)
     })
