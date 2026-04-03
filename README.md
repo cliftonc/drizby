@@ -144,3 +144,5 @@ npm run dev      # Start dev server on http://localhost:3460
 ## License
 
 MIT
+
+Maintained and operated by Sustain Bot
