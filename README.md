@@ -22,7 +22,7 @@ Drizby is an open-source BI app built around [drizzle-cube](https://try.drizzle-
 
 - **Single-tenant today:** the codebase stores `organisationId` on records, but the app currently runs with that value hardcoded to `1`. Treat the current product as a single workspace deployment, not full multi-tenant SaaS.
 - **Schema pull has limits:** Drizby shells out to `drizzle-kit pull`, then cleans up the generated file for use in the editor. For PostgreSQL-style dialects it currently targets the `public` schema, and complex generated extras such as indexes/constraints may need manual cleanup after import.
-- **AI features are optional:** notebooks still exist without AI configured, but AI-powered cube generation and chat-style workflows need a provider/API key configured in Settings.
+- **AI features are optional:** notebooks still exist without AI configured. AI-assisted cube generation uses the provider configured in Settings, while notebook chat can also use a per-user API key entered in the notebook UI.
 
 ## Quick start with Docker
 
