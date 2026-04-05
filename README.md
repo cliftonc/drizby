@@ -2,144 +2,198 @@
 
 **[www.drizby.com](https://www.drizby.com)**
 
-![Agentic AI Notebooks](docs/images/drizby_3.png)
+![Drizby](docs/images/drizby_3.png)
 
-**Open-source BI platform powered by [drizzle-cube](https://try.drizzle-cube.dev).** Self-service analytics, AI agentic notebooks, and a full semantic layer — in one deployable app.
+Drizby is an open-source BI app built around [drizzle-cube](https://try.drizzle-cube.dev). It lets you connect a database, define or import Drizzle schemas, build cube definitions, and explore the results through dashboards, notebooks, and a visual analysis builder.
 
-Drizby is a Metabase-style analytics platform that uses your existing Drizzle schemas to power dashboards, notebooks, and ad-hoc analysis. Define your metrics once in the semantic layer, then access them everywhere — dashboards, APIs, or AI agents — with consistent definitions and built-in multi-tenant security.
+> **Status:** active work in progress. The README below reflects what is in the repo today.
 
-> **Work in progress.** Drizby is under active development.
+## What Drizby does today
 
-## Quick Start
+- Runs as a self-hosted web app with an onboarding flow and demo seed data
+- Manages database connections and compiles a semantic layer per connection
+- Lets admins author Drizzle schema files and cube definitions in the browser
+- Can run `drizzle-kit pull` from the app to bootstrap schema files from an existing database
+- Includes AI-assisted cube planning/generation when an AI provider is configured
+- Provides dashboards, notebook-style analysis, and a no-code analysis builder
+- Supports role-based app access (`admin`, `member`, `user/pending approval`)
 
-One command:
+## Important scope notes
 
-```bash
-docker run -p 3461:3461 -v drizby-data:/app/data ghcr.io/cliftonc/drizby:main
-```
+- **Single-tenant today:** the codebase stores `organisationId` on records, but the app currently runs with that value hardcoded to `1`. Treat the current product as a single workspace deployment, not full multi-tenant SaaS.
+- **Schema pull has limits:** Drizby shells out to `drizzle-kit pull`, then cleans up the generated file for use in the editor. For PostgreSQL-style dialects it currently targets the `public` schema, and complex generated extras such as indexes/constraints may need manual cleanup after import.
+- **AI features are optional:** notebooks still exist without AI configured, but AI-powered cube generation and chat-style workflows need a provider/API key configured in Settings.
 
-Open [http://localhost:3461](http://localhost:3461) and follow the setup wizard to create your admin account. A demo dataset with sample employee/productivity data is seeded automatically on first run.
+## Quick start with Docker
 
-The `-v drizby-data:/app/data` flag persists your databases and configuration across container restarts. To start fresh, run `docker volume rm drizby-data`.
-
-## Features
-
-### Semantic Layer (drizzle-cube)
-
-At the core of Drizby is [drizzle-cube](https://drizzle.cube) — a semantic layer that compiles your Drizzle ORM schemas into analytics cubes. Define business metrics (measures, dimensions, joins) once, and every part of the platform queries through it with consistent definitions and row-level security.
-
-- **Use your existing Drizzle schema** — if you already have Drizzle ORM, you're 80% done
-- **Database introspection** — auto-generate schemas from existing databases with `drizzle-kit pull`
-- **AI-powered cube generation** — point AI at your schemas and it generates cube definitions for you
-- **Multi-tenant security** — organisation-based row-level isolation enforced at the query layer
-- **PostgreSQL and SQLite** support
-
-### Dashboards
-
-Drag-and-drop grid dashboards with rich visualizations:
-
-- **Chart types:** bar, line, area, pie, scatter, KPI cards, and data tables
-- **Grid layout** with resizable, draggable portlets (react-grid-layout)
-- **Per-dashboard filtering** and configuration
-- **Save, load, and reset** dashboard configurations
-- **Thumbnail generation** for dashboard listings
-
-### Agentic AI Notebooks
-
-Conversational AI-powered data exploration:
-
-- **Multi-turn AI conversations** — ask questions about your data in natural language
-- **Mixed content blocks** — markdown, charts, and query results in one document
-- **Auto-save** — notebook state persists automatically
-- **Dashboard creation** — promote notebook blocks into full dashboards
-- **Configurable AI provider** — Anthropic Claude, OpenAI, or Google Gemini
-
-### Analysis Builder
-
-Visual, no-code query builder:
-
-- Select connections, measures, dimensions, and filters
-- Real-time results as you build queries
-- No SQL or code required
-
-### Schema & Cube Editor
-
-Full IDE experience for defining your semantic layer:
-
-- **Monaco editor** with TypeScript autocomplete for Drizzle ORM and drizzle-cube types
-- **Real-time compilation** with inline error reporting
-- **Schema files** — write Drizzle table definitions, compile and validate
-- **Cube definitions** — define measures, dimensions, and joins, then register with the semantic layer
-- **AI cube generation** — stream-powered SSE endpoint that generates cubes from your schemas
-
-### Connections
-
-Multi-database connection management:
-
-- **PostgreSQL and SQLite** support
-- Connection string management and testing
-- Per-connection schema and cube compilation
-- Each connection gets its own isolated semantic layer instance
-
-### Team & Auth
-
-- Email/password authentication
-- Google OAuth
-- Role-based access control (admin, member, pending user)
-- User registration with admin approval
-- Session-based auth with secure cookies
-
-### AI Settings
-
-- Configure your AI provider (Anthropic, OpenAI, Google Gemini)
-- Set API keys, model selection, and custom base URLs
-- Powers both agentic notebooks and AI cube generation
-
----
-
-### Build from source
+Create a persistent volume, generate two random secrets, then run the published image with the required production env vars:
 
 ```bash
-git clone https://github.com/cliftonc/drizby.git && cd drizby && docker build -t drizby . && docker run -p 3461:3461 -v drizby-data:/app/data drizby
+docker volume create drizby-data
+openssl rand -hex 32   # use one value for OAUTH_JWT_SECRET
+openssl rand -hex 32   # use another value for ENCRYPTION_SECRET
+
+docker run --rm \
+  -p 3461:3461 \
+  -e APP_URL=http://localhost:3461 \
+  -e OAUTH_JWT_SECRET=replace-with-generated-hex-value \
+  -e ENCRYPTION_SECRET=replace-with-generated-hex-value \
+  -v drizby-data:/app/data \
+  ghcr.io/cliftonc/drizby:main
 ```
 
-### From Source (development)
+Then open [http://localhost:3461](http://localhost:3461).
+
+On first run you will create the initial admin account in the setup wizard, then Drizby seeds a demo SQLite connection with sample data/content so you can explore the product immediately.
+
+### Docker notes
+
+- **External app port:** `3461`
+- **Internal Node port inside the container:** `3462` (used behind Caddy; you do **not** need to publish it)
+- **Persistent app data path:** `/app/data`
+- The named volume stores the internal app database and local file-based data used by the container.
+- If you publish a different host port, set `APP_URL` to the public URL users will actually open.
+  - Example: `-p 8080:3461` => `APP_URL=http://localhost:8080`
+- To reset a local Docker install completely:
+
+```bash
+docker rm -f $(docker ps -aq --filter ancestor=ghcr.io/cliftonc/drizby:main) 2>/dev/null || true
+docker volume rm drizby-data
+```
+
+### Optional Docker env vars
+
+These are not required for a basic local run, but are supported by the app:
+
+- `ADMIN_EMAIL`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` to auto-create the admin account and send a setup/reset email
+- `APP_NAME` to customize instance branding
+
+## Build the Docker image yourself
 
 ```bash
 git clone https://github.com/cliftonc/drizby.git
 cd drizby
-npm install --legacy-peer-deps
-npm run setup    # Generate migrations, run them, seed demo data
-npm run dev      # Start dev server on http://localhost:3460
+docker build -t drizby .
+openssl rand -hex 32   # use one value for OAUTH_JWT_SECRET
+openssl rand -hex 32   # use another value for ENCRYPTION_SECRET
+docker run --rm \
+  -p 3461:3461 \
+  -e APP_URL=http://localhost:3461 \
+  -e OAUTH_JWT_SECRET=replace-with-generated-hex-value \
+  -e ENCRYPTION_SECRET=replace-with-generated-hex-value \
+  -v drizby-data:/app/data \
+  drizby
 ```
 
----
+## Source development
 
-## How It Works
+### Prerequisites
 
-1. **Connect a database** — add a PostgreSQL or SQLite connection string
-2. **Define your schema** — write Drizzle table definitions or introspect from your database
-3. **Create cubes** — define analytics metrics and dimensions (or let AI generate them)
-4. **Build dashboards** — drag-and-drop charts powered by your semantic layer
-5. **Explore with AI** — open an agentic notebook and ask questions in natural language
+- Node.js 24+ recommended (matches the Dockerfile/runtime used in this repo)
+- npm
 
----
+### Setup
 
-## Tech Stack
+```bash
+git clone https://github.com/cliftonc/drizby.git
+cd drizby
+CI=true npm ci --legacy-peer-deps --no-audit --no-fund
+npm run setup
+```
+
+`npm run setup` generates migrations, applies them, and seeds the local demo content.
+
+### Run the dev servers
+
+```bash
+npm run dev
+```
+
+That starts:
+
+- **Vite client:** [http://localhost:3460](http://localhost:3460)
+- **Backend/API:** [http://localhost:3461](http://localhost:3461)
+- Vite proxies `/api`, `/cubejs-api`, `/oauth`, `/.well-known`, `/mcp`, and `/health` to the backend
+
+In normal source development, open **http://localhost:3460**.
+
+### Build and run a local production build
+
+```bash
+npm run build
+npm start
+```
+
+The standalone server listens on `PORT` (default `3461`). In Docker, Caddy listens on `PORT` and proxies to Node on `NODE_PORT` (default `3462`).
+
+## Current capabilities
+
+### Semantic layer and modeling
+
+- Browser-based schema editor with Monaco
+- Browser-based cube definition editor with compilation/validation
+- Per-connection semantic layer compilation
+- Schema import via `drizzle-kit pull`
+- AI-assisted cube planning, generation, and join application
+
+### Analysis surfaces
+
+- Dashboards with draggable/resizable grid widgets
+- Notebook-style analysis documents with mixed content blocks
+- No-code analysis builder for measures, dimensions, and filters
+- Chart/table rendering for saved and exploratory analysis
+
+### Connections
+
+The connection registry in the app currently includes presets for:
+
+- PostgreSQL variants: `postgres.js`, `pg`, Neon, Supabase, PGlite, AWS Data API, Aurora DSQL
+- MySQL variants: `mysql2`, PlanetScale, TiDB
+- SingleStore
+- SQLite variants: `better-sqlite3`, LibSQL/Turso
+- Databend
+- Snowflake
+- DuckDB
+
+Each saved connection gets its own schema files, cube definitions, and semantic-layer instance inside Drizby.
+
+### Auth and administration
+
+- Email/password auth
+- Role-based permissions (`admin`, `member`, pending `user`)
+- Admin approval flow
+- Settings UI for AI providers and auth providers
+- OAuth/SSO-related routes and settings for Google, GitHub, GitLab, Microsoft, Slack, magic links, and SAML/SCIM configuration
+
+## Typical workflow
+
+1. Start Drizby and create the admin account
+2. Add a database connection
+3. Pull or write Drizzle schema files
+4. Create cube definitions manually or with AI assistance
+5. Explore data in the analysis builder or notebooks
+6. Save/publish results to dashboards
+
+## Verification commands
+
+The repo includes these main checks:
+
+```bash
+npm test
+npm run typecheck
+npm run lint
+```
+
+## Tech stack
 
 | Layer | Technology |
-|-------|-----------|
-| Semantic Layer | [drizzle-cube](https://drizzle.cube) |
+|---|---|
+| Semantic layer | [drizzle-cube](https://drizzle.cube) |
 | Backend | Hono, TypeScript, Drizzle ORM |
 | Frontend | React 18, TanStack Query, Recharts, Tailwind CSS |
-| Code Editor | Monaco Editor |
-| Dashboard Grid | react-grid-layout |
-| Internal DB | SQLite (better-sqlite3) |
-| User Databases | PostgreSQL, SQLite |
-| AI Providers | Anthropic Claude, OpenAI, Google Gemini |
-| Auth | Sessions, Google OAuth (Arctic), CASL permissions |
-
----
+| Editor | Monaco |
+| Internal app DB | SQLite (`better-sqlite3`) |
+| Build tooling | Vite, esbuild/tsx |
 
 ## License
 
