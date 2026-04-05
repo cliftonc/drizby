@@ -49,6 +49,41 @@ const WORKER_EXT = CURRENT_FILE.endsWith('.ts') ? '.ts' : '.js'
 const WORKER_PATH = join(CURRENT_DIR, `typecheck-worker${WORKER_EXT}`)
 
 /**
+ * Build execArgv for the worker thread.
+ * When the worker is a .ts file, we need a TypeScript loader registered.
+ * Node ≥ 22.6 handles .ts natively (--experimental-strip-types, on by default in v24+).
+ * Older Node versions need tsx. We check:
+ *   1. Parent already has tsx/ts-node flags → propagate them
+ *   2. Node has native TS stripping → no extra flags needed
+ *   3. Otherwise → add --import tsx so the worker can load .ts
+ */
+function buildWorkerExecArgv(): string[] {
+  if (WORKER_EXT === '.js') return []
+
+  const parentArgv = process.execArgv.filter(arg => !arg.startsWith('-e') && arg !== '--')
+
+  // Parent already has tsx or ts-node loader registered
+  if (parentArgv.some(arg => arg.includes('tsx') || arg.includes('ts-node'))) {
+    return parentArgv
+  }
+
+  // Node ≥ 22.6 has --experimental-strip-types (on by default in v24+)
+  const [major, minor] = process.versions.node.split('.').map(Number)
+  if (major > 22 || (major === 22 && minor >= 6)) {
+    return parentArgv
+  }
+
+  // Older Node — try to add tsx as a loader
+  try {
+    esmRequire.resolve('tsx')
+    return [...parentArgv, '--import', 'tsx']
+  } catch {
+    // tsx not installed — fall back to parent argv and hope for the best
+    return parentArgv
+  }
+}
+
+/**
  * Run type-checking in a worker thread so it doesn't block the event loop.
  * Returns only errors (serializable). Execution happens on the main thread afterward.
  */
@@ -59,8 +94,7 @@ function typeCheckInWorker(
   return new Promise(resolve => {
     const worker = new Worker(WORKER_PATH, {
       workerData: { sourceCode, virtualFiles, projectRoot: PROJECT_ROOT },
-      // Pass parent's execArgv so tsx/ts-node loaders work in the worker
-      execArgv: process.execArgv,
+      execArgv: buildWorkerExecArgv(),
     })
     worker.on('message', (msg: { errors: CompileError[] }) => {
       resolve(msg.errors)
