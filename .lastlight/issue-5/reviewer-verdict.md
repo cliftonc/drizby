@@ -1,4 +1,4 @@
-# Reviewer Verdict — Issue #5: Public Share Links / Embedded Dashboards
+# Reviewer Verdict — Issue #5: Public Share Links / Embedded Dashboards (Cycle 2)
 
 Date: 2026-04-07
 Verdict: **REQUEST_CHANGES**
@@ -13,121 +13,105 @@ npx vitest run tests/public-dashboard.test.ts
 
 npx vitest run (full suite)
 ✓ 139 passed | 4 failed (cube-compiler.test.ts — pre-existing, unrelated)
+
+npm run typecheck
+✗ Exit 2 — 3 errors in tests/public-dashboard.test.ts (introduced by this branch)
+
+npm run lint
+✗ Exit 1 — 7 errors (formatting + import order in new/modified files, introduced by this branch)
 ```
+
+Main branch baseline: `typecheck` exits 0 (no errors), `lint` exits 1 with 1 pre-existing warning only.
+
+---
+
+## Issues Resolved from Cycle 1
+
+All three cycle-1 blockers are confirmed fixed:
+
+1. `app.ts:8,15` — `and`, `getSessionCookie`, `validateSession` imports restored. Typecheck clean for `app.ts`.
+2. `client/src/pages/DashboardViewPage.tsx:39` — `const [confirm, ConfirmDialog] = useConfirm()` correct tuple destructuring. `confirm({...})` object call and `<ConfirmDialog />` render both present.
+3. `app.ts:193` — `allowMethods: ['GET', 'POST', 'OPTIONS']` on `/public/*` CORS middleware.
 
 ---
 
 ## Critical Issues (must fix before merge)
 
-### 1. Missing imports in `app.ts` break runtime — introduced by this PR
+### 1. Unused imports in test file break `npm run typecheck` — introduced by this branch
 
-`app.ts:8` — The PR removed `and`, `getSessionCookie`, `validateSession` from imports when extracting logic to `cube-app-cache.ts`, but these names are still referenced in `app.ts`.
+`tests/public-dashboard.test.ts:16,19,21`:
 
-- `and` is used at `app.ts:56` (`isMcpEnabled`) and `app.ts:65` (`isMcpAppEnabled`) but is no longer imported from `drizzle-orm`.
-- `getSessionCookie` is used at `app.ts:278` and `validateSession` at `app.ts:280` (inside `requireBearerOrSessionAuth`) but the import line `import { getSessionCookie, validateSession } from './src/auth/session'` was removed.
-
-`npx tsc --noEmit` reports all three as errors:
-```
-app.ts(56,12): error TS2304: Cannot find name 'and'.
-app.ts(65,12): error TS2304: Cannot find name 'and'.
-app.ts(278,21): error TS2304: Cannot find name 'getSessionCookie'.
-app.ts(280,26): error TS2304: Cannot find name 'validateSession'.
-```
-
-This will cause a runtime crash for any `/cubejs-api/*` and `/mcp` request that uses session-cookie auth, and any `/api/settings` request that checks MCP state. The feature is otherwise correct; these imports need to be restored.
-
-Fix: add to `app.ts` imports:
 ```ts
-import { and } from 'drizzle-orm'  // or add to existing drizzle-orm import line
-import { getSessionCookie, validateSession } from './src/auth/session'
+import { and, eq } from 'drizzle-orm'   // line 16 — `and` is never used
+import * as schema from '../schema'      // line 19 — `schema` is never used
+import { defineAbilitiesFor } from '../src/permissions/abilities'  // line 21 — never used
 ```
 
-### 2. `useConfirm` used incorrectly in `DashboardViewPage.tsx` — breaks revoke UI
-
-`client/src/pages/DashboardViewPage.tsx:39` — `const confirm = useConfirm()` does not destructure the return tuple. The hook returns `[confirmFn, DialogComponent]`.
-
-`DashboardViewPage.tsx:455` — `await confirm('Revoke this share link? ...')` passes a plain string, but `useConfirm` expects a `ConfirmOptions` object `{ title, message }`.
-
-`DashboardViewPage.tsx` never renders the `ConfirmDialog` component, so the modal will not appear even after fixing the call signature.
-
-TypeScript confirms: `error TS2349: This expression is not callable. Type '[(options: ConfirmOptions) => Promise<boolean>, () => ReactNode]' has no call signatures.`
-
-Fix — replace lines 39 and 455, and add `<ConfirmDialog />` to JSX:
-```tsx
-// line 39
-const [confirm, ConfirmDialog] = useConfirm()
-
-// line 455
-const ok = await confirm({
-  title: 'Revoke share link',
-  message: 'Revoke this share link? It will stop working immediately.',
-  variant: 'danger',
-})
-
-// somewhere in the return JSX (before the closing </div>)
-<ConfirmDialog />
+`tsc --noEmit` reports:
 ```
+tests/public-dashboard.test.ts(16,10): error TS6133: 'and' is declared but its value is never read.
+tests/public-dashboard.test.ts(19,1): error TS6133: 'schema' is declared but its value is never read.
+tests/public-dashboard.test.ts(21,1): error TS6133: 'defineAbilitiesFor' is declared but its value is never read.
+```
+
+Main branch exits `typecheck` cleanly at 0. This branch introduces 3 errors that will fail CI.
+
+Fix: remove the unused imports from `tests/public-dashboard.test.ts` lines 16, 19, and 21. Keep `eq` (used), `Hono` (line 17), and `{ analyticsPages, dashboardShareTokens }` (line 20).
 
 ---
 
 ## Important Issues (should fix)
 
-### 3. CORS `allowMethods` on `/public/*` excludes `POST` — breaks cross-origin iframe embedding
+### 2. Lint formatting violations in new files break `npm run lint` — introduced by this branch
 
-`app.ts:200`:
-```ts
-app.use('/public/*', cors({ origin: '*', allowMethods: ['GET', 'OPTIONS'] }))
-```
+`npm run lint` exits 1 with 7 errors (main branch exits 1 with 1 pre-existing warning only). All 7 errors are in files added or modified by this branch:
 
-The drizzle-cube API routes (`/v1/load`, `/v1/batch`, `/v1/sql`, `/v1/dry-run`) all use `POST`. When the public dashboard is embedded in a cross-origin iframe, the browser sends a CORS preflight for each cube query. The preflight will receive `Access-Control-Allow-Methods: GET, OPTIONS`, and the browser will block the actual `POST` request.
+- `app.ts` — import sort order (`connection-manager` import must come before `cube-app-cache`) and 2 blank lines before `const app` (should be 0).
+- `src/services/cube-app-cache.ts` — import sort order (`ai-settings` before `connection-manager`).
+- `src/routes/public-dashboard.ts` — formatter wants `.where(and(...))` on single line where it currently spans 3 lines (arguments short enough to fit).
+- `src/routes/analytics-pages.ts` — formatter wants `.where(and(...))` broken to multiple lines (argument too long for one line).
+- `client/src/pages/DashboardViewPage.tsx` — 3 formatter violations: close-button `<svg>` attributes inline (should be multi-line); `<p>` text node inline (should be broken); `{token.idMasked}` and conditional `{token.label && ...}` formatting.
+- `client/src/pages/PublicDashboardPage.tsx` — outer `<div>` inline style object should be broken to multi-line.
 
-Same-origin usage works fine. Cross-origin iframe embedding — the primary use case for this feature — will silently fail to load any chart data.
-
-Fix:
-```ts
-app.use('/public/*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'OPTIONS'] }))
-```
-
-### 4. Full token ID returned in list response contradicts "never re-served" intent
-
-`src/routes/analytics-pages.ts:456-464` — the list response includes `id: r.id` (the full 32-char token) alongside `idMasked`. The comment at line 455 says "full ID is never re-served" but the code does the opposite.
-
-This means any admin with access to the share modal after creation can retrieve all active token IDs. The architect plan explicitly states the token should only be returned once (at creation) and subsequent GET lists should return a masked version only.
-
-The current frontend uses `token.id` for the revoke DELETE call. A separate non-secret revoke ID (e.g., a UUID auto-increment on the token row) would allow revocation without exposing the secret. Alternatively, document that the full ID is intentionally accessible to admins/owners (since they could just create a new token anyway), update the comment, and accept this as a design decision. Either way, the comment and code are inconsistent.
+Fix: run `npm run lint:fix`, review the diff, then commit.
 
 ---
 
 ## Suggestions
 
-### 5. Missing `organisationId` filter in `resolveToken`
+### 3. Missing `organisationId` filter in `resolveToken`
 
-`src/routes/public-dashboard.ts:28-45` — `resolveToken` queries only by `id`, with no `organisationId` scope. Currently single-tenant (hardcoded to 1) so this is not exploitable, but it diverges from the scoping pattern used everywhere else and will become an issue if multi-tenancy is ever activated. Consider adding `eq(dashboardShareTokens.organisationId, 1)` consistent with other tables.
+`src/routes/public-dashboard.ts:28-45` — token resolution queries only by `id` with no `organisationId` scope. The codebase convention (`src/CLAUDE.md`) requires all queries to filter by `organisationId`. Currently single-tenant (hardcoded to 1) so not exploitable, but diverges from every other query in the codebase.
 
-### 6. Rate limiting not applied to `/public/*`
+Consider adding:
+```ts
+and(eq(dashboardShareTokens.id, token), eq(dashboardShareTokens.organisationId, 1))
+```
 
-`app.ts:200` — As noted in the architect plan and the executor summary, no rate limiting was applied to the public routes. These are unauthenticated and directly queryable. The existing `createRateLimiter` should be applied before merge for a feature designed to be publicly accessible.
+### 4. Rate limiting not applied to `/public/*`
 
-### 7. `isMcpAppEnabled` defined in both `app.ts` and `cube-app-cache.ts`
+`app.ts:193` — the public routes are unauthenticated and not rate-limited. The architect plan identified this as a risk. The existing `createRateLimiter` in `src/auth/rate-limit.ts` can be applied before merge.
 
-`app.ts:61-65` and `src/services/cube-app-cache.ts:16-22` — both files define an identical `isMcpAppEnabled` function. `app.ts:61` version is unused (TS reports `'isMcpAppEnabled' is declared but its value is never read`). The one in `cube-app-cache.ts` is the active one. The dead copy in `app.ts` should be removed.
+### 5. Full token ID exposed in list endpoint
+
+`src/routes/analytics-pages.ts:457` — `id: r.id` returns the full 32-char token in the list response alongside `idMasked`. The architect plan stated the token should only be returned at creation time. The updated comment documents the decision as intentional (admins/owners can retrieve it), which is an acceptable resolution — but a separate opaque revoke ID would be the more secure long-term design.
 
 ---
 
 ## Security Assessment
 
-- **Token entropy**: 128-bit random (`crypto.randomBytes(16).toString('hex')`). Sufficient.
-- **Token revocation**: soft-revoke via `revokedAt` timestamp, checked on every public request. Correct.
-- **Soft-deleted dashboard check**: `isActive = true` filter present in public route. Correct.
-- **Auth bypass scope**: public routes mounted before `authMiddleware`, DB injected separately. Correct.
-- **CSP / frame-ancestors**: `frame-ancestors *` on `/public/*` override is correct for the stated use case.
-- **Token returned on creation only**: intent is correct but implementation leaks via list endpoint (issue #4 above).
-- **No SSRF in cube proxy**: proxy only dispatches to `getCubeApp(connectionId)` where `connectionId` comes from the DB (not user input). Safe.
+- Token entropy: 128-bit random. Sufficient.
+- Token revocation: soft-revoke via `revokedAt`, checked on every request. Correct.
+- Soft-deleted dashboard check: `isActive = true` in public route. Correct.
+- Auth bypass scope: public routes mounted before `authMiddleware`. Correct.
+- CSP / `frame-ancestors *`: correct for stated use case.
+- No SSRF in cube proxy: `connectionId` comes from DB, not user input. Safe.
+- CORS POST on `/public/*`: now correct after cycle-1 fix.
 
 ---
 
 ## Summary
 
-The backend schema, token management routes, public data routes, migration, and tests are well-implemented and match the architect plan. The critical blockers are two bugs introduced during refactoring: missing imports in `app.ts` that break session-based auth for cube/MCP routes, and incorrect `useConfirm` usage in the share modal that prevents the revoke confirmation from working. The cross-origin CORS restriction on POST also needs to be fixed for embedded dashboards to function as designed.
+Cycle 1's three blockers are fully resolved. The implementation is architecturally sound — schema, migrations, backend routes, public cube proxy, frontend page, and share modal are all correct. Two new blockers prevent CI from passing: unused imports in the test file break `typecheck`, and formatter/import-order violations in new files break `lint`. Both are mechanical fixes requiring no logic changes. Running `npm run lint:fix` and removing the three unused test imports will clear them.
 
 This is a bot review. No shared context with the executor.
