@@ -198,3 +198,7 @@ npm run lint
 ## License
 
 MIT
+
+---
+
+> This repository is maintained with the assistance of [Last Light](https://github.com/apps/last-light), an automated GitHub maintenance bot that handles issue triage, pull request reviews, and routine repository upkeep.
