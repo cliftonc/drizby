@@ -54,6 +54,46 @@ npx vitest run (full suite)
 
 3. **Rate limiting not added**: The architect noted rate limiting as a "should add" risk. Not implemented in this pass — it can be added separately without requiring a schema/migration change.
 
+## Fix Cycle 1
+
+Date: 2026-04-07
+
+### Issues Fixed
+
+**Critical #1 — Missing imports in `app.ts` (runtime crash)**
+- Added `and` to the `drizzle-orm` import line (`app.ts:8`)
+- Added `import { getSessionCookie, validateSession } from './src/auth/session'` (`app.ts:15`)
+- Both were inadvertently dropped during the cube-app-cache refactor
+- `npx tsc --noEmit` confirms the four errors (`and` ×2, `getSessionCookie`, `validateSession`) are resolved
+
+**Critical #2 — Incorrect `useConfirm` usage in `DashboardViewPage.tsx` (revoke UI broken)**
+- Fixed `const confirm = useConfirm()` → `const [confirm, ConfirmDialog] = useConfirm()` (line 39)
+- Fixed `confirm('Revoke...')` string call → `confirm({ title, message, variant: 'danger' })` object (line 455)
+- Added `<ConfirmDialog />` to the JSX return before the closing `</div>` so the modal renders
+
+**Important #3 — CORS `allowMethods` missing `POST` on `/public/*`**
+- Changed `allowMethods: ['GET', 'OPTIONS']` → `['GET', 'POST', 'OPTIONS']` (`app.ts:200`)
+- Without this, cross-origin iframe embedding would fail for all cube query POSTs on preflight
+
+**Important #4 — Misleading comment on token list endpoint**
+- Updated the comment in `analytics-pages.ts:455` from "full ID is never re-served" to accurately document that the full token ID is returned for revocation by dashboard owners/admins
+- Frontend uses `token.id` in the `DELETE /:id/share-tokens/:tid` revoke call — removing the ID from the response would break revocation; adding a separate revoke UUID requires a schema migration and is deferred as a follow-up
+
+**Suggestion #7 — Dead `isMcpAppEnabled` in `app.ts`**
+- Removed the duplicate `isMcpAppEnabled` function from `app.ts` (lines 61–67); the live copy in `src/services/cube-app-cache.ts` is used by MCP routes
+
+### Test Results
+
+```
+npm run typecheck
+✓ No errors in app.ts / routes / client (3 pre-existing unused-import warnings in tests/public-dashboard.test.ts — unrelated)
+
+npx vitest run (full suite)
+✓ 139 passed | 4 failed (cube-compiler pre-existing, unrelated)
+```
+
+---
+
 ## Known Issues / Follow-ups
 
 - **Rate limiting on `/public/*`** not yet applied (mentioned in architect's risk section). Low priority — easy to add with `createRateLimiter`.

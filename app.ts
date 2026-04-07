@@ -5,13 +5,14 @@
 
 import { serveStatic } from '@hono/node-server/serve-static'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { count, eq, max } from 'drizzle-orm'
+import { and, count, eq, max } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { secureHeaders } from 'hono/secure-headers'
 import { settings, users } from './schema'
 import { authMiddleware } from './src/auth/middleware'
+import { getSessionCookie, validateSession } from './src/auth/session'
 import { db } from './src/db/index'
 import { defineAbilitiesFor } from './src/permissions/abilities'
 import type { AppAbility } from './src/permissions/abilities'
@@ -57,14 +58,6 @@ async function isMcpEnabled(): Promise<boolean> {
   return row?.value === 'true'
 }
 
-/** Check if MCP app mode is enabled in settings. */
-async function isMcpAppEnabled(): Promise<boolean> {
-  const [row] = await db
-    .select({ value: settings.value })
-    .from(settings)
-    .where(and(eq(settings.key, 'mcp_app_enabled'), eq(settings.organisationId, 1)))
-  return row?.value === 'true'
-}
 
 
 const app = new Hono<{ Variables: Variables }>()
@@ -197,7 +190,7 @@ app.use('/public/*', async (c, next) => {
 })
 
 // CORS for public routes — no credentials needed, open to all origins
-app.use('/public/*', cors({ origin: '*', allowMethods: ['GET', 'OPTIONS'] }))
+app.use('/public/*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'OPTIONS'] }))
 
 // Override CSP/frame headers for public dashboard routes — allow iframe embedding
 app.use('/public/*', async (c, next) => {

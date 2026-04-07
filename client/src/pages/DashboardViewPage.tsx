@@ -36,7 +36,7 @@ export default function DashboardViewPage() {
   const [newTokenLabel, setNewTokenLabel] = useState('')
   const [createdToken, setCreatedToken] = useState<ShareToken | null>(null)
   const [copied, setCopied] = useState(false)
-  const confirm = useConfirm()
+  const [confirm, ConfirmDialog] = useConfirm()
 
   const numericId = id ? Number.parseInt(id) : 0
   const { data: shareTokens = [], isLoading: tokensLoading } = useShareTokens(
@@ -452,7 +452,11 @@ export default function DashboardViewPage() {
                       </div>
                       <button
                         onClick={async () => {
-                          const ok = await confirm('Revoke this share link? It will stop working immediately.')
+                          const ok = await confirm({
+                            title: 'Revoke share link',
+                            message: 'Revoke this share link? It will stop working immediately.',
+                            variant: 'danger',
+                          })
                           if (ok) await revokeToken.mutateAsync(token.id)
                         }}
                         className="shrink-0 text-xs text-dc-error hover:underline"
@@ -469,6 +473,7 @@ export default function DashboardViewPage() {
           </div>
         </div>
       )}
+      <ConfirmDialog />
     </div>
   )
 }

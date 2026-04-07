@@ -452,7 +452,8 @@ analyticsApp.get('/:id/share-tokens', async c => {
       )
     )
 
-  // Mask the token ID — return only first 8 chars for display; full ID is never re-served
+  // Full token ID is included for revocation by the dashboard owner/admin.
+  // idMasked (first 8 chars) is provided for display purposes only.
   const masked = rows.map((r: any) => ({
     id: r.id,
     idMasked: `${r.id.slice(0, 8)}...`,
