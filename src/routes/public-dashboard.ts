@@ -56,9 +56,7 @@ export function createPublicDashboardApp(opts: {
     const [dashboard] = await db
       .select()
       .from(analyticsPages)
-      .where(
-        and(eq(analyticsPages.id, tokenRow.dashboardId), eq(analyticsPages.isActive, true))
-      )
+      .where(and(eq(analyticsPages.id, tokenRow.dashboardId), eq(analyticsPages.isActive, true)))
       .limit(1)
 
     if (!dashboard) return c.json({ error: 'Dashboard not found' }, 404)
@@ -88,9 +86,7 @@ export function createPublicDashboardApp(opts: {
     const [dashboard] = await db
       .select({ connectionId: analyticsPages.connectionId })
       .from(analyticsPages)
-      .where(
-        and(eq(analyticsPages.id, tokenRow.dashboardId), eq(analyticsPages.isActive, true))
-      )
+      .where(and(eq(analyticsPages.id, tokenRow.dashboardId), eq(analyticsPages.isActive, true)))
       .limit(1)
 
     if (!dashboard?.connectionId) return c.json({ error: 'No connection for this dashboard' }, 404)

@@ -4,4 +4,4 @@ executor_status: COMPLETE
 reviewer_status: COMPLETE
 reviewer_verdict: REQUEST_CHANGES
 fix_cycle_1_status: COMPLETE
-fix_cycle_2_status: IN_PROGRESS
+fix_cycle_2_status: COMPLETE

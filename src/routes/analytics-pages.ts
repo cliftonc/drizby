@@ -423,7 +423,9 @@ async function assertOwner(db: any, dashboardId: number, organisationId: number,
   const [existing] = await db
     .select({ createdBy: analyticsPages.createdBy })
     .from(analyticsPages)
-    .where(and(eq(analyticsPages.id, dashboardId), eq(analyticsPages.organisationId, organisationId)))
+    .where(
+      and(eq(analyticsPages.id, dashboardId), eq(analyticsPages.organisationId, organisationId))
+    )
   if (!existing) return null // dashboard not found
   if (auth?.user?.role === 'admin') return true
   return existing.createdBy === auth?.userId

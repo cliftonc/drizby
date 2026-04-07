@@ -13,12 +13,10 @@
  *  - Cascade — soft-deleted dashboard returns 404 on public fetch
  */
 
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import * as schema from '../schema'
 import { analyticsPages, dashboardShareTokens } from '../schema'
-import { defineAbilitiesFor } from '../src/permissions/abilities'
 import analyticsApp from '../src/routes/analytics-pages'
 import { createPublicDashboardApp } from '../src/routes/public-dashboard'
 import { jsonRequest, mountRoute } from './helpers/test-app'

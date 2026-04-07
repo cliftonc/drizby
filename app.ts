@@ -36,12 +36,12 @@ import scimApp from './src/routes/scim'
 import seedDemoApp from './src/routes/seed-demo'
 import settingsApp from './src/routes/settings'
 import usersApp from './src/routes/users'
+import { connectionManager } from './src/services/connection-manager'
 import {
   getCubeApp,
   invalidateCubeAppCache,
   validateOAuthBearer,
 } from './src/services/cube-app-cache'
-import { connectionManager } from './src/services/connection-manager'
 
 interface Variables {
   db: DrizzleDatabase
@@ -57,8 +57,6 @@ async function isMcpEnabled(): Promise<boolean> {
     .where(and(eq(settings.key, 'mcp_enabled'), eq(settings.organisationId, 1)))
   return row?.value === 'true'
 }
-
-
 
 const app = new Hono<{ Variables: Variables }>()
 

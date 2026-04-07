@@ -374,7 +374,13 @@ export default function DashboardViewPage() {
                 }}
                 className="text-dc-text-muted hover:text-dc-text"
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                >
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -382,7 +388,9 @@ export default function DashboardViewPage() {
 
             {createdToken && (
               <div className="mb-4 p-3 rounded-md bg-dc-surface-secondary border border-dc-border">
-                <p className="text-xs text-dc-text-muted mb-1">Share link (copy now — won't be shown again):</p>
+                <p className="text-xs text-dc-text-muted mb-1">
+                  Share link (copy now — won't be shown again):
+                </p>
                 <div className="flex items-center gap-2">
                   <input
                     readOnly
@@ -445,10 +453,10 @@ export default function DashboardViewPage() {
                       className="flex items-center justify-between text-sm gap-2 p-2 rounded border border-dc-border"
                     >
                       <div className="min-w-0">
-                        <span className="font-mono text-xs text-dc-text-muted">{token.idMasked}</span>
-                        {token.label && (
-                          <span className="ml-2 text-dc-text">{token.label}</span>
-                        )}
+                        <span className="font-mono text-xs text-dc-text-muted">
+                          {token.idMasked}
+                        </span>
+                        {token.label && <span className="ml-2 text-dc-text">{token.label}</span>}
                       </div>
                       <button
                         onClick={async () => {

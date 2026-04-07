@@ -94,6 +94,44 @@ npx vitest run (full suite)
 
 ---
 
+## Fix Cycle 2
+
+Date: 2026-04-07
+
+### Issues Fixed
+
+**Critical #1 — Unused imports in `tests/public-dashboard.test.ts` broke `npm run typecheck`**
+- Removed `and` from `import { and, eq } from 'drizzle-orm'` (kept `eq`)
+- Removed `import * as schema from '../schema'` (line 19)
+- Removed `import { defineAbilitiesFor } from '../src/permissions/abilities'` (line 21)
+- `npx tsc --noEmit` now exits 0 with no errors
+
+**Important #2 — Lint formatting/import-order violations in new/modified files**
+- Installed `@biomejs/biome@1.9.4` (was missing from node_modules in sandbox)
+- Ran `node_modules/.bin/biome check . --write` — auto-fixed 6 files:
+  - `app.ts` — import sort order and blank-line formatting
+  - `src/services/cube-app-cache.ts` — import sort order
+  - `src/routes/public-dashboard.ts` — `.where(and(...))` single-line formatting
+  - `src/routes/analytics-pages.ts` — `.where(and(...))` multi-line formatting
+  - `client/src/pages/DashboardViewPage.tsx` — SVG attributes, `<p>` text, token display formatting
+  - `client/src/pages/PublicDashboardPage.tsx` — inline style object formatting
+- `biome check .` now exits with 1 pre-existing warning only (matches main branch baseline)
+
+### Test Results
+
+```
+npx tsc --noEmit
+✓ Exit 0 — no errors
+
+node_modules/.bin/biome check .
+✓ 1 warning (pre-existing, unrelated) — matches main branch baseline
+
+npx vitest run tests/public-dashboard.test.ts
+✓ 13/13 tests passed
+```
+
+---
+
 ## Known Issues / Follow-ups
 
 - **Rate limiting on `/public/*`** not yet applied (mentioned in architect's risk section). Low priority — easy to add with `createRateLimiter`.

@@ -9,8 +9,8 @@ import { and, eq, gt } from 'drizzle-orm'
 import { groupTypes, groups, oauthTokens, settings, userGroups, users } from '../../schema'
 import { getSessionCookie, validateSession } from '../auth/session'
 import { db } from '../db/index'
-import { connectionManager } from './connection-manager'
 import { getAIAgentConfig } from './ai-settings'
+import { connectionManager } from './connection-manager'
 
 /** Check if MCP app mode is enabled in settings. */
 async function isMcpAppEnabled(): Promise<boolean> {

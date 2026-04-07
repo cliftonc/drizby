@@ -91,7 +91,13 @@ export default function PublicDashboardPage() {
   const { dashboard } = state
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--dc-bg, #fff)', fontFamily: 'system-ui, sans-serif' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: 'var(--dc-bg, #fff)',
+        fontFamily: 'system-ui, sans-serif',
+      }}
+    >
       {/* Minimal header */}
       <div
         style={{
