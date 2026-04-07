@@ -4,16 +4,14 @@
  */
 
 import { serveStatic } from '@hono/node-server/serve-static'
-import { createCubeApp } from 'drizzle-cube/adapters/hono'
-import type { DrizzleDatabase, SecurityContext } from 'drizzle-cube/server'
-import { and, count, eq, gt, max } from 'drizzle-orm'
+import type { DrizzleDatabase } from 'drizzle-cube/server'
+import { count, eq, max } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { secureHeaders } from 'hono/secure-headers'
-import { groupTypes, groups, oauthTokens, settings, userGroups, users } from './schema'
+import { settings, users } from './schema'
 import { authMiddleware } from './src/auth/middleware'
-import { getSessionCookie, validateSession } from './src/auth/session'
 import { db } from './src/db/index'
 import { defineAbilitiesFor } from './src/permissions/abilities'
 import type { AppAbility } from './src/permissions/abilities'
@@ -31,12 +29,17 @@ import oauthApp, {
   authorizationServerMetadata,
   protectedResourceMetadata,
 } from './src/routes/oauth'
+import { createPublicDashboardApp } from './src/routes/public-dashboard'
 import schemaFilesApp from './src/routes/schema-files'
 import scimApp from './src/routes/scim'
 import seedDemoApp from './src/routes/seed-demo'
 import settingsApp from './src/routes/settings'
 import usersApp from './src/routes/users'
-import { getAIAgentConfig } from './src/services/ai-settings'
+import {
+  getCubeApp,
+  invalidateCubeAppCache,
+  validateOAuthBearer,
+} from './src/services/cube-app-cache'
 import { connectionManager } from './src/services/connection-manager'
 
 interface Variables {
@@ -63,105 +66,6 @@ async function isMcpAppEnabled(): Promise<boolean> {
   return row?.value === 'true'
 }
 
-/**
- * Extract the opaque token ID from a JWT access token, or return as-is if opaque.
- *
- * Note: The JWT signature is intentionally NOT verified here. The extracted jti is
- * always looked up in the database (the DB is the authoritative gate), so a forged
- * JWT with an arbitrary jti would still need to match a valid token row. The JWT is
- * just an envelope for the opaque token ID.
- */
-function extractTokenId(token: string): string {
-  // JWTs have 3 dot-separated base64 segments
-  if (token.includes('.')) {
-    try {
-      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString())
-      if (payload.jti) return payload.jti
-    } catch {}
-  }
-  return token
-}
-
-/** Look up a Bearer token in oauth_tokens, return userId if valid. */
-async function validateOAuthBearer(token: string): Promise<number | null> {
-  const tokenId = extractTokenId(token)
-  const [row] = await db
-    .select({
-      userId: oauthTokens.userId,
-      isRevoked: oauthTokens.isRevoked,
-      expiresAt: oauthTokens.accessTokenExpiresAt,
-    })
-    .from(oauthTokens)
-    .where(
-      and(eq(oauthTokens.accessToken, tokenId), gt(oauthTokens.accessTokenExpiresAt, new Date()))
-    )
-  if (!row || row.isRevoked) return null
-  return row.userId
-}
-
-async function extractSecurityContext(c: any): Promise<SecurityContext> {
-  // Resolve userId directly from the request (headers/cookies),
-  // since the cube app is a separate Hono instance without shared context.
-  let userId: number | null = null
-
-  try {
-    // Dev mode: check Bearer token (requires DEV_API_KEY env var)
-    const isDev = process.env.NODE_ENV !== 'production'
-    const devApiKey = process.env.DEV_API_KEY
-    const authHeader = c.req?.header?.('Authorization') ?? c?.headers?.get?.('Authorization')
-    if (isDev && devApiKey && authHeader === `Bearer ${devApiKey}`) {
-      userId = 1
-    }
-
-    // OAuth Bearer token
-    if (!userId && authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.slice(7)
-      userId = await validateOAuthBearer(token)
-    }
-
-    // Session cookie
-    if (!userId) {
-      const sessionId = getSessionCookie(c)
-      if (sessionId) {
-        const result = await validateSession(db as any, sessionId)
-        if (result) userId = result.user.id
-      }
-    }
-  } catch (err) {
-    console.error('[security-context] Error resolving user:', err)
-  }
-
-  if (!userId) {
-    console.warn('[security-context] No authenticated user, returning empty context')
-    return { organisationId: 1, userId: 0, groups: {}, groupIds: [] }
-  }
-
-  // Look up the user's role
-  const [user] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId))
-  const role = user?.role || 'user'
-
-  // Resolve group memberships for the authenticated user
-  const groupRows = await db
-    .select({
-      groupId: userGroups.groupId,
-      groupName: groups.name,
-      typeName: groupTypes.name,
-    })
-    .from(userGroups)
-    .innerJoin(groups, eq(userGroups.groupId, groups.id))
-    .innerJoin(groupTypes, eq(groups.groupTypeId, groupTypes.id))
-    .where(eq(userGroups.userId, userId))
-
-  const groupsByType: Record<string, string[]> = {}
-  const groupIds: number[] = []
-  for (const row of groupRows) {
-    groupIds.push(row.groupId)
-    if (!groupsByType[row.typeName]) groupsByType[row.typeName] = []
-    groupsByType[row.typeName].push(row.groupName)
-  }
-
-  return { organisationId: 1, userId, role, groups: groupsByType, groupIds }
-}
 
 const app = new Hono<{ Variables: Variables }>()
 
@@ -283,6 +187,30 @@ app.route('/oauth', oauthApp)
 // SCIM 2.0 provisioning (has its own bearer token auth, separate from session/OAuth)
 app.route('/scim/v2', scimApp)
 
+// Public dashboard routes — unauthenticated, no authMiddleware
+// Must be mounted BEFORE auth middleware so they don't get blocked.
+
+// Inject db into public routes
+app.use('/public/*', async (c, next) => {
+  c.set('db', db as DrizzleDatabase)
+  await next()
+})
+
+// CORS for public routes — no credentials needed, open to all origins
+app.use('/public/*', cors({ origin: '*', allowMethods: ['GET', 'OPTIONS'] }))
+
+// Override CSP/frame headers for public dashboard routes — allow iframe embedding
+app.use('/public/*', async (c, next) => {
+  await next()
+  c.res.headers.delete('X-Frame-Options')
+  c.res.headers.set(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors *; object-src 'none'; base-uri 'self'"
+  )
+})
+
+app.route('/public', createPublicDashboardApp({ getCubeApp }))
+
 // Inject db into all API routes
 app.use('/api/*', async (c, next) => {
   c.set('db', db as DrizzleDatabase)
@@ -363,48 +291,8 @@ async function requireBearerOrSessionAuth(c: any, next: any) {
 app.use('/cubejs-api/*', requireBearerOrSessionAuth)
 
 // Cube API dispatch: resolves connection from header or query, then delegates to drizzle-cube
-// Cache cube apps per connection to avoid re-creating on every request
-const cubeAppCache = new Map<number, ReturnType<typeof createCubeApp>>()
-
-async function getCubeApp(connectionId: number) {
-  if (cubeAppCache.has(connectionId)) return cubeAppCache.get(connectionId)!
-
-  const managed = connectionManager.get(connectionId)
-  if (!managed) return null
-
-  const agentConfig = await getAIAgentConfig(db)
-  const mcpApp = await isMcpAppEnabled()
-
-  const cubeApp = createCubeApp({
-    semanticLayer: managed.semanticLayer,
-    extractSecurityContext,
-    cors: {
-      origin: ['http://localhost:3460', 'http://localhost:3461'],
-      allowMethods: ['GET', 'POST', 'OPTIONS'],
-      allowHeaders: [
-        'Content-Type',
-        'Authorization',
-        'X-Agent-Api-Key',
-        'X-Agent-Provider',
-        'X-Agent-Model',
-        'X-Agent-Base-URL',
-        'X-Connection-Id',
-      ],
-      credentials: true,
-    },
-    agent: agentConfig,
-    mcp: { enabled: true, app: mcpApp },
-  })
-
-  cubeAppCache.set(connectionId, cubeApp)
-  return cubeApp
-}
-
-// Invalidate cached cube app when connections are recompiled
-export function invalidateCubeAppCache(connectionId?: number) {
-  if (connectionId !== undefined) cubeAppCache.delete(connectionId)
-  else cubeAppCache.clear()
-}
+// getCubeApp and invalidateCubeAppCache are imported from src/services/cube-app-cache
+export { invalidateCubeAppCache }
 
 // GET /cubejs-api/v1/meta — return metadata for a single connection
 app.get('/cubejs-api/v1/meta', async c => {
