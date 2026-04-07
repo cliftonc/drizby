@@ -121,6 +121,28 @@ export const analyticsPages = sqliteTable(
   ]
 )
 
+// Dashboard share tokens — public, revocable share links
+export const dashboardShareTokens = sqliteTable(
+  'dashboard_share_tokens',
+  {
+    id: text('id').primaryKey(), // 32-char hex (random, opaque — the ID is the secret)
+    dashboardId: integer('dashboard_id')
+      .notNull()
+      .references(() => analyticsPages.id, { onDelete: 'cascade' }),
+    label: text('label'),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: integer('expires_at', { mode: 'timestamp' }), // null = never expires
+    revokedAt: integer('revoked_at', { mode: 'timestamp' }), // null = active
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
+    organisationId: integer('organisation_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  },
+  table => [
+    index('idx_dst_dashboard').on(table.dashboardId),
+    index('idx_dst_org').on(table.organisationId),
+  ]
+)
+
 // Notebooks table - for storing AI notebook configurations
 export const notebooks = sqliteTable('notebooks', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -235,6 +257,21 @@ export const oauthAccounts = sqliteTable(
 export const connectionsRelations = relations(connections, ({ many }) => ({
   cubeDefinitions: many(cubeDefinitions),
   schemaFiles: many(schemaFiles),
+}))
+
+export const analyticsPageRelations = relations(analyticsPages, ({ many }) => ({
+  shareTokens: many(dashboardShareTokens),
+}))
+
+export const dashboardShareTokensRelations = relations(dashboardShareTokens, ({ one }) => ({
+  dashboard: one(analyticsPages, {
+    fields: [dashboardShareTokens.dashboardId],
+    references: [analyticsPages.id],
+  }),
+  creator: one(users, {
+    fields: [dashboardShareTokens.createdBy],
+    references: [users.id],
+  }),
 }))
 
 export const schemaFilesRelations = relations(schemaFiles, ({ one }) => ({
@@ -633,6 +670,7 @@ export const schema = {
   schemaFiles,
   cubeDefinitions,
   analyticsPages,
+  dashboardShareTokens,
   notebooks,
   settings,
   users,
@@ -649,6 +687,8 @@ export const schema = {
   oauthTokens,
   oauthAuthCodes,
   connectionsRelations,
+  analyticsPageRelations,
+  dashboardShareTokensRelations,
   schemaFilesRelations,
   cubeDefinitionsRelations,
   usersRelations,

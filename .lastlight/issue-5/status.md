@@ -1,0 +1,9 @@
+current_phase: complete
+architect_status: COMPLETE
+executor_status: COMPLETE
+reviewer_status: COMPLETE
+reviewer_verdict: APPROVED
+fix_cycle_1_status: COMPLETE
+fix_cycle_2_status: COMPLETE
+pr_number: 30
+pr_url: https://github.com/cliftonc/drizby/pull/30

@@ -3,10 +3,18 @@
  * CRUD operations for dashboard configurations
  */
 
+import crypto from 'node:crypto'
 import type { DrizzleDatabase } from 'drizzle-cube/server'
-import { and, asc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { analyticsPages, contentGroupVisibility, groups, userGroups, users } from '../../schema'
+import {
+  analyticsPages,
+  contentGroupVisibility,
+  dashboardShareTokens,
+  groups,
+  userGroups,
+  users,
+} from '../../schema'
 import { productivityDashboardConfig } from '../dashboard-config'
 
 interface Variables {
@@ -404,6 +412,125 @@ analyticsApp.delete('/:id', async c => {
     console.error('Error deleting analytics page:', error)
     return c.json({ error: 'Failed to delete analytics page' }, 500)
   }
+})
+
+// ============================================================================
+// Share token sub-routes (admin/owner only, auth enforced by global authMiddleware)
+// ============================================================================
+
+/** Check ownership: returns null (not found), false (forbidden), or true (allowed). */
+async function assertOwner(db: any, dashboardId: number, organisationId: number, auth: any) {
+  const [existing] = await db
+    .select({ createdBy: analyticsPages.createdBy })
+    .from(analyticsPages)
+    .where(
+      and(eq(analyticsPages.id, dashboardId), eq(analyticsPages.organisationId, organisationId))
+    )
+  if (!existing) return null // dashboard not found
+  if (auth?.user?.role === 'admin') return true
+  return existing.createdBy === auth?.userId
+}
+
+// GET /api/analytics-pages/:id/share-tokens — list active tokens (masked)
+analyticsApp.get('/:id/share-tokens', async c => {
+  const db = c.get('db') as any
+  const organisationId = c.get('organisationId')
+  const auth = c.get('auth') as any
+  const dashboardId = Number.parseInt(c.req.param('id'))
+  if (Number.isNaN(dashboardId)) return c.json({ error: 'Invalid page ID' }, 400)
+
+  const allowed = await assertOwner(db, dashboardId, organisationId, auth)
+  if (allowed === null) return c.json({ error: 'Dashboard not found' }, 404)
+  if (!allowed) return c.json({ error: 'Forbidden' }, 403)
+
+  const rows = await db
+    .select()
+    .from(dashboardShareTokens)
+    .where(
+      and(
+        eq(dashboardShareTokens.dashboardId, dashboardId),
+        eq(dashboardShareTokens.organisationId, organisationId),
+        isNull(dashboardShareTokens.revokedAt)
+      )
+    )
+
+  // Full token ID is included for revocation by the dashboard owner/admin.
+  // idMasked (first 8 chars) is provided for display purposes only.
+  const masked = rows.map((r: any) => ({
+    id: r.id,
+    idMasked: `${r.id.slice(0, 8)}...`,
+    label: r.label,
+    createdBy: r.createdBy,
+    expiresAt: r.expiresAt,
+    lastUsedAt: r.lastUsedAt,
+    createdAt: r.createdAt,
+  }))
+
+  return c.json({ data: masked })
+})
+
+// POST /api/analytics-pages/:id/share-tokens — create a new token
+analyticsApp.post('/:id/share-tokens', async c => {
+  const db = c.get('db') as any
+  const organisationId = c.get('organisationId')
+  const auth = c.get('auth') as any
+  const dashboardId = Number.parseInt(c.req.param('id'))
+  if (Number.isNaN(dashboardId)) return c.json({ error: 'Invalid page ID' }, 400)
+
+  const allowed = await assertOwner(db, dashboardId, organisationId, auth)
+  if (allowed === null) return c.json({ error: 'Dashboard not found' }, 404)
+  if (!allowed) return c.json({ error: 'Forbidden' }, 403)
+
+  const body = await c.req.json().catch(() => ({}))
+  const label: string | undefined = body.label
+  const expiresAt: Date | undefined = body.expiresAt ? new Date(body.expiresAt) : undefined
+
+  const tokenId = crypto.randomBytes(16).toString('hex') // 32-char hex
+
+  const [created] = await db
+    .insert(dashboardShareTokens)
+    .values({
+      id: tokenId,
+      dashboardId,
+      label: label || null,
+      createdBy: auth?.userId || null,
+      expiresAt: expiresAt || null,
+      organisationId,
+    })
+    .returning()
+
+  // Return the full token ID exactly once — caller must store it
+  return c.json({ data: created }, 201)
+})
+
+// DELETE /api/analytics-pages/:id/share-tokens/:tid — revoke a token
+analyticsApp.delete('/:id/share-tokens/:tid', async c => {
+  const db = c.get('db') as any
+  const organisationId = c.get('organisationId')
+  const auth = c.get('auth') as any
+  const dashboardId = Number.parseInt(c.req.param('id'))
+  const tokenId = c.req.param('tid')
+  if (Number.isNaN(dashboardId)) return c.json({ error: 'Invalid page ID' }, 400)
+
+  const allowed = await assertOwner(db, dashboardId, organisationId, auth)
+  if (allowed === null) return c.json({ error: 'Dashboard not found' }, 404)
+  if (!allowed) return c.json({ error: 'Forbidden' }, 403)
+
+  const result = await db
+    .update(dashboardShareTokens)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(dashboardShareTokens.id, tokenId),
+        eq(dashboardShareTokens.dashboardId, dashboardId),
+        eq(dashboardShareTokens.organisationId, organisationId),
+        isNull(dashboardShareTokens.revokedAt)
+      )
+    )
+    .returning()
+
+  if (result.length === 0) return c.json({ error: 'Token not found' }, 404)
+  return c.body(null, 204)
 })
 
 export default analyticsApp
