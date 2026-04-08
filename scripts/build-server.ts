@@ -27,7 +27,7 @@ await build({
 // Worker thread for type-checking (loaded dynamically, must be a separate file)
 await build({
   ...sharedOptions,
-  entryPoints: ['src/services/typecheck-worker.ts'],
+  entryPoints: ['src/services/typecheck-worker.js'],
   outfile: 'dist/typecheck-worker.js',
 })
 
