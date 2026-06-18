@@ -40,13 +40,16 @@ const TS_COMPILE_OPTIONS: ts.CompilerOptions = {
 
 /**
  * Resolve the worker script path.
- * Uses the same directory and extension as the current file —
- * in dev this is .ts (handled by tsx), in production it's .js (compiled).
+ * Uses the same directory as the current file.
+ * In dev (.ts source), Node's ESM loader can't load .ts workers directly
+ * even with --import tsx, so we use a .mjs launcher that registers tsx first.
+ * In production (.js compiled), the worker is a plain .js file.
  */
 const CURRENT_FILE = fileURLToPath(import.meta.url)
 const CURRENT_DIR = CURRENT_FILE.replace(/[/\\][^/\\]+$/, '')
-const WORKER_EXT = CURRENT_FILE.endsWith('.ts') ? '.ts' : '.js'
-const WORKER_PATH = join(CURRENT_DIR, `typecheck-worker${WORKER_EXT}`)
+const WORKER_PATH = CURRENT_FILE.endsWith('.ts')
+  ? join(CURRENT_DIR, 'typecheck-worker-launcher.mjs')
+  : join(CURRENT_DIR, 'typecheck-worker.js')
 
 /**
  * Run type-checking in a worker thread so it doesn't block the event loop.
@@ -59,7 +62,6 @@ function typeCheckInWorker(
   return new Promise(resolve => {
     const worker = new Worker(WORKER_PATH, {
       workerData: { sourceCode, virtualFiles, projectRoot: PROJECT_ROOT },
-      // Pass parent's execArgv so tsx/ts-node loaders work in the worker
       execArgv: process.execArgv,
     })
     worker.on('message', (msg: { errors: CompileError[] }) => {

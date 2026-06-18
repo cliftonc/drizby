@@ -3,6 +3,9 @@ import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import AuthGuard from './components/AuthGuard'
 import Layout from './components/Layout'
 
+// Public pages — no auth required
+import PublicDashboardPage from './pages/PublicDashboardPage'
+
 // Light pages — keep static for instant navigation
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import LoginPage from './pages/LoginPage'
@@ -88,6 +91,7 @@ function SchemaEditorRedirect() {
 function App() {
   return (
     <Routes>
+      <Route path="/public/dashboard/:token" element={<PublicDashboardPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
