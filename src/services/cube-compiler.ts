@@ -5,8 +5,6 @@
  */
 
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 import { Worker } from 'node:worker_threads'
 import ts from 'typescript'
@@ -39,14 +37,23 @@ const TS_COMPILE_OPTIONS: ts.CompilerOptions = {
 }
 
 /**
- * Resolve the worker script path.
- * Uses the same directory and extension as the current file —
- * in dev this is .ts (handled by tsx), in production it's .js (compiled).
+ * Resolve the worker entrypoint for the current runtime.
+ * Always target a JavaScript worker so local tests/dev and built output
+ * do not depend on TypeScript loader hooks in worker threads.
  */
-const CURRENT_FILE = fileURLToPath(import.meta.url)
-const CURRENT_DIR = CURRENT_FILE.replace(/[/\\][^/\\]+$/, '')
-const WORKER_EXT = CURRENT_FILE.endsWith('.ts') ? '.ts' : '.js'
-const WORKER_PATH = join(CURRENT_DIR, `typecheck-worker${WORKER_EXT}`)
+export function resolveTypecheckWorkerUrl(baseUrl = import.meta.url): URL {
+  return new URL('./typecheck-worker.js', baseUrl)
+}
+
+const WORKER_URL = resolveTypecheckWorkerUrl()
+
+function formatWorkerStartupError(err: unknown): CompileError {
+  const message = err instanceof Error ? err.message : String(err)
+
+  return {
+    message: `Type-check worker failed to start at ${WORKER_URL.pathname}: ${message}. Ensure the JavaScript worker artifact is available in source runtimes and built output.`,
+  }
+}
 
 /**
  * Run type-checking in a worker thread so it doesn't block the event loop.
@@ -57,20 +64,32 @@ function typeCheckInWorker(
   virtualFiles?: Record<string, string>
 ): Promise<CompileError[]> {
   return new Promise(resolve => {
-    const worker = new Worker(WORKER_PATH, {
-      workerData: { sourceCode, virtualFiles, projectRoot: PROJECT_ROOT },
-      // Pass parent's execArgv so tsx/ts-node loaders work in the worker
-      execArgv: process.execArgv,
-    })
+    let settled = false
+    const finish = (errors: CompileError[]) => {
+      if (settled) return
+      settled = true
+      resolve(errors)
+    }
+
+    let worker: Worker
+    try {
+      worker = new Worker(WORKER_URL, {
+        workerData: { sourceCode, virtualFiles, projectRoot: PROJECT_ROOT },
+      })
+    } catch (err) {
+      finish([formatWorkerStartupError(err)])
+      return
+    }
+
     worker.on('message', (msg: { errors: CompileError[] }) => {
-      resolve(msg.errors)
+      finish(msg.errors)
     })
     worker.on('error', err => {
-      resolve([{ message: `Type-check worker error: ${err.message}` }])
+      finish([formatWorkerStartupError(err)])
     })
     worker.on('exit', code => {
       if (code !== 0) {
-        resolve([{ message: `Type-check worker exited with code ${code}` }])
+        finish([{ message: `Type-check worker exited with code ${code}` }])
       }
     })
   })
