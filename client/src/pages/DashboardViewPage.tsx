@@ -10,9 +10,11 @@ import {
   useResetAnalyticsPage,
   useUpdateAnalyticsPage,
 } from '../hooks/useAnalyticsPages'
+import { useConfirm } from '../hooks/useConfirm'
 import { useConnections } from '../hooks/useConnections'
 import { useGroups } from '../hooks/useGroups'
-import type { DashboardConfig } from '../types'
+import { useCreateShareToken, useRevokeShareToken, useShareTokens } from '../hooks/useShareTokens'
+import type { DashboardConfig, ShareToken } from '../types'
 
 export default function DashboardViewPage() {
   const { id } = useParams<{ id: string }>()
@@ -30,6 +32,18 @@ export default function DashboardViewPage() {
   const [, setLastSaved] = useState<Date | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
+  const [newTokenLabel, setNewTokenLabel] = useState('')
+  const [createdToken, setCreatedToken] = useState<ShareToken | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [confirm, ConfirmDialog] = useConfirm()
+
+  const numericId = id ? Number.parseInt(id) : 0
+  const { data: shareTokens = [], isLoading: tokensLoading } = useShareTokens(
+    showShareModal ? numericId : 0
+  )
+  const createToken = useCreateShareToken(numericId)
+  const revokeToken = useRevokeShareToken(numericId)
 
   const hasInitializedRef = useRef(false)
   const lastPageIdRef = useRef<string | null>(null)
@@ -242,6 +256,25 @@ export default function DashboardViewPage() {
             {canEdit && (
               <>
                 <button
+                  onClick={() => setShowShareModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-dc-border bg-dc-surface text-dc-text hover:bg-dc-surface-hover"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={1.5}
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z"
+                    />
+                  </svg>
+                  Share
+                </button>
+                <button
                   onClick={() => setIsEditModalOpen(true)}
                   className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border border-dc-border bg-dc-surface text-dc-text hover:bg-dc-surface-hover"
                 >
@@ -326,6 +359,129 @@ export default function DashboardViewPage() {
           </div>
         </div>
       )}
+
+      {showShareModal && (
+        <div className="fixed inset-0 bg-dc-overlay flex items-center justify-center z-50 p-4">
+          <div className="bg-dc-surface rounded-lg p-6 max-w-lg w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-dc-text">Share Dashboard</h3>
+              <button
+                onClick={() => {
+                  setShowShareModal(false)
+                  setCreatedToken(null)
+                  setNewTokenLabel('')
+                  setCopied(false)
+                }}
+                className="text-dc-text-muted hover:text-dc-text"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={1.5}
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {createdToken && (
+              <div className="mb-4 p-3 rounded-md bg-dc-surface-secondary border border-dc-border">
+                <p className="text-xs text-dc-text-muted mb-1">
+                  Share link (copy now — won't be shown again):
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={`${window.location.origin}/public/dashboard/${createdToken.id}`}
+                    className="flex-1 text-xs bg-transparent border-none outline-none text-dc-text font-mono truncate"
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(
+                        `${window.location.origin}/public/dashboard/${createdToken.id}`
+                      )
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 2000)
+                    }}
+                    className="px-2 py-1 text-xs rounded border border-dc-border bg-dc-surface hover:bg-dc-surface-hover text-dc-text"
+                  >
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="mb-4">
+              <p className="text-xs text-dc-text-muted mb-2">
+                Share links give read-only public access without requiring login.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Label (optional)"
+                  value={newTokenLabel}
+                  onChange={e => setNewTokenLabel(e.target.value)}
+                  className="flex-1 px-3 py-1.5 text-sm rounded-md border border-dc-border bg-dc-surface text-dc-text placeholder:text-dc-text-disabled"
+                />
+                <button
+                  onClick={async () => {
+                    const token = await createToken.mutateAsync({
+                      label: newTokenLabel || undefined,
+                    })
+                    setCreatedToken(token)
+                    setNewTokenLabel('')
+                  }}
+                  disabled={createToken.isPending}
+                  className="px-3 py-1.5 text-sm font-medium rounded-md border border-transparent bg-dc-primary text-dc-primary-content hover:bg-dc-primary-hover disabled:opacity-50"
+                >
+                  {createToken.isPending ? 'Creating...' : 'Create link'}
+                </button>
+              </div>
+            </div>
+
+            {tokensLoading ? (
+              <p className="text-xs text-dc-text-muted">Loading...</p>
+            ) : shareTokens.length > 0 ? (
+              <div>
+                <p className="text-xs font-medium text-dc-text-muted mb-2">Active share links:</p>
+                <ul className="space-y-2">
+                  {shareTokens.map((token: ShareToken) => (
+                    <li
+                      key={token.id}
+                      className="flex items-center justify-between text-sm gap-2 p-2 rounded border border-dc-border"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-mono text-xs text-dc-text-muted">
+                          {token.idMasked}
+                        </span>
+                        {token.label && <span className="ml-2 text-dc-text">{token.label}</span>}
+                      </div>
+                      <button
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: 'Revoke share link',
+                            message: 'Revoke this share link? It will stop working immediately.',
+                            variant: 'danger',
+                          })
+                          if (ok) await revokeToken.mutateAsync(token.id)
+                        }}
+                        className="shrink-0 text-xs text-dc-error hover:underline"
+                      >
+                        Revoke
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="text-xs text-dc-text-muted">No active share links.</p>
+            )}
+          </div>
+        </div>
+      )}
+      <ConfirmDialog />
     </div>
   )
 }

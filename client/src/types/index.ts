@@ -73,6 +73,21 @@ export interface Notebook {
   updatedAt: string
 }
 
+export interface ShareToken {
+  id: string
+  idMasked: string
+  label?: string | null
+  createdBy?: number | null
+  expiresAt?: string | null
+  lastUsedAt?: string | null
+  createdAt?: string | null
+}
+
+export interface CreateShareTokenRequest {
+  label?: string
+  expiresAt?: string // ISO date string
+}
+
 export interface CreateNotebookRequest {
   name: string
   description?: string
