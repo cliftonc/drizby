@@ -4,7 +4,7 @@
  * - POST /explain/analyze — Analyze EXPLAIN plans with AI recommendations
  */
 
-import type { DrizzleDatabase, ExplainResult } from 'drizzle-cube/server'
+import type { DrizzleDatabase, ExplainResult, SecurityContext } from 'drizzle-cube/server'
 import {
   buildExplainAnalysisPrompt,
   createDatabaseExecutor,
@@ -12,6 +12,7 @@ import {
   formatExistingIndexes,
 } from 'drizzle-cube/server'
 import { Hono } from 'hono'
+import { extractSecurityContext } from '../auth/security-context'
 import { getAISettings } from '../services/ai-settings'
 import { connectionManager } from '../services/connection-manager'
 
@@ -101,11 +102,12 @@ function getConnectionId(c: any): number | null {
 
 // ── Helper: get cube schema for AI prompt ────────────────────────────
 
-function getCubeSchemaForAI(connectionId: number): string {
+function getCubeSchemaForAI(connectionId: number, securityContext: SecurityContext): string {
   const managed = connectionManager.get(connectionId)
   if (!managed) return '{}'
 
-  const metadata = managed.semanticLayer.getMetadata()
+  // Scoped to the caller, so the prompt describes the cubes they can query.
+  const metadata = managed.semanticLayer.getMetadata(securityContext)
   const cubes: Record<string, any> = {}
 
   for (const cube of metadata) {
@@ -243,7 +245,7 @@ app.post('/generate', async c => {
   }
 
   try {
-    const cubeSchema = getCubeSchemaForAI(connectionId)
+    const cubeSchema = getCubeSchemaForAI(connectionId, await extractSecurityContext(c))
     const prompt = GENERATE_SYSTEM_PROMPT.replace('{CUBE_SCHEMA}', cubeSchema).replace(
       '{USER_PROMPT}',
       text.trim()
@@ -282,7 +284,7 @@ app.post('/explain/analyze', async c => {
 
   try {
     // Get cube metadata for context
-    const metadata = managed.semanticLayer.getMetadata()
+    const metadata = managed.semanticLayer.getMetadata(await extractSecurityContext(c))
     const cubeSchema = formatCubeSchemaForExplain(metadata)
 
     // Get existing indexes for tables in the query

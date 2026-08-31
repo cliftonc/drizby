@@ -9,6 +9,7 @@ import { Hono } from 'hono'
 import { invalidateCubeAppCache } from '../../app'
 import { analyticsPages, connections, cubeDefinitions, schemaFiles } from '../../schema'
 import { maybeDecrypt, maybeEncrypt } from '../auth/encryption'
+import { extractSecurityContext } from '../auth/security-context'
 import { guardPermission } from '../permissions/guard'
 import { callAI } from '../services/ai-caller'
 import { getAISettings } from '../services/ai-settings'
@@ -618,11 +619,14 @@ app.post('/execute', async c => {
       // Gather cube metadata for AI query translation
       let cubeMetadataContext = ''
       if (aiConfigured) {
+        // 0.8 scopes cube definitions by security context; resolved once here
+        // rather than per connection.
+        const securityContext = await extractSecurityContext(c)
         for (const conn of createdConnections) {
           const managed = connectionManager.get(conn.drizbyId)
           if (!managed) continue
           try {
-            const meta = managed.semanticLayer.getMetadata()
+            const meta = managed.semanticLayer.getMetadata(securityContext)
             cubeMetadataContext += `\n## Cubes for connection "${conn.name}":\n${JSON.stringify(meta, null, 2)}\n`
           } catch {
             // Skip if meta not available
