@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock app.ts to avoid pulling in the full app (drizzle-cube, connection-manager, etc.)
@@ -15,7 +16,7 @@ vi.mock('../src/services/connection-manager', () => ({
   },
 }))
 
-import { connections, settings, users } from '../schema'
+import { connections, scimTokens, settings, users } from '../schema'
 import settingsApp from '../src/routes/settings'
 import { jsonRequest, mountRoute } from './helpers/test-app'
 import { createTestDb, seedAdminUser, seedMemberUser } from './helpers/test-db'
@@ -30,6 +31,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   sqlite.close()
 })
 
@@ -52,7 +54,7 @@ describe('AI settings', () => {
     const a = app()
     await jsonRequest(a, 'PUT', '/test/ai', {
       provider: 'anthropic',
-      apiKey: 'sk-test-1234567890',
+      apiKey: 'sk-tes...7890',
       model: 'claude-sonnet-4-20250514',
     })
 
@@ -88,6 +90,174 @@ describe('AI settings', () => {
     const member = await seedMemberUser(db)
     const res = await app(member).request('/test/ai')
     expect(res.status).toBe(403)
+  })
+})
+
+// ─── Feature Settings ──────────────────────────────────────────────
+
+describe('feature settings', () => {
+  it('allows members to read feature settings but blocks writes', async () => {
+    vi.stubEnv('APP_URL', 'https://drizby.test/')
+    await db.insert(settings).values([
+      { key: 'mcp_enabled', value: 'true', organisationId: 1 },
+      { key: 'brand_name', value: 'Acme BI', organisationId: 1 },
+      { key: 'brand_logo_url', value: 'https://cdn.example.com/logo.png', organisationId: 1 },
+    ])
+
+    const member = await seedMemberUser(db)
+
+    const getRes = await app(member).request('/test/features')
+    expect(getRes.status).toBe(200)
+    expect(await getRes.json()).toEqual({
+      mcpEnabled: true,
+      mcpAppEnabled: false,
+      appUrl: 'https://drizby.test/',
+      brandName: 'Acme BI',
+      brandLogoUrl: 'https://cdn.example.com/logo.png',
+    })
+
+    const putRes = await jsonRequest(app(member), 'PUT', '/test/features', { brandName: 'Nope' })
+    expect(putRes.status).toBe(403)
+  })
+
+  it('deletes empty brand settings while keeping feature flags updated', async () => {
+    vi.stubEnv('APP_URL', 'https://drizby.test')
+    await db.insert(settings).values([
+      { key: 'brand_name', value: 'Old Brand', organisationId: 1 },
+      { key: 'brand_logo_url', value: 'https://cdn.example.com/old-logo.png', organisationId: 1 },
+    ])
+
+    const res = await jsonRequest(app(), 'PUT', '/test/features', {
+      mcpEnabled: true,
+      mcpAppEnabled: false,
+      brandName: '',
+      brandLogoUrl: '',
+    })
+
+    expect(res.status).toBe(200)
+
+    const rows = await db.select().from(settings)
+    expect(rows.find((row: any) => row.key === 'brand_name')).toBeUndefined()
+    expect(rows.find((row: any) => row.key === 'brand_logo_url')).toBeUndefined()
+    expect(rows.find((row: any) => row.key === 'mcp_enabled')?.value).toBe('true')
+    expect(rows.find((row: any) => row.key === 'mcp_app_enabled')?.value).toBe('false')
+
+    const getRes = await app().request('/test/features')
+    expect(await getRes.json()).toEqual({
+      mcpEnabled: true,
+      mcpAppEnabled: false,
+      appUrl: 'https://drizby.test',
+      brandName: '',
+      brandLogoUrl: '',
+    })
+  })
+})
+
+// ─── OAuth Settings ────────────────────────────────────────────────
+
+describe('oauth settings', () => {
+  it('rejects enabling a provider without complete credentials', async () => {
+    const res = await jsonRequest(app(), 'PUT', '/test/oauth', {
+      google: { enabled: true, clientId: 'google-client-id' },
+    })
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      error: 'Client ID and Client Secret are required to enable google OAuth',
+    })
+  })
+
+  it('reuses stored encrypted secrets and only returns masked oauth secret data', async () => {
+    vi.stubEnv('APP_URL', 'https://drizby.test/')
+    vi.stubEnv('ENCRYPTION_SECRET', 'test-encryption-secret')
+
+    const a = app()
+
+    const saveRes = await jsonRequest(a, 'PUT', '/test/oauth', {
+      google: {
+        enabled: true,
+        clientId: 'google-client-id',
+        clientSecret: 'super-secret-1234',
+      },
+    })
+    expect(saveRes.status).toBe(200)
+
+    const storedRows = await db.select().from(settings)
+    expect(storedRows.find((row: any) => row.key === 'oauth_google_client_secret')?.value).toMatch(
+      /^enc:/
+    )
+
+    const reuseRes = await jsonRequest(a, 'PUT', '/test/oauth', {
+      google: { enabled: true },
+    })
+    expect(reuseRes.status).toBe(200)
+
+    const getRes = await a.request('/test/oauth')
+    expect(getRes.status).toBe(200)
+    const oauthData = await getRes.json()
+    expect(oauthData).toMatchObject({
+      google: {
+        enabled: true,
+        clientId: 'google-client-id',
+        hasClientSecret: true,
+        clientSecretHint: '****1234',
+        redirectUri: 'https://drizby.test/api/auth/google/callback',
+      },
+    })
+    expect(oauthData.google).not.toHaveProperty('clientSecret')
+  })
+})
+
+// ─── SCIM Settings ─────────────────────────────────────────────────
+
+describe('SCIM settings', () => {
+  it('handles enablement, token creation, listing, and revocation', async () => {
+    vi.stubEnv('APP_URL', 'https://drizby.test/')
+
+    const enableRes = await jsonRequest(app(), 'PUT', '/test/scim', { enabled: true })
+    expect(enableRes.status).toBe(200)
+
+    const missingNameRes = await jsonRequest(app(), 'POST', '/test/scim/tokens', {})
+    expect(missingNameRes.status).toBe(400)
+    expect(await missingNameRes.json()).toEqual({ error: 'Token name is required' })
+
+    await db.insert(users).values({
+      email: 'scim-user@test.com',
+      username: 'scim-user',
+      name: 'SCIM User',
+      role: 'member',
+      organisationId: 1,
+      scimProvisioned: true,
+    })
+
+    const createRes = await jsonRequest(app(), 'POST', '/test/scim/tokens', { name: 'Okta' })
+    expect(createRes.status).toBe(201)
+    const created = await createRes.json()
+
+    const storedTokens = await db.select().from(scimTokens)
+    expect(storedTokens).toHaveLength(1)
+    expect(storedTokens[0]?.id).toBe(created.id)
+    expect(storedTokens[0]?.name).toBe('Okta')
+    expect(storedTokens[0]?.tokenHash).toBe(
+      crypto.createHash('sha256').update(created.token).digest('hex')
+    )
+    expect(storedTokens[0]?.tokenHash).not.toBe(created.token)
+
+    const getRes = await app().request('/test/scim')
+    expect(getRes.status).toBe(200)
+    const scimData = await getRes.json()
+    expect(scimData).toMatchObject({
+      enabled: true,
+      endpointUrl: 'https://drizby.test/scim/v2',
+      provisionedUserCount: 1,
+    })
+    expect(scimData.tokens).toHaveLength(1)
+    expect(scimData.tokens[0]).toMatchObject({ id: created.id, name: 'Okta' })
+    expect(scimData.tokens[0]).not.toHaveProperty('tokenHash')
+
+    const deleteRes = await app().request(`/test/scim/tokens/${created.id}`, { method: 'DELETE' })
+    expect(deleteRes.status).toBe(200)
+    expect(await db.select().from(scimTokens)).toHaveLength(0)
   })
 })
 
