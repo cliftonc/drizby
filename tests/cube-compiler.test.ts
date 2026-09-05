@@ -116,6 +116,34 @@ describe('cube-compiler', () => {
     })
   })
 
+  // ─── Worker startup regression ───────────────────────────────
+
+  describe('worker startup', () => {
+    it('type-check worker completes without startup errors', async () => {
+      // Exercises the full worker path (spawn → type-check → message back).
+      // This is the scenario that fails when the .ts worker can't be loaded.
+      const result = await compileSchema(`
+        import { sqliteTable, text } from 'drizzle-orm/sqlite-core'
+        export const t = sqliteTable('t', { id: text('id') })
+      `)
+      expect(result.errors).toHaveLength(0)
+      // Ensure we actually got exports (worker ran, not just a fallback)
+      expect(result.exports.t).toBeDefined()
+    })
+
+    it('worker errors are reported as structured CompileError[]', async () => {
+      // Invalid TS that should trigger a type-check error from the worker
+      const result = await compileSchema(`
+        import { sqliteTable, text } from 'drizzle-orm/sqlite-core'
+        const x: number = 'not a number'
+        export const t = sqliteTable('t', { id: text('id') })
+      `)
+      expect(result.errors.length).toBeGreaterThan(0)
+      expect(result.errors[0]).toHaveProperty('message')
+      expect(typeof result.errors[0].message).toBe('string')
+    })
+  })
+
   // ─── Sandbox isolation (fast, no type-checking) ───────────────
 
   describe('sandbox blocks dangerous globals', () => {
